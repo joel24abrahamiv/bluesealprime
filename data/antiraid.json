@@ -1,0 +1,12 @@
+{
+  "1469916564319899824": {
+    "enabled": true,
+    "threshold": 5,
+    "timeWindow": 10
+  },
+  "1465034671615250743": {
+    "enabled": true,
+    "threshold": 5,
+    "timeWindow": 10
+  }
+}

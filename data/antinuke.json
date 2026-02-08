@@ -1,0 +1,13 @@
+{
+  "1469973841249046621": {
+    "enabled": true,
+    "whitelisted": [],
+    "limits": {
+      "channelDelete": 2,
+      "roleDelete": 2,
+      "ban": 3,
+      "kick": 3,
+      "interval": 10000
+    }
+  }
+}

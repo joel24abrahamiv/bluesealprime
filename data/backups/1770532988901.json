@@ -1,0 +1,829 @@
+{
+  "id": "1770532988901",
+  "name": "Ronin",
+  "createdAt": "2026-02-08T06:43:08.901Z",
+  "roles": [
+    {
+      "name": ". Idel",
+      "color": "#2f3136",
+      "permissions": "8",
+      "position": 35,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Founder!",
+      "color": "#ad1457",
+      "permissions": "8",
+      "position": 38,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Minor!",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 26,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ".୨୧         𓂃         Valorant       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 17,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Lap User!",
+      "color": "#2ecc71",
+      "permissions": "0",
+      "position": 24,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ".  ۶ৎ  . She/Her . ៹",
+      "color": "#dc04f4",
+      "permissions": "0",
+      "position": 28,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ".୨୧         𓂃         Roblox       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 16,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ".  ۶ৎ  . He/Him . ៹",
+      "color": "#7659ad",
+      "permissions": "1024",
+      "position": 29,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ".୨୧         𓂃         FreeFire       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 19,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ".୨୧         𓂃         Minecraft       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 15,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Mobile !",
+      "color": "#3498db",
+      "permissions": "0",
+      "position": 23,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ". FriendZz ? .",
+      "color": "#050999",
+      "permissions": "39997373009473",
+      "position": 30,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": ". Staff ? ﹒",
+      "color": "#5d0f57",
+      "permissions": "0",
+      "position": 32,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": ". Modxz ? .",
+      "color": "#9e9898",
+      "permissions": "5138810492278481",
+      "position": 34,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Adult!",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 27,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": "Quarantined",
+      "color": "#ff0000",
+      "permissions": "492587688463105",
+      "position": 3,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Customization!",
+      "color": "#e91e63",
+      "permissions": "0",
+      "position": 10,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": "Admin!",
+      "color": "#ff0006",
+      "permissions": "8864262139150167",
+      "position": 33,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "义        .ᐟ .ᐟ .ᐟ          Anti Botsᕽ  !!??",
+      "color": "#9b59b6",
+      "permissions": "8",
+      "position": 12,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Ios!",
+      "color": "#e91e63",
+      "permissions": "0",
+      "position": 21,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Unverified!",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 7,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ". Eva . Unbypassable",
+      "color": "#000000",
+      "permissions": "40",
+      "position": 37,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "new role",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 2,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": ". Head.Modxz ? .",
+      "color": "#ffc100",
+      "permissions": "8864262743130111",
+      "position": 36,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": ".୨୧         𓂃         BGMI       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 14,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Android!",
+      "color": "#f1c40f",
+      "permissions": "0",
+      "position": 22,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Birthday baby!",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 6,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Apps!",
+      "color": "#1f8b4c",
+      "permissions": "0",
+      "position": 9,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ".୨୧         𓂃         Aмoɴɢ Uѕ       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 13,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Pc User!",
+      "color": "#1abc9c",
+      "permissions": "0",
+      "position": 25,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": "Member!",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 5,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "---------------------------------------------",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 20,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "﹒ Ɱate﹒‹𝟹",
+      "color": "#00b7ff",
+      "permissions": "915865805381446",
+      "position": 31,
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Ronin Tholargal",
+      "color": "#000000",
+      "permissions": "1166171704772161",
+      "position": 8,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ".୨୧         𓂃         GTA       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 18,
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Music!",
+      "color": "#2ecc71",
+      "permissions": "0",
+      "position": 11,
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": ". Eva . Idde",
+      "color": "#000000",
+      "permissions": "0",
+      "position": 4,
+      "hoist": false,
+      "mentionable": false
+    }
+  ],
+  "channels": [
+    {
+      "name": "🖥️┃ꜱᴇʀᴠᴇʀ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 5,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒gone",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019850",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "jockie-music",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566509453326",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "raid-alerts",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 16,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "ılı﹒txtˑ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689401",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "ctrl",
+      "type": 0,
+      "topic": null,
+      "parentId": null,
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒",
+      "type": 4,
+      "parentId": null,
+      "position": 10,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "rules",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019846",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "👥┃ᴍᴇᴍʙᴇʀ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 9,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒syntax",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019850",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒boys﹒യ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891975",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "quarantine-zone",
+      "type": 0,
+      "topic": null,
+      "parentId": null,
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Checking!",
+      "type": 2,
+      "parentId": "1469916565905473601",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "general",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689398",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒voice x1",
+      "type": 2,
+      "parentId": "1469916565720797188",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Discussions!",
+      "type": 2,
+      "parentId": "1469916565905473601",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "💬┃ᴍᴇꜱꜱᴀɢᴇ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "@",
+      "type": 4,
+      "parentId": null,
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "whitelists-logs",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "!",
+      "type": 2,
+      "parentId": "1469916565720797193",
+      "position": 4,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒voice x4",
+      "type": 2,
+      "parentId": "1469916565720797188",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": ".",
+      "type": 4,
+      "parentId": null,
+      "position": 9,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒voice x3",
+      "type": 2,
+      "parentId": "1469916565720797188",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "📂┃ᴀᴅᴍɪɴ-ᴄᴏᴍᴍᴀɴᴅs-ʟᴏɢs",
+      "type": 0,
+      "topic": "In this channel are displayed the change-logs of each update applied.",
+      "parentId": "1469916566089891980",
+      "position": 15,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "^",
+      "type": 4,
+      "parentId": null,
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🔗┃ɪɴᴠɪᴛᴇ-ɪɴғᴏ-ʟᴏɢ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 13,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "join",
+      "type": 2,
+      "parentId": null,
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒",
+      "type": 4,
+      "parentId": null,
+      "position": 7,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒",
+      "type": 4,
+      "parentId": null,
+      "position": 5,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "General!",
+      "type": 2,
+      "parentId": "1469916565720797193",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "ꜝ﹒．support",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565720797186",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🧩┃ᴄʜᴀɴɴᴇʟ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 11,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Bot Cmds!",
+      "type": 4,
+      "parentId": null,
+      "position": 11,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒couples﹒𑂅",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891975",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "📑┃ᴛɪᴄᴋᴇᴛ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 14,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "ᡣ．panel",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565905473601",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Tickets",
+      "type": 4,
+      "parentId": null,
+      "position": 12,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "uwu",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689395",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "📂┃ꜰɪʟᴇ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 7,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "support",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689395",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🛡️┃ᴍᴏᴅ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🎭┃ʀᴏʟᴇ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 6,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "AFk",
+      "type": 2,
+      "parentId": "1469916565905473601",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "rhytm-music",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566509453326",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "verify",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019846",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": ". Squad",
+      "type": 2,
+      "parentId": "1469916565720797193",
+      "position": 3,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒adult",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689401",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "ticket",
+      "type": 0,
+      "topic": null,
+      "parentId": null,
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Newbies!",
+      "type": 4,
+      "parentId": null,
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": ". Duo",
+      "type": 2,
+      "parentId": "1469916565720797193",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒came",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019850",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "verify-logs",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "⚡┃ᴀᴄᴛɪᴏɴ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 10,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒ѕραm",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565502689401",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🌀┃qᴜᴀʀᴋ-ᴇᴠᴇɴᴛꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 12,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒",
+      "type": 4,
+      "parentId": null,
+      "position": 8,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒voice x2",
+      "type": 2,
+      "parentId": "1469916565720797188",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒banner﹒𑂅",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891975",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": ".",
+      "type": 4,
+      "parentId": null,
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒",
+      "type": 4,
+      "parentId": null,
+      "position": 6,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒𝙶irls﹒𑂅",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891975",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "introduction",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019846",
+      "position": 1,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "security-alerts",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 4,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "🎙️┃ᴠᴏɪᴄᴇ-ʟᴏɢꜱ",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916566089891980",
+      "position": 8,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "Controversies!",
+      "type": 2,
+      "parentId": "1469916565905473601",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "@",
+      "type": 4,
+      "parentId": null,
+      "position": 4,
+      "permissionOverwrites": []
+    },
+    {
+      "name": ". Trio",
+      "type": 2,
+      "parentId": "1469916565720797193",
+      "position": 2,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "𐙚﹒discord.gg/Ronin180Hz",
+      "type": 2,
+      "parentId": "1469916565502689398",
+      "position": 0,
+      "permissionOverwrites": []
+    },
+    {
+      "name": "﹒threads",
+      "type": 0,
+      "topic": null,
+      "parentId": "1469916565356019850",
+      "position": 2,
+      "permissionOverwrites": []
+    }
+  ]
+}
