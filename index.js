@@ -185,7 +185,7 @@ async function updateDashboard(client) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("ready", () => {
+client.once("clientready", () => {
   console.log(`✅ ${client.user.tag} online and fully controlled`);
 
   // Update Dashboard on Boot (Commanded off by USER)
