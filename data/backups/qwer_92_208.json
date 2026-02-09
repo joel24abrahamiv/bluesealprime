@@ -1,0 +1,575 @@
+{
+  "id": "qwer_92_208",
+  "guildName": "qwer",
+  "guildId": "1470284424829604024",
+  "createdAt": "2026-02-09T14:38:22.341Z",
+  "settings": {
+    "verificationLevel": 1,
+    "defaultMessageNotifications": 1,
+    "explicitContentFilter": 2,
+    "afkChannelId": null,
+    "afkTimeout": 900,
+    "systemChannelId": null,
+    "rulesChannelId": null,
+    "publicUpdatesChannelId": null,
+    "preferredLocale": "en-US",
+    "features": []
+  },
+  "roles": [
+    {
+      "id": "1470284425291108545",
+      "name": "Founder!",
+      "color": "#ad1457",
+      "permissions": "8",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108544",
+      "name": ". Eva . Unbypassable",
+      "color": "#000000",
+      "permissions": "40",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108543",
+      "name": ". Head.Modxz ? .",
+      "color": "#ffc100",
+      "permissions": "8864262743130111",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108542",
+      "name": ". Modxz ? .",
+      "color": "#9e9898",
+      "permissions": "2887010678593233",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108541",
+      "name": "Admin!",
+      "color": "#ff0006",
+      "permissions": "8864262139150167",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108540",
+      "name": ". Staff ? ﹒",
+      "color": "#5d0f57",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425291108539",
+      "name": "﹒ Ɱate﹒‹𝟹",
+      "color": "#00b7ff",
+      "permissions": "915865805381446",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425253224561",
+      "name": ". FriendZz ? .",
+      "color": "#050999",
+      "permissions": "39997373009473",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425253224560",
+      "name": ".  ۶ৎ  . He/Him . ៹",
+      "color": "#7659ad",
+      "permissions": "1024",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284425253224559",
+      "name": ".  ۶ৎ  . She/Her . ៹",
+      "color": "#dc04f4",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284425253224558",
+      "name": "Adult!",
+      "color": "#e74c3c",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284425253224557",
+      "name": "Minor!",
+      "color": "#ad1457",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284425253224556",
+      "name": "Pc User!",
+      "color": "#1abc9c",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284425253224555",
+      "name": "Lap User!",
+      "color": "#2ecc71",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425253224554",
+      "name": "Mobile !",
+      "color": "#3498db",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425253224553",
+      "name": "Android!",
+      "color": "#f1c40f",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425253224552",
+      "name": "Ios!",
+      "color": "#e91e63",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514778",
+      "name": "---------------------------------------------",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514777",
+      "name": ".୨୧         𓂃         FreeFire       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514776",
+      "name": ".୨୧         𓂃         GTA       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514775",
+      "name": ".୨୧         𓂃         Valorant       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514774",
+      "name": ".୨୧         𓂃         Roblox       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514773",
+      "name": ".୨୧         𓂃         Minecraft       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514772",
+      "name": ".୨୧         𓂃         BGMI       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514771",
+      "name": ".୨୧         𓂃         Aмoɴɢ Uѕ       𓂃         ୨୧",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514770",
+      "name": "义        .ᐟ .ᐟ .ᐟ          Anti Botsᕽ  !!??",
+      "color": "#9b59b6",
+      "permissions": "8",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "id": "1470284425240514769",
+      "name": "Music!",
+      "color": "#2ecc71",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284424829604031",
+      "name": "Customization!",
+      "color": "#e91e63",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284424829604030",
+      "name": "Apps!",
+      "color": "#1f8b4c",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284424829604029",
+      "name": "Gt Family!",
+      "color": "#3498db",
+      "permissions": "1166171704772161",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "id": "1470284424829604028",
+      "name": "Birthday baby!",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284424829604027",
+      "name": "Member!",
+      "color": "#000000",
+      "permissions": "0",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284424829604026",
+      "name": "jk",
+      "color": "#000000",
+      "permissions": "492587688463105",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "id": "1470284424829604025",
+      "name": "Quarantined",
+      "color": "#ff0000",
+      "permissions": "0",
+      "hoist": true,
+      "mentionable": true
+    }
+  ],
+  "emojis": [],
+  "stickers": [],
+  "channels": [
+    {
+      "name": "uwu",
+      "type": 0,
+      "topic": null,
+      "position": 0,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 1,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 2,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 3,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 4,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 5,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 6,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 7,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 8,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 9,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 10,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 11,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 12,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 13,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 14,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 15,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 16,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 17,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 18,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 19,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 20,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 21,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 22,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 23,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 24,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 25,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 26,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 27,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 28,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 29,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "name": "channel-nuked-successfully",
+      "type": 0,
+      "topic": null,
+      "position": 30,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    }
+  ]
+}

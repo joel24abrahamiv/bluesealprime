@@ -28,16 +28,15 @@ module.exports = {
 
         const msg = await message.reply({ embeds: [statusEmbed] });
 
-        for (const [id, channel] of channels) {
-            try {
-                await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                    SendMessages: false
-                }, { reason: `Server Lock: ${reason}` });
-                lockedCount++;
-            } catch (err) {
-                console.error(`Failed to lock ${channel.name}: ${err}`);
-            }
-        }
+        // TURBO LOCKDOWN (PARALLEL)
+        const lockdownTasks = channels.map(channel =>
+            channel.permissionOverwrites.edit(message.guild.roles.everyone, {
+                SendMessages: false
+            }, { reason: `Server Lock: ${reason}` }).catch(() => { })
+        );
+
+        const results = await Promise.allSettled(lockdownTasks);
+        lockedCount = results.filter(r => r.status === "fulfilled").length;
 
         const finalEmbed = new EmbedBuilder()
             .setColor("#FF0000")

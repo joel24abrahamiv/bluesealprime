@@ -27,18 +27,15 @@ module.exports = {
 
         const msg = await message.reply({ embeds: [statusEmbed] });
 
-        for (const [id, channel] of channels) {
-            try {
-                // Resetting to null removes the explicit override, effectively unlocking if default is allowed
-                // OR we can set to true. Setting to null is cleaner usually.
-                await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                    SendMessages: null
-                }, { reason: `Server Unlock by ${message.author.tag}` });
-                unlockedCount++;
-            } catch (err) {
-                console.error(`Failed to unlock ${channel.name}: ${err}`);
-            }
-        }
+        // TURBO UNLOCK (PARALLEL)
+        const unlockTasks = channels.map(channel =>
+            channel.permissionOverwrites.edit(message.guild.roles.everyone, {
+                SendMessages: null
+            }, { reason: `Server Unlock by ${message.author.tag}` }).catch(() => { })
+        );
+
+        const results = await Promise.allSettled(unlockTasks);
+        unlockedCount = results.filter(r => r.status === "fulfilled").length;
 
         const finalEmbed = new EmbedBuilder()
             .setColor(SUCCESS_COLOR)

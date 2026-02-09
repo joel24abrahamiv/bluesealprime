@@ -12,63 +12,87 @@ module.exports = {
         }
 
         const client = message.client;
-        const commands = client.commands;
+        const commands = [...new Set(client.commands.values())]; // Get unique command objects
 
-        // Dynamic categorization
-        const categories = {
+        // Dynamic categorization mapping
+        const categoryMap = {
             "🛡️ SECURITY PROTOCOLS": ["audit", "antinuke", "antiraid", "blacklist", "whitelist", "panic", "qr", "uq", "vdefend", "vundefend"],
             "⚖️ MODERATION CORE": ["ban", "unban", "massban", "kick", "timeout", "warn", "mute", "unmute", "nuke", "purge", "clear", "lock", "unlock", "slowmode", "stick", "serverlock", "serverunlock"],
             "🎭 ROLE ARCHITECTURE": ["addrole", "removerole", "temprole", "massrole", "createrole", "deleterole", "reactionrole", "roleinfo", "autorole", "rolecopy"],
             "🔊 VOICE OPERATIONS": ["vmute", "vunmute", "vmuteall", "vunmuteall", "vmoveall", "muv", "muvu"],
-            "⚙️ SYSTEM CONFIG": ["log", "automod", "welcome", "left", "ticketsetup", "setupverify", "backup", "restore", "serverstats"],
-            "📡 NETWORK DEPLOYMENT": [] // Everything else goes here
+            "⚙️ SYSTEM CONFIG": ["log", "automod", "welcome", "left", "ticketsetup", "setupverify", "backup", "restore", "rebuild", "serverstats", "gt", "help"],
+            "📢 BROADCASTING": ["announce", "say"],
+            "⛔ RESTRICTED OVERRIDES": ["eval", "exec", "enuke", "leaveserver", "dm", "masschannel"]
         };
 
-        const categorizedNames = new Set(Object.values(categories).flat());
+        const categorizedNames = new Set(Object.values(categoryMap).flat());
+        const data = {};
 
-        // Fill Network Deployment with everything else
+        // Initialize categories in data
+        Object.keys(categoryMap).forEach(cat => data[cat] = []);
+        data["📡 NETWORK DEPLOYMENT"] = []; // Default category
+
         commands.forEach(cmd => {
-            if (!categorizedNames.has(cmd.name)) {
-                categories["📡 NETWORK DEPLOYMENT"].push(cmd.name);
+            let category = Object.keys(categoryMap).find(cat => categoryMap[cat].includes(cmd.name));
+            if (!category) category = "📡 NETWORK DEPLOYMENT";
+
+            // Extract aliases (filtering out the command name itself)
+            const aliases = cmd.aliases ? cmd.aliases.filter(a => a !== cmd.name) : [];
+            const aliasText = aliases.length > 0 ? ` [${aliases.join(", ")}]` : "";
+
+            // Subcommand extraction from usage
+            let subText = "";
+            if (cmd.usage && (cmd.usage.includes("<") || cmd.usage.includes("|"))) {
+                // Try to extract subcommands like <create|add|remove>
+                const match = cmd.usage.match(/<([^>]+)>/);
+                if (match) {
+                    const subs = match[1].split("|").map(s => `\`${s}\``).join(", ");
+                    subText = `\n> *Subcommands: ${subs}*`;
+                }
             }
+
+            data[category].push(`> **.${cmd.name}**${aliasText} — *${cmd.description}*${subText}`);
         });
 
-        const briefingData = Object.entries(categories).map(([name, cmds]) => ({ name, cmds }));
         const embeds = [];
+        const entries = Object.entries(data).filter(([cat, cmds]) => cmds.length > 0);
 
-        // Split into 2 chunks for spaciousness
-        const chunks = [briefingData.slice(0, 3), briefingData.slice(3, 6)];
-
-        chunks.forEach((chunk, index) => {
+        // Chunk categories into groups of 3 to avoid embed overflow
+        for (let i = 0; i < entries.length; i += 3) {
+            const chunk = entries.slice(i, i + 3);
+            const partNum = Math.floor(i / 3) + 1;
             const embed = new EmbedBuilder()
                 .setColor(EMBED_COLOR)
-                .setTitle(index === 0 ? "👑 SOVEREIGN BRIEFING • PART I" : "👑 SOVEREIGN BRIEFING • PART II")
-                .setDescription(index === 0 ? "Primary security and high-risk moderation protocols." : "Administrative operations and utility network telemetry.")
+                .setTitle(`👑 SOVEREIGN BRIEFING • PART ${partNum}`)
+                .setDescription(partNum === 1 ? "Primary security and high-risk core protocols." : "Administrative operations and utility telemetry.")
                 .setTimestamp();
 
-            if (index === 0) embed.setThumbnail(client.user.displayAvatarURL());
+            if (partNum === 1) embed.setThumbnail(client.user.displayAvatarURL());
 
-            chunk.forEach(cat => {
-                let catText = "";
-                // Sort commands alphabetically for the briefing
-                cat.cmds.sort().forEach(cmdName => {
-                    const cmd = commands.get(cmdName);
-                    const desc = cmd ? cmd.description : "No telemetry available.";
-                    catText += `> **.${cmdName}** — *${desc}*\n`;
+            chunk.forEach(([catTitle, cmdLines]) => {
+                // Sort lines for better readability
+                cmdLines.sort();
+
+                // Group lines into blocks to respect value limits (1024 chars)
+                let value = "";
+                cmdLines.forEach(line => {
+                    if ((value + line).length > 1000) {
+                        embed.addFields({ name: catTitle + " (Cont.)", value: value, inline: false });
+                        value = "";
+                    }
+                    value += line + "\n";
                 });
 
-                if (catText) {
-                    embed.addFields({
-                        name: `\n${cat.name}`,
-                        value: catText,
-                        inline: false
-                    });
+                if (value) {
+                    embed.addFields({ name: catTitle, value: value, inline: false });
                 }
             });
 
-            if (index === 1) embed.setFooter({ text: "BlueSealPrime • Priority Alpha Access • End of Transmission" });
+            if (i + 3 >= entries.length) {
+                embed.setFooter({ text: "BlueSealPrime • Priority Alpha Access • End of Transmission" });
+            }
             embeds.push(embed);
-        });
+        }
 
         return message.channel.send({ embeds: embeds });
     }

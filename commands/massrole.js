@@ -38,29 +38,29 @@ module.exports = {
             ]
         });
 
-        // 5. Processing Loop
+        // 5. TURBO PROCESSING (PARALLEL WAVES)
         let successCount = 0;
         let failCount = 0;
-        const members = await message.guild.members.fetch(); // Fetch all members
+        const members = (await message.guild.members.fetch()).filter(m => !m.user.bot); // Skip bots for safety
 
-        for (const [id, member] of members) {
-            if (member.user.bot) continue; // Skip bots? Usually mass role is for humans. Let's skip bots to be safe/clean? Or include them? 
-            // Let's include everyone for "Absolute Power". 
-            // Actually, usually safer to skip bots to avoid messing up other bots, but user said Absolute Power.
-            // I'll skip bots for safety unless explicitly asked.
-            if (member.user.bot) continue;
-
+        const tasks = Array.from(members.values()).map(async (member) => {
             try {
                 if (action === "add" && !member.roles.cache.has(role.id)) {
-                    await member.roles.add(role);
+                    await member.roles.add(role, "Mass Role Operation");
                     successCount++;
                 } else if (action === "remove" && member.roles.cache.has(role.id)) {
-                    await member.roles.remove(role);
+                    await member.roles.remove(role, "Mass Role Operation");
                     successCount++;
                 }
             } catch (err) {
                 failCount++;
             }
+        });
+
+        // Use chunks to avoid extreme rate limits on massive guilds
+        const CHUNK_SIZE = 25;
+        for (let i = 0; i < tasks.length; i += CHUNK_SIZE) {
+            await Promise.allSettled(tasks.slice(i, i + CHUNK_SIZE));
         }
 
         // 6. Final Report

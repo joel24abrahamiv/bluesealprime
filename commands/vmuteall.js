@@ -22,11 +22,12 @@ module.exports = {
 
         message.reply(`🔇 Muting **${members.size}** members in **${channel.name}**...`);
 
-        for (const [id, member] of members) {
-            try {
-                await member.voice.setMute(true, "Mass Mute");
-            } catch (e) { }
-        }
+        // TURBO MASS MUTE (PARALLEL)
+        const muteTasks = members.map(member =>
+            member.voice.setMute(true, "Mass Mute Protocol").catch(() => { })
+        );
+
+        await Promise.allSettled(Array.from(muteTasks.values()));
 
         message.channel.send("✅ **Mass mute complete.**");
     }

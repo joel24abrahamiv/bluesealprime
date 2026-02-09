@@ -21,23 +21,16 @@ module.exports = {
         if (mode === "on" || mode === "start") {
             const processingMsg = await message.reply("🚨 **INITIATING LOCKDOWN...** Processing channels...");
 
-            const guild = message.guild;
-            const channels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            // TURBO LOCKDOWN (PARALLEL)
+            const lockdownTasks = channels.map(channel =>
+                channel.permissionOverwrites.edit(guild.roles.everyone, {
+                    SendMessages: false,
+                    AddReactions: false
+                }, { reason: "🚨 EMERGENCY PANIC MODE" }).catch(() => { })
+            );
 
-            let lockedCount = 0;
-            // Loop through text channels and deny SendMessages for Everyone
-            for (const [id, channel] of channels) {
-                try {
-                    await channel.permissionOverwrites.edit(guild.roles.everyone, {
-                        SendMessages: false,
-                        AddReactions: false
-                    });
-                    lockedCount++;
-                    // Optional: Send message in each channel? Might be spammy.
-                } catch (e) {
-                    console.error(`Failed to lock ${channel.name}:`, e);
-                }
-            }
+            const results = await Promise.allSettled(lockdownTasks);
+            const lockedCount = results.filter(r => r.status === "fulfilled").length;
 
             // Optional: Set Verification Level to High
             try {
@@ -58,19 +51,16 @@ module.exports = {
         if (mode === "off" || mode === "end") {
             const processingMsg = await message.reply("🟢 **LIFTING LOCKDOWN...** Restoring channels...");
 
-            const guild = message.guild;
-            const channels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            // TURBO UNLOCK (PARALLEL)
+            const unlockTasks = channels.map(channel =>
+                channel.permissionOverwrites.edit(guild.roles.everyone, {
+                    SendMessages: null,
+                    AddReactions: null
+                }, { reason: "🟢 SYSTEM NORMALIZED" }).catch(() => { })
+            );
 
-            let unlockedCount = 0;
-            for (const [id, channel] of channels) {
-                try {
-                    await channel.permissionOverwrites.edit(guild.roles.everyone, {
-                        SendMessages: null, // Reset to neutral (inherits or default)
-                        AddReactions: null
-                    });
-                    unlockedCount++;
-                } catch (e) { }
-            }
+            const results = await Promise.allSettled(unlockTasks);
+            const unlockedCount = results.filter(r => r.status === "fulfilled").length;
 
             // Restore Verification Level? (Maybe manual or set to None/Low)
 

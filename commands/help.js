@@ -6,49 +6,73 @@ module.exports = {
   description: "Shows premium interactive help with a spacious blue theme",
   aliases: ["h"],
 
-  async execute(message) {
+  async execute(message, args, fromMention = false) {
     const totalCommands = message.client.commands.size;
     const clientUser = message.client.user;
+    const { BOT_OWNER_ID } = require("../config");
+
+    // 1. RICH DASHBOARD (For !help command)
+    const richHomeEmbed = new EmbedBuilder()
+      .setColor("#0099FF") // Blue Theme
+      .setTitle("🛡️ BlueSealPrime Information Panel")
+      .setAuthor({ name: "BlueSeal | Armed", iconURL: clientUser.displayAvatarURL() })
+      .setThumbnail(clientUser.displayAvatarURL({ dynamic: true, size: 512 }))
+      .setDescription(
+        `\`\`\`yml\n` +
+        `Time: ${new Date().toLocaleTimeString()}\n` +
+        `Executed by: @${message.author.username}\n` +
+        `\`\`\`\n` +
+        `## **BlueSealPrime**\n` +
+        `*Welcome to BlueSealPrime NextGen. Antinuke. Automods. Security Systems!*\n\n` +
+        `🔵 **Total Commands:** ${totalCommands}+\n` +
+        `🛡️ **Changelog:** 2.0.0 #BlueSealPrime\n` +
+        `🈯 **FrameWork:** Discord.js @Latest\n` +
+        `🛠️ **Developed And Maintained by** <@${BOT_OWNER_ID}>\n\n` +
+
+        `### 🔵 **How To Use BlueSealPrime !!**\n` +
+        `> Click On The Drop Down Selection Menu For Instant Access Of Available Commands Based On Their Categories\n` +
+        `> To Know More About Features Navigate Using Next. Previous Buttons\n` +
+        `> Click Stop Close and Exit Help Menu !!\n\n` +
+
+        `### 🔵 **Features of BlueSealPrime !!**\n` +
+        `> **Advanced Antinuke And Unbypassable Security Systems**\n` +
+        `> **Automods With Intelligent Quarantine Systems Making The Server More Secure**\n` +
+        `> **Server Maintenance Covering everything For your server AutoMods Antinuke Role Management.**\n` +
+        `> **NextGen Server Moderations by BlueSealPrime For your server**`
+      )
+      .setFooter({ text: "Select a category from the dropdown to get started!", iconURL: message.author.displayAvatarURL() })
+      .setTimestamp();
+
+    // 2. SIMPLE GUIDE (For @Bot Mention)
+    const simpleGuideEmbed = new EmbedBuilder()
+      .setColor("#0099FF") // Blue Theme
+      .setTitle("🛡️ BlueSealPrime Guide")
+      .setAuthor({ name: "BlueSealPrime", iconURL: clientUser.displayAvatarURL() })
+      .setThumbnail(clientUser.displayAvatarURL({ dynamic: true, size: 512 }))
+      .setDescription(
+        `### **🛡️ BlueSealPrime**\n` +
+        `The ultimate solution for discord server security. Protect your community with advanced Anti-Nuke systems, automated moderation filters, and comprehensive management tools.\n\n` +
+        `**Developed by <@${BOT_OWNER_ID}> to ensure your server remains safe and organized.**\n\n` +
+        `**Select a module below to view details:**\n` +
+        `· 🛡️ **Anti Nuke & Security**\n` +
+        `· 🔨 **AutoMods & Filters**\n` +
+        `· 🔊 **Temp Voice Channels**\n` +
+        `· 🎭 **Role Management**\n` +
+        `· 🎙️ **Voice Management**\n` +
+        `· 🎫 **Ticket System**\n` +
+        `· 👑 **Developer Info**`
+      )
+      .setFooter({ text: `Requested by ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
+      .setTimestamp();
 
     // Command Categories Data
     const categories = [
       {
-        label: "Home Page",
+        label: "BlueSealPrime Home",
         value: "home",
-        emoji: "🟦",
-        description: "Return to the main dashboard",
-        embed: new EmbedBuilder()
-          .setColor(EMBED_COLOR)
-          .setAuthor({ name: "BLUE SEAL PRIME • SECURITY TERMINAL", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `\`\`\`fix\n` +
-            `[ SYSTEM INITIALIZATION ]\n` +
-            `> v2.0.0 Global Protocol Loaded\n` +
-            `> Security Layers: ACTIVE\n` +
-            `> Anti-Nuke Status: PROTECTED\n` +
-            `\`\`\`\n\n\n` +
-            `# 🟦 **BLUE SEAL PRIME NextGen**\n\n` +
-            `> **Advanced Antinuke • Automods • Security • Systems**\n\n\n` +
-            `🔹 **STATUS DIAGNOSTICS**\n` +
-            `\`\`\`yaml\n` +
-            `Commands: ${totalCommands}+\n` +
-            `Runtime: Discord.js @Latest\n` +
-            `\`\`\`\n` +
-            `> **Maintenance:** <@${require("../config").BOT_OWNER_ID}>\n\n` +
-            `🔹 **OPERATIONAL GUIDE**\n` +
-            `> 💠 *Select a category from the dropdown menu to access specific command modules.*\n\n\n` +
-            `> 💠 *Navigate through features using the interaction navigation buttons below.*\n\n\n` +
-            `> 💠 *The session will automatically hibernate after 5 minutes of inactivity.*\n\n\n` +
-            `✨ **PREMIUM INFRASTRUCTURE**\n` +
-            `🛡️ *Custom-built Antinuke & Security layers.*\n\n` +
-            `🛡️ *Intelligent Auto-Mod with quarantine capabilities.*\n\n` +
-            `🛡️ *Full scale server management: Roles, Tickets, and Logs.*\n\n\n` +
-            `**Maintenance Contact:** <@${require("../config").BOT_OWNER_ID}>`
-          )
-          .setThumbnail(clientUser.displayAvatarURL({ dynamic: true, size: 512 }))
-          .setImage("https://media.discordapp.net/attachments/1336968940801986603/1337083074092433438/standard_1.gif")
-          .setFooter({ text: `BLUE SEAL PRIME • GLOBAL SECURITY PROTOCOLS • Requested by ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
-          .setTimestamp()
+        emoji: "🏠",
+        description: "Return to Home Page",
+        embed: fromMention ? simpleGuideEmbed : richHomeEmbed
       },
       {
         label: "Moderation Module",
@@ -68,17 +92,21 @@ module.exports = {
             `> *Apply a temporary communication restriction.*\n\n\n` +
             `> 🔹 **!unban <userID>**\n` +
             `> *Restore access for a previously banned identifier.*\n\n\n` +
+            `> 🔹 **!warn <user> [reason]**\n` +
+            `> *Issue an official violation warning.*\n\n\n` +
+
             `### 📺 **[ CHANNEL_INTEGRITY_PROTOCOLS ]**\n\n` +
             `> 🔹 **!lock [reason]**\n` +
             `> *Restrict all message flow in the current sector.*\n\n\n` +
             `> 🔹 **!unlock**\n` +
             `> *Restore standard communication permissions.*\n\n\n` +
-            `> 🔹 **!purge <amount>**\n` +
+            `> 🔹 **!purge <amount>** \`[clear]\`\n` +
             `> *Bulk sanitize up to 100 recent transmissions.*\n\n\n` +
-            `> 🔹 **!stick <msg>**\n` +
+            `> 🔹 **!slowmode <time>**\n` +
+            `> *Set channel message cooldown.*\n\n\n` +
+            `> 🔹 **!stick <msg>** \`[sticky, stickymsg]\`\n` +
             `> *📌 Pin a message to the bottom of the chat.*`
           )
-
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "PROTOCOL STATUS: AUTHORIZED • MODULE_BETA_INIT" })
       },
@@ -92,8 +120,9 @@ module.exports = {
           .setAuthor({ name: "💎 ROLE DYNAMICS [ BETA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
             `### 📊 **[ ANALYTICS_STREAM ]**\n\n` +
-            `> 🔹 **!roleinfo <role>**\n` +
+            `> 🔹 **!roleinfo <role>** \`[rinfo, role]\`\n` +
             `> *Retrieve detailed data metrics for a specific role.*\n\n\n` +
+
             `### 🔄 **[ DELEGATION_STREAM ]**\n\n` +
             `> 🔹 **!addrole <user> <role>**\n` +
             `> *Assign a specific server identity to a member.*\n\n\n` +
@@ -101,13 +130,19 @@ module.exports = {
             `> *Strip a member of a specific role identity.*\n\n\n` +
             `> 🔹 **!temprole <user> <role> <time>**\n` +
             `> *Grant time-limited role access (e.g., 1d, 1w).*\n\n\n` +
+            `> 🔹 **!autorole <role>**\n` +
+            `> *Configure automatic role assignment on join.*\n\n\n` +
+
             `### ⚙️ **[ REGISTRY_MODIFICATION ]**\n\n` +
             `> 🔹 **!createrole <name> [hex]**\n` +
             `> *Initialize a brand new role with custom parameters.*\n\n\n` +
             `> 🔹 **!deleterole <role>**\n` +
             `> *Decommission an existing role from the registry.*\n\n\n` +
+            `> 🔹 **!rolecopy <role>**\n` +
+            `> *Duplicate an existing role structure.*\n\n\n` +
+
             `### 🎭 **[ REACTION_ROLES ]**\n\n` +
-            `> 🔹 **!reactionrole create <#channel> <title>**\n` +
+            `> 🔹 **!reactionrole create <#channel> <title>** \`[rr]\`\n` +
             `> *Create a self-assign reaction role panel.*\n\n\n` +
             `> 🔹 **!reactionrole add <msgID> <emoji> <role>**\n` +
             `> *Add a role to an existing panel.*`
@@ -129,8 +164,9 @@ module.exports = {
             `> *Bot transmission through standard or embed format.*\n\n\n` +
             `> 🔹 **!announce <content>**\n` +
             `> *Official system broadcast for high-importance updates.*\n\n\n` +
+
             `### 💾 **[ DATA_INGESTION_LINK ]**\n\n` +
-            `> 🔹 **!ping**\n` +
+            `> 🔹 **!ping** \`[p, latency]\`\n` +
             `> *Check API and host connection latency.*\n\n\n` +
             `> 🔹 **!serverinfo**\n` +
             `> *Fetch comprehensive guild analytics pathing.*\n\n\n` +
@@ -138,11 +174,10 @@ module.exports = {
             `> *Detailed security scan of a member profile.*\n\n\n` +
             `> 🔹 **!avatar [@user]**\n` +
             `> *Retrieve high-definition visualization of a user profile.*\n\n\n` +
-            `> 🔹 **!poll <Question> | <Opt1> | <Opt2>**\n` +
+            `> 🔹 **!poll <Question> | <Opt1> | <Opt2>** \`[createpoll]\`\n` +
             `> *Create an interactive poll.*\n\n\n` +
-            `> 🔹 **!suggest <idea>**\n` +
+            `> 🔹 **!suggest <idea>** \`[suggestion, idea]\`\n` +
             `> *Submit a suggestion to the server.*`
-
           )
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "PROTOCOL STATUS: AUTHORIZED • MODULE_DELTA_INIT" })
@@ -159,20 +194,49 @@ module.exports = {
             `### ⚙️ **[ AUTOMATION_SETUP_UNIT ]**\n\n` +
             `> 🔹 **!ticketsetup**\n` +
             `> *Initialize the secure support ticketing interface.*\n\n\n` +
-            `> 🔹 **!log <type> <channel>**\n` +
+            `> 🔹 **!log <type> <channel>** \`[logs, logging, logset]\`\n` +
             `> *Configure the multi-stream event logging system.*\n\n\n` +
-            `> 🔹 **!automod <link|spam>**\n` +
+            `> 🔹 **!automod <link|spam>** \`[am, protection]\`\n` +
             `> *Toggle Anti-Link or Anti-Spam protection.*\n\n\n` +
             `> 🔹 **!welcome <channel>**\n` +
             `> *Configure the premium entry greeting interface.*\n\n\n` +
-            `> 🔹 **!left <channel>**\n` +
+            `> 🔹 **!left <channel>** \`[lv, leave]\`\n` +
             `> *Configure the premium departure notification system.*\n\n\n` +
             `> 🔹 **!setupverify @role #channel**\n` +
-            `> *Initialize verification panel.*`
+            `> *Initialize verification panel.*\n\n\n` +
 
+            `### 🛡️ **[ HIGH_LEVEL_DEFENSE ]**\n\n` +
+            `> 🔹 **!whitelist <user>** \`[wl, wllist]\`\n` +
+            `> *Authorize trusted personnel (Bypass Limits).*\n\n\n` +
+            `> 🔹 **!blacklist <user>** \`[bl]\`\n` +
+            `> *Permanently revoke access to bot systems.*\n\n\n` +
+            `> 🔹 **!antiraid**\n` +
+            `> *Emergency server lockdown protocol.*`
           )
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "PROTOCOL STATUS: AUTHORIZED • SECURE_PRIME_READY" })
+      },
+      {
+        label: "Developer Info",
+        value: "devinfo",
+        emoji: "👑",
+        description: "View Bot Credits & Developer Data",
+        embed: new EmbedBuilder()
+          .setColor("#FFD700") // Gold
+          .setTitle("👑 DEVELOPER INFORMATION")
+          .setThumbnail(clientUser.displayAvatarURL())
+          .setDescription(
+            `### **[ CORE_DEVELOPER ]**\n` +
+            `> 👤 **Lead Developer:** <@${require("../config").BOT_OWNER_ID}>\n` +
+            `> 🛠️ **Language:** \`Node.js / Discord.js @Latest\`\n` +
+            `> 🧩 **Framework:** \`BlueSeal Architecture v2.0\`\n\n` +
+            `### **[ SYSTEM_STATUS ]**\n` +
+            `> 🚀 **Host:** \`Hyper-Performance Cloud\`\n` +
+            `> 🛡️ **Encryption:** \`AES-256 Global Standard\`\n` +
+            `> ⚡ **Latency:** \`${message.client.ws.ping}ms\`\n\n` +
+            `**Developed to ensure your server remains safe, organized, and superior.**`
+          )
+          .setFooter({ text: "BlueSealPrime • Priority Alpha Origin" })
       }
     ];
 
@@ -181,29 +245,6 @@ module.exports = {
     const isAdmin = message.member.permissions.has(require("discord.js").PermissionsBitField.Flags.Administrator);
 
     if (isBotOwner || isAdmin) {
-      categories.push({
-        label: "🚨 Anti-Raid [ADMIN]",
-        value: "antiraid",
-        emoji: "🚨",
-        description: "Advanced Raid Protection (Admin Only)",
-        embed: new EmbedBuilder()
-          .setColor("#FF0000")
-          .setAuthor({ name: "🚨 ANTI-RAID PROTECTION [ CLASSIFIED ]", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `### 🛡️ **[ RAID_DEFENSE_PROTOCOL ]**\n\n` +
-            `> 🔹 **!antinuke on**\n` +
-            `> *Activate automatic anti-nuke protection.*\n\n\n` +
-            `> 🔹 **!antinuke status**\n` +
-            `> *View current protection configuration.*\n\n\n` +
-            `⚠️ **CLASSIFIED SECURITY PROTOCOL**\n` +
-            `> *Actions: Bans for mass deletions. Kicks+DM for channel deletion.*\n\n` +
-            `> *Administrators and whitelist retain access.*`
-
-          )
-          .setThumbnail(clientUser.displayAvatarURL())
-          .setFooter({ text: "⚠️ ADMINISTRATOR ACCESS REQUIRED • CLASSIFIED" })
-      });
-
       // VOICE MANAGEMENT
       categories.push({
         label: "Voice Management",
@@ -215,15 +256,24 @@ module.exports = {
           .setAuthor({ name: "🔊 VOICE OPERATIONS", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
             `### 🎤 **[ VOICE_CONTROL_UNIT ]**\n\n` +
-            `> 🔹 **!vmute <@user>** • *Server mute user*\n` +
-            `> 🔹 **!vunmute <@user>** • *Server unmute user*\n` +
-            `> 🔹 **!vmuteall** • *Mute everyone in VC*\n` +
-            `> 🔹 **!vunmuteall** • *Unmute everyone in VC*\n` +
-            `> 🔹 **!muv <@user> [channel]** • *Move user to Void/Channel*\n` +
-            `> 🔹 **!muvu <@user>** • *Un-Void/Restore user to original VC*\n` +
-            `> 🔹 **!vmoveall <#channel>** • *Mass move everyone in current VC*\n` +
-            `> 🔹 **!vdefend <@user>** • *Protect user from move/disconnect*\n` +
-            `> 🔹 **!vundefend <@user>** • *Remove movement protection*\n`
+            `> 🔹 **!vmute <@user>**\n` +
+            `> *Server mute user in Voice Channel.*\n\n\n` +
+            `> 🔹 **!vunmute <@user>**\n` +
+            `> *Server unmute user in Voice Channel.*\n\n\n` +
+            `> 🔹 **!vmuteall**\n` +
+            `> *Mute everyone in your Voice Channel.*\n\n\n` +
+            `> 🔹 **!vunmuteall**\n` +
+            `> *Unmute everyone in your Voice Channel.*\n\n\n` +
+            `> 🔹 **!muv <@user> [channel]**\n` +
+            `> *Move user to Void or specified channel.*\n\n\n` +
+            `> 🔹 **!muvu <@user>**\n` +
+            `> *Un-Void/Restore user to original VC.*\n\n\n` +
+            `> 🔹 **!vmoveall <#channel>** \`[moveall, massmove]\`\n` +
+            `> *Mass move everyone in current VC to another.*\n\n\n` +
+            `> 🔹 **!vdefend <@user>**\n` +
+            `> *Protect user from being moved or disconnected.*\n\n\n` +
+            `> 🔹 **!vundefend <@user>**\n` +
+            `> *Remove movement protection.*`
           )
           .setFooter({ text: "BlueSealPrime • Voice Systems" })
       });
@@ -239,17 +289,20 @@ module.exports = {
           .setAuthor({ name: "☣️ QUARANTINE PROTOCOLS", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
             `### 🛡️ **[ ISOLATION_UNIT ]**\n\n` +
-            `> 🔹 **!qr <@user> [reason]**\n` +
-            `> *Isolate user in Quarantine Zone. Revoke permissions.*\n\n` +
-            `> 🔹 **!uq <@user>**\n` +
-            `> *Release user from quarantine.*\n\n` +
+            `> 🔹 **!qr <@user> [reason]** \`[quarantine]\`\n` +
+            `> *Isolate user in Quarantine Zone. Revoke permissions.*\n\n\n` +
+            `> 🔹 **!uq <@user>** \`[unquarantine]\`\n` +
+            `> *Release user from quarantine.*\n\n\n` +
             `### 🛡️ **[ BASIC_MODERATION ]**\n\n` +
-            `> 🔹 **!warn <@user>** • *Issue official warning*\n` +
-            `> 🔹 **!mute <@user>** • *Timeout/Silence user*\n` +
-            `> 🔹 **!clear <amount>** • *Purge messages*`
+            `> 🔹 **!warn <@user>**\n` +
+            `> *Issue official warning.*\n\n\n` +
+            `> 🔹 **!mute <@user>**\n` +
+            `> *Timeout/Silence user.*`
           )
           .setFooter({ text: "BlueSealPrime • Containment" })
       });
+
+      // LOGGING (Redundant with Security but kept for depth if needed, strictly logging focused)
       categories.push({
         label: "Logging Module",
         value: "logging",
@@ -260,21 +313,34 @@ module.exports = {
           .setAuthor({ name: "📝 LOGGING SYSTEMS [ EPSILON ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
             `### ⚙️ **[ SYSTEM_LOGS ]**\n\n` +
-            `> 🔹 **!log mod <#channel>** • *Moderation Actions*\n` +
-            `> 🔹 **!log message <#channel>** • *Deleted/Edited Msgs*\n` +
-            `> 🔹 **!log member <#channel>** • *Joins/Leaves*\n` +
-            `> 🔹 **!log voice <#channel>** • *Voice Activity*\n` +
-            `> 🔹 **!log role <#channel>** • *Role Updates*\n` +
-            `> 🔹 **!log server <#channel>** • *Server Changes*\n\n` +
+            `> 🔹 **!log mod <#channel>**\n` +
+            `> *Moderation Actions.*\n\n\n` +
+            `> 🔹 **!log message <#channel>**\n` +
+            `> *Deleted/Edited Messages.*\n\n\n` +
+            `> 🔹 **!log member <#channel>**\n` +
+            `> *Joins/Leaves.*\n\n\n` +
+            `> 🔹 **!log voice <#channel>**\n` +
+            `> *Voice Activity.*\n\n\n` +
+            `> 🔹 **!log role <#channel>**\n` +
+            `> *Role Updates.*\n\n\n` +
+            `> 🔹 **!log server <#channel>**\n` +
+            `> *Server Changes.*\n\n\n` +
             `### 🛡️ **[ SECURITY_LOGS ]**\n\n` +
-            `> 🔹 **!log antinuke <#channel>** • *Anti-Nuke Triggers*\n` +
-            `> 🔹 **!log automod <#channel>** • *Auto-Mod Violations*\n` +
-            `> 🔹 **!log whitelist <#channel>** • *Whitelist Changes*\n` +
-            `> 🔹 **!log admin <#channel>** • *Admin Command Usage*\n\n` +
+            `> 🔹 **!log antinuke <#channel>**\n` +
+            `> *Anti-Nuke Triggers.*\n\n\n` +
+            `> 🔹 **!log automod <#channel>**\n` +
+            `> *Auto-Mod Violations.*\n\n\n` +
+            `> 🔹 **!log whitelist <#channel>**\n` +
+            `> *Whitelist Changes.*\n\n\n` +
+            `> 🔹 **!log admin <#channel>**\n` +
+            `> *Admin Command Usage.*\n\n\n` +
             `### 📂 **[ DATA_LOGS ]**\n\n` +
-            `> 🔹 **!log file <#channel>** • *File Uploads*\n` +
-            `> 🔹 **!log ticket <#channel>** • *Ticket Transcripts*\n` +
-            `> 🔹 **!log invite <#channel>** • *Invite Tracking*`
+            `> 🔹 **!log file <#channel>**\n` +
+            `> *File Uploads.*\n\n\n` +
+            `> 🔹 **!log ticket <#channel>**\n` +
+            `> *Ticket Transcripts.*\n\n\n` +
+            `> 🔹 **!log invite <#channel>**\n` +
+            `> *Invite Tracking.*`
           )
           .setFooter({ text: "BlueSealPrime • Comprehensive Logging" })
       });
@@ -284,20 +350,16 @@ module.exports = {
         value: "admin",
         emoji: "⚡",
         description: "Absolute Power & Server Control (Admin Only)",
-
         embed: new EmbedBuilder()
           .setColor("#FFD700") // Gold
           .setAuthor({ name: "⚡ ABSOLUTE POWER CONTROLS [ OMEGA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
             `### 👥 **[ MASS_POPULATION_CONTROL ]**\n\n` +
-            `> 🔹 **!massrole <add|remove> <@role>**\n` +
-            `> *Apply or revoke a role for ALL guild members.*\n\n\n` +
-            `> 🔹 **!massrole <add|remove> <@role>**\n` +
-            `> *Apply or revoke a role for ALL guild members.*\n\n\n` +
-            `### 📊 **[ STATISTICS_INFRASTRUCTURE ]**\n\n` +
-            `> 🔹 **!serverstats <setup|delete>**\n` +
-            `> *Initialize real-time membership counter channels.*`
-
+            `> 🔹 **System Locked:** *Mass operations are hidden for security.*\n\n\n` +
+            `> 🔹 **!serverlock**\n` +
+            `> *Lock the ENTIRE server.*\n\n\n` +
+            `> 🔹 **!serverunlock**\n` +
+            `> *Unlock the ENTIRE server.*`
           )
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "⚠️ RESTRICTED ACCESS • AUTHORIZED PERSONNEL ONLY" })

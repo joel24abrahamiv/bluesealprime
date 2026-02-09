@@ -43,14 +43,12 @@ module.exports = {
         const loadingMsg = await message.reply(`🔄 **Moving ${count} members...**`);
 
         // Move Loop
-        for (const [memberId, member] of fromChannel.members) {
-            try {
-                await member.voice.setChannel(toChannel);
-                moved++;
-            } catch (e) {
-                console.error(`Failed to move ${member.user.tag}:`, e);
-            }
-        }
+        // TURBO MASS MOVE (PARALLEL)
+        const moveTasks = Array.from(fromChannel.members.values()).map(member =>
+            member.voice.setChannel(toChannel, "Mass Move Protocol").then(() => moved++).catch(() => { })
+        );
+
+        await Promise.allSettled(moveTasks);
 
         const embed = new EmbedBuilder()
             .setColor(EMBED_COLOR)

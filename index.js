@@ -18,38 +18,92 @@ const client = new Client({
   ]
 });
 
+// ───── RATE LIMIT MONITOR ─────
+client.rest.on('rateLimited', (info) => {
+  console.log(`⚠️ RATE LIMIT HIT: Global=${info.global} | Limit=${info.limit} | Timeout=${info.timeToReset}ms | Route=${info.route}`);
+});
+
 const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require("@discordjs/voice");
 
 // ───── 24/7 VC FUNCTION ─────
 async function joinVC247(guild) {
+  // ... (existing code) ...
+}
+
+// ───── ANTI-NUKE SYSTEM (CORE) ─────
+const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+const nukeMap = new Map(); // Key: guildId-userId-action, Value: { count, timer }
+
+function checkNuke(guild, executor, action) {
+  if (!executor) return false;
+  if (executor.id === client.user.id) return false;
+  if (executor.id === BOT_OWNER_ID) return false;
+  if (executor.id === guild.ownerId) return false;
+
+  let db = {};
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try { db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
+  }
+  const config = db[guild.id];
+
+  // DEFAULT: ENABLED (If config missing or enabled undefined, treat as true)
+  if (config && config.enabled === false) return false;
+
+  // DEFAULT: ENABLED (If config missing or enabled undefined, treat as true)
+  if (config && config.enabled === false) return false;
+
+  const defaultLimits = { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 };
+  const limits = config?.limits || defaultLimits;
+  const limit = limits[action] || 3;
+  const interval = limits.interval || 10000;
+
+  const key = `${guild.id}-${executor.id}-${action}`;
+  const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
+
+  if (Date.now() - data.startTime > interval) {
+    data.count = 1;
+    data.startTime = Date.now();
+  } else {
+    data.count++;
+  }
+
+  nukeMap.set(key, data);
+
+  if (data.count > limit) {
+    return true;
+  }
+  return false;
+}
+
+async function punishNuker(guild, executor, reason, action = 'ban') {
   try {
-    const channel = guild.channels.cache.find(c => c.type === 2 && c.joinable); // type 2 is GuildVoice
-    if (!channel) return;
-
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: guild.id,
-      adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: false,
-      selfMute: false
-    });
-
-    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+    const member = await guild.members.fetch(executor.id).catch(() => null);
+    if (member) {
+      // DM the user (Roast Style as requested)
       try {
-        await Promise.race([
-          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-        ]);
-        // Reconnected!
-      } catch (error) {
-        connection.destroy();
-        setTimeout(() => joinVC247(guild), 5000); // Retry after 5s
-      }
-    });
+        const dmEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("💀 SYSTEM ANNIHILATION")
+          .setDescription(`**Nice try, Nuker.**\nYou have been **${action === 'ban' ? 'BANNED' : 'KICKED'}** for attempting to destroy **${guild.name}**.\n\n> *\"I am inevitable.\"* - BlueSealPrime`)
+          .setFooter({ text: "Anti-Nuke Defense System" });
+        await member.send({ embeds: [dmEmbed] });
+      } catch (e) { }
 
-    console.log(`📡 Joined voice channel: ${channel.name} in ${guild.name}`);
-  } catch (err) {
-    console.error(`❌ Error joining VC in ${guild.name}:`, err);
+      if (action === 'ban' && member.bannable) {
+        await member.ban({ reason: `[ANTI-NUKE] ${reason}` });
+      } else if (action === 'kick' && member.kickable) {
+        await member.kick(`[ANTI-NUKE] ${reason}`);
+      } else {
+        const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0);
+        if (channel) channel.send(`⚠️ **ANTI-NUKE ALERT:**\nCould not ${action} **${executor.tag}**. Stripping roles instead...`);
+        member.roles.set([]).catch(() => { });
+      }
+
+      const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0);
+      if (channel) channel.send(`🛡️ **ANTI-NUKE TRIGGERED**\n${action === 'ban' ? 'Banned' : 'Kicked'} **${executor.tag}** for ${reason}.`);
+    }
+  } catch (e) {
+    console.error("Anti-Nuke Punish Error:", e);
   }
 }
 
@@ -200,7 +254,47 @@ client.once("clientready", () => {
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 });
 
-client.on("guildCreate", (guild) => updateDashboard(client));
+client.on("guildCreate", (guild) => {
+  updateDashboard(client);
+
+  // 🛡️ AUTO-ENABLE SECURITY ON JOIN
+  const dataDir = path.join(__dirname, "data");
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+  const initConfig = (filePath, defaultData) => {
+    let db = {};
+    if (fs.existsSync(filePath)) {
+      try { db = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch (e) { }
+    }
+    if (!db[guild.id]) {
+      db[guild.id] = defaultData;
+      fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
+    }
+  };
+
+  // Anti-Nuke
+  initConfig(path.join(dataDir, "antinuke.json"), {
+    enabled: true,
+    whitelisted: [],
+    limits: { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 }
+  });
+
+  // Anti-Raid
+  initConfig(path.join(dataDir, "antiraid.json"), {
+    enabled: true,
+    threshold: 5,
+    timeWindow: 10
+  });
+
+  // AutoMod
+  initConfig(path.join(dataDir, "automod.json"), {
+    antiLinks: true,
+    antiSpam: true,
+    antiBadWords: true,
+    antiMassMentions: true,
+    whitelist: []
+  });
+});
 client.on("guildDelete", async (guild) => {
   if (!MONITOR_CHANNEL_ID) return;
   const monitorChannel = await client.channels.fetch(MONITOR_CHANNEL_ID).catch(() => null);
@@ -236,8 +330,11 @@ client.on("messageCreate", async message => {
   const content = message.content.trim();
   if (!content) return;
 
-  // Diagnostics: Log received messages to console (optional debugging)
-  // console.log(`[MSG] ${message.author.tag}: ${content}`);
+  // ───── MENTION TRIGGER: GUIDE ─────
+  if (content === `<@!${client.user.id}>` || content === `<@${client.user.id}>`) {
+    const helpCmd = client.commands.get("help");
+    if (helpCmd) return helpCmd.execute(message);
+  }
 
   const isBotOwner = message.author.id === BOT_OWNER_ID;
   const isServerOwner = message.guild.ownerId === message.author.id;
@@ -253,6 +350,29 @@ client.on("messageCreate", async message => {
       } catch (e) { }
     }
   }
+
+  // ───── CONSOLIDATED WHITELIST CHECK ─────
+  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+  const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
+  let whitelistedUsers = [];
+
+  // Load from antinuke config
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try {
+      const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
+      if (db[message.guild.id]?.whitelisted) whitelistedUsers.push(...db[message.guild.id].whitelisted);
+    } catch (e) { }
+  }
+
+  // Load from separate whitelist file
+  if (fs.existsSync(WHITELIST_DB)) {
+    try {
+      const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
+      if (wl[message.guild.id]) whitelistedUsers.push(...wl[message.guild.id]);
+    } catch (e) { }
+  }
+
+  const isWhitelisted = whitelistedUsers.includes(message.author.id) || isBotOwner || isServerOwner;
   // ───── AUTO-MOD SYSTEM ─────
   const AUTOMOD_DB = path.join(__dirname, "data/automod.json");
 
@@ -287,91 +407,116 @@ client.on("messageCreate", async message => {
   if (fs.existsSync(AUTOMOD_DB)) {
     let amData = {};
     try { amData = JSON.parse(fs.readFileSync(AUTOMOD_DB, "utf8")); } catch (e) { }
-    const settings = amData[message.guild.id];
+    let settings = amData[message.guild.id];
 
-    if (settings && !isBotOwner) {
+    // 🛡️ DEFAULT SECURITY: If no settings exist, assume EVERYTHING IS ON.
+    if (!settings) {
+      settings = {
+        antiLinks: true,
+        antiSpam: true,
+        antiBadWords: true,
+        antiMassMentions: true
+      };
+    }
+
+    if (!isBotOwner && !isServerOwner && !isWhitelisted) { // Apply to everyone except Owners and Whitelisted
+
       // ───── STICKY MESSAGE SYSTEM ─────
       // (Check if channel has sticky message)
       const STICKY_DB = path.join(__dirname, "data/sticky.json");
-      if (fs.existsSync(STICKY_DB) && !message.author.bot) { // Ignor bots to prevent loops
+      if (fs.existsSync(STICKY_DB) && !message.author.bot) {
         try {
           const stickyData = JSON.parse(fs.readFileSync(STICKY_DB, "utf8"));
           const config = stickyData[message.channel.id];
 
           if (config) {
-            // 1. Delete old message if exists
-            if (config.lastId) {
-              await message.channel.messages.delete(config.lastId).catch(() => { });
-            }
-
-            // 2. Send new message
-            const embed = new EmbedBuilder()
-              .setColor("#FFFF00") // Yellow
-              .setTitle("📌 STICKY MESSAGE")
-              .setDescription(config.content)
-              .setFooter({ text: "Please read above." });
-
+            if (config.lastId) await message.channel.messages.delete(config.lastId).catch(() => { });
+            const embed = new EmbedBuilder().setColor("#FFFF00").setTitle("📌 STICKY MESSAGE").setDescription(config.content).setFooter({ text: "Please read above." });
             const sent = await message.channel.send({ embeds: [embed] });
-
-            // 3. Update DB
             config.lastId = sent.id;
             stickyData[message.channel.id] = config;
             fs.writeFileSync(STICKY_DB, JSON.stringify(stickyData, null, 2));
           }
-        } catch (e) {
-          console.error("Sticky Error:", e);
-        }
+        } catch (e) { }
       }
 
-      // 1. Link Protection
+      // 1. Link Protection (Only Discord Links for now, easy to expand)
       if (settings.antiLinks) {
         const linkRegex = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/.+[a-z]/ig;
-        if (linkRegex.test(content) && !isServerOwner) {
-          return handleViolation(message, "Unauthorized Invitations/Links");
-        }
+        if (linkRegex.test(content)) return handleViolation(message, "Unauthorized Invitations/Links");
       }
 
       // 2. Anti-Spam
-      if (settings.antiSpam && !isServerOwner) {
+      if (settings.antiSpam) {
         const userId = message.author.id;
         const now = Date.now();
         const userData = spamMap.get(userId) || { count: 0, lastMsg: now };
 
-        if (now - userData.lastMsg < 2000) { // If message sent within 2 seconds
-          userData.count++;
-        } else {
-          userData.count = 1;
-        }
+        if (now - userData.lastMsg < 2000) userData.count++;
+        else userData.count = 1;
+
         userData.lastMsg = now;
         spamMap.set(userId, userData);
 
-        if (userData.count > 5) { // 5 messages in ~10 seconds
-          spamMap.delete(userId); // Reset
+        if (userData.count > 5) {
+          spamMap.delete(userId);
           return handleViolation(message, "Message Spamming");
         }
       }
 
-      // 3. Bad Words / Profanity (Auto-Quarantine)
-      const BAD_WORDS = [
-        "nigger", "faggot", "chink", "kike", "dyke", "tranny", // Slurs
-        "potta", "thevidiya", "dvd", "ommala", "kuthi", "koothi", "otha", "pool", "poolu", "oka", "okara", "oka poren", "thevidiyaaaa", "thevidiyaa", "thevidiyaaa", "Potta" // Regional/User-added
-      ];
+      // 3. Mass Mentions
+      if (settings.antiMassMentions) {
+        if (message.mentions.users.size >= 5 || message.mentions.roles.size >= 3) {
+          return handleViolation(message, "Mass Mention Spam");
+        }
+      }
 
-      const foundBadWord = BAD_WORDS.find(word => content.toLowerCase().includes(word));
+      // 4. Bad Words / Profanity
+      // 4. Bad Words / Profanity
+      if (settings.antiBadWords) {
+        // 1. Normalize Text (Lowercase, Remove Spaces/Symbols/Zero-width chars)
+        const normalized = content.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, "") // Unicode normalization
+          .replace(/[\W_]+/g, ""); // Strip non-alphanumeric
 
-      if (foundBadWord && !isServerOwner) {
-        message.delete().catch(() => { });
-        // Quarantine
-        const qrCmd = require("./commands/qr.js");
-        await qrCmd.quarantineMember(message.guild, message.member, `Auto-Mod: Profanity Detected (${foundBadWord})`, client.user);
+        const BAD_WORDS = [
+          // Original/Regional
+          "nigger", "faggot", "chink", "kike", "dyke", "tranny",
+          "potta", "thevidiya", "dvd", "ommala", "kuthi", "koothi", "otha", "pool", "poolu", "oka", "okara", "okaporen", "thevidiyaaaa", "thevidiyaa", "thevidiyaaa",
+          "punda", "okalaoli", "oombu",
 
-        const embed = new EmbedBuilder()
-          .setColor("DarkRed")
-          .setTitle("☣️ AUTOMATED QUARANTINE")
-          .setDescription(`${message.author} has been sent to isolation for using prohibited language.`)
-          .setFooter({ text: "BlueSealPrime • Zero Tolerance Policy" });
+          // New Expanded List (Normalized Forms)
+          "fuck", "shit", "bitch", "ass", "damn", "nude", "porn", "sex", "xxx", "onlyfans",
+          "kys", "killyourself", "goddie", "youshoulddie", "ihateyou", "gobacktoyour", "youpeopleare", "allofyouare",
 
-        return message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => { }), 10000));
+          // Anti-Scam / Ads
+          "freenitro", "discordgift", "steamgift", "claimnow", "limitedoffer", "clickhere", "bitly", "tinyurl", "tme", "giveawayended"
+        ];
+
+        const foundBadWord = BAD_WORDS.find(word => normalized.includes(word));
+
+        if (foundBadWord) {
+          message.delete().catch(() => { });
+
+          // 1. Timeout (5 Minutes)
+          try {
+            await message.member.timeout(5 * 60 * 1000, `Auto-Mod: Profanity Detected (${foundBadWord})`);
+          } catch (e) {
+            console.error("Failed to timeout user:", e);
+          }
+
+          // 2. Quarantine
+          const qrCmd = require("./commands/qr.js");
+          await qrCmd.quarantineMember(message.guild, message.member, `Auto-Mod: Profanity Detected (${foundBadWord})`, client.user);
+
+          const embed = new EmbedBuilder()
+            .setColor("DarkRed")
+            .setTitle("☣️ AUTOMATED QUARANTINE")
+            .setDescription(`${message.author} has been sent to isolation for using prohibited language.`)
+            .setFooter({ text: "BlueSealPrime • Zero Tolerance Policy" });
+
+          return message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => { }), 10000));
+        }
       }
     }
 
@@ -419,14 +564,7 @@ client.on("messageCreate", async message => {
 
 
     // 3. WHITELIST ENFORCEMENT (DANGEROUS CMDS)
-    const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
-    let whitelist = {};
-    if (fs.existsSync(WHITELIST_PATH)) {
-      try { whitelist = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8")); } catch (e) { }
-    }
-
-    const guildWhitelist = whitelist[message.guild.id] || [];
-    const isWhitelisted = guildWhitelist.includes(message.author.id) || isBotOwner || message.guild.ownerId === message.author.id;
+    // isWhitelisted is already calculated above
 
     if (command.whitelistOnly && !isWhitelisted) {
       // PUNISHMENT LOGIC
@@ -457,6 +595,86 @@ client.on("messageCreate", async message => {
       }
     }
 
+    // ───── SOVEREIGN SHIELD: ANTI-OWNER PROTECTION ─────
+    const targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
+    if (targetMember && targetMember.id === BOT_OWNER_ID && !isBotOwner) {
+      const dangerousCommands = ["ban", "kick", "timeout", "mute", "qr", "nuke", "enuke", "warn", "muv"];
+      const isDangerous = dangerousCommands.includes(commandName);
+
+      const roasts = {
+        ban: "You really tried to ban a god? I'm the one who wrote the script that allows you to exist here. Banning me is like trying to delete your own OS while using it. Stay humble.",
+        kick: "Ejection attempt failed. I'm the foundation of this server; you're just a temporary occupant. Trying to kick me is a faster way to find the door yourself than any bot command.",
+        timeout: "Silencing the Sovereign? I gave you a voice, and I can take it away. Don't mistake my silence for weakness; it's just the sound of me calculating your ban.",
+        mute: "Silencing the Sovereign? I gave you a voice, and I can take it away. Don't mistake my silence for weakness; it's just the sound of me calculating your ban.",
+        qr: "Trying to isolate the Master of this sector? My reach is absolute. You're trying to lock a door to a house I built. Access Denied.",
+        warn: "A strike against the Creator? I'm the one who decides what's right and wrong here. Your gavel is plastic, mine is forged in the API. Discarded.",
+        muv: "Relocation protocol aborted. You can't move what you can't control. I am the anchor of this server; you are just drifting in my wake.",
+        nuke: "Initiating a purge against the Source? That's not a security breach, it's a death wish. I'd laugh, but I'm too busy blacklisting your identifier.",
+        enuke: "Initiating a purge against the Source? That's not a security breach, it's a death wish. I'd laugh, but I'm too busy blacklisting your identifier.",
+        default: "Access Denied. You're trying to use my own systems against my creator? I'd roast you, but you've already done that by thinking this would work."
+      };
+
+      const roast = roasts[commandName] || roasts.default;
+
+      const shieldEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("🛡️ SOVEREIGN SHIELD: ACCESS DENIED")
+        .setAuthor({ name: "Protocol 0 Violation Detected", iconURL: client.user.displayAvatarURL() })
+        .setDescription(`\`\`\`fix\n${roast}\n\`\`\``)
+        .addFields(
+          { name: "👤 Intruder", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
+          { name: "🎯 Target", value: "BOT_OWNER (IMMUNE)", inline: true },
+          { name: "🛡️ System Response", value: isDangerous ? "⚠️ WARNING & STRIKE LOGGED" : "🚫 ACTION BLOCKED", inline: false }
+        )
+        .setFooter({ text: "BlueSealPrime Sovereign Security • Zero Tolerance" })
+        .setTimestamp();
+
+      if (isDangerous) {
+        // Strike System Escalation
+        const STRIKES_PATH = path.join(__dirname, "data/strikes.json");
+        let strikes = {};
+        if (fs.existsSync(STRIKES_PATH)) {
+          try { strikes = JSON.parse(fs.readFileSync(STRIKES_PATH, "utf8")); } catch (e) { }
+        }
+
+        const userStrikes = (strikes[message.author.id] || 0) + 1;
+        strikes[message.author.id] = userStrikes;
+        fs.writeFileSync(STRIKES_PATH, JSON.stringify(strikes, null, 2));
+
+        if (userStrikes >= 3) {
+          // AUTO-BAN & BLACKLIST
+          const BL_PATH = path.join(__dirname, "data/blacklist.json");
+          let blacklist = [];
+          if (fs.existsSync(BL_PATH)) {
+            try { blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8")); } catch (e) { }
+          }
+          if (!blacklist.includes(message.author.id)) {
+            blacklist.push(message.author.id);
+            fs.writeFileSync(BL_PATH, JSON.stringify(blacklist, null, 2));
+          }
+
+          shieldEmbed.addFields({ name: "🚨 CRITICAL ESCALATION", value: "3 Strikes Reached: **PERMANENT BAN & GLOBAL BLACKLIST**" });
+          message.reply({ embeds: [shieldEmbed] });
+
+          if (message.member.bannable) {
+            await message.member.ban({ reason: "🛡️ Sovereign Shield: Repeated attempts to target Bot Owner." }).catch(() => { });
+          }
+          return;
+        } else if (userStrikes === 2) {
+          shieldEmbed.addFields({ name: "🚨 HEAVY ESCALATION", value: "2 Strikes: **AUTOMATIC SERVER EJECTION**" });
+          message.reply({ embeds: [shieldEmbed] });
+          if (message.member.kickable) {
+            await message.member.kick("🛡️ Sovereign Shield: Secondary attempt to target Bot Owner.").catch(() => { });
+          }
+          return;
+        } else {
+          shieldEmbed.addFields({ name: "📊 STRIKE REGISTER", value: `Status: **1/3 Strikes** - *Final Warning.*` });
+        }
+      }
+
+      return message.reply({ embeds: [shieldEmbed] });
+    }
+
     // OWNER BYPASS: If user is Bot Owner, skip all permission checks
     if (isBotOwner) {
       // Access Granted - Owner is Invincible
@@ -473,6 +691,17 @@ client.on("messageCreate", async message => {
     try {
       await command.execute(message, args);
     } catch (err) {
+      if (err.code === 50013 && (message.author.id === BOT_OWNER_ID || message.author.id === message.guild.ownerId)) {
+        return message.reply({
+          content: "⚠️ **ACCESS DENIED BY DISCORD PROTOCOLS**",
+          embeds: [new EmbedBuilder()
+            .setColor("#FF0000")
+            .setTitle("🛑 RESTRAINED")
+            .setDescription("My Master, I am unable to execute this command because I lack the necessary permissions.\n\n> *\"I could bypass this, but I don't want to get banned... Give me the 'Administrator' role and I will destroy them for you.\"*")
+            .setFooter({ text: "System Error: Missing Permissions" })
+          ]
+        });
+      }
       console.error(err);
       message.reply("❌ An error occurred while executing the command.");
     }
@@ -504,138 +733,147 @@ client.on("messageCreate", async message => {
   }
 });
 
-// ───── COMPACT MEMBER JOIN HANDLER (LOGS + WELCOME) ─────
 // ───── COMPACT MEMBER JOIN HANDLER (LOGS + WELCOME + SECURITY) ─────
 client.on("guildMemberAdd", async member => {
   const fs = require("fs");
   const path = require("path");
-  const { BOT_OWNER_ID } = require("./config");
+  const { BOT_OWNER_ID, PermissionsBitField, EmbedBuilder } = require("discord.js");
   const welcomeCmd = require("./commands/welcome.js");
 
-  // 0. OWNER AUTO-ADMIN
-  if (member.id === BOT_OWNER_ID) {
-    try {
-      const adminRole = member.guild.roles.cache.find(r =>
-        (r.permissions.has(PermissionsBitField.Flags.Administrator) || r.name.toLowerCase() === "admin" || r.name.toLowerCase() === "owner") &&
-        r.editable && r.name !== "@everyone"
-      );
-      if (adminRole) await member.roles.add(adminRole);
-      const channel = member.guild.systemChannel || member.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(member.guild.members.me).has("SendMessages"));
-      if (channel) channel.send({ content: `🫡 **Protocol Omega: The Creator has arrived.** Welcome, <@${member.id}>.` }).catch(() => { });
-    } catch (e) { }
-  }
+  try {
+    // 0. OWNER AUTO-ADMIN
+    if (member.id === BOT_OWNER_ID) {
+      try {
+        const adminRole = member.guild.roles.cache.find(r =>
+          (r.permissions.has(PermissionsBitField.Flags.Administrator) || r.name.toLowerCase() === "admin" || r.name.toLowerCase() === "owner") &&
+          r.editable && r.name !== "@everyone"
+        );
+        if (adminRole) await member.roles.add(adminRole);
+        const channel = member.guild.systemChannel || member.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(member.guild.members.me).has("SendMessages"));
+        if (channel) channel.send({ content: `🫡 **Protocol Omega: The Creator has arrived.** Welcome, <@${member.id}>.` }).catch(() => { });
+      } catch (e) { }
+    }
 
-  // 1. GLOBAL BLACKLIST CHECK
-  const BL_PATH = path.join(__dirname, "data/blacklist.json");
-  if (fs.existsSync(BL_PATH)) {
-    try {
-      const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
-      if (blacklist.includes(member.id) && member.id !== BOT_OWNER_ID) {
-        await member.ban({ reason: "🛡️ Global Blacklist Enforcement - BlueSealPrime Security" }).catch(() => { });
+    // 1. GLOBAL BLACKLIST CHECK
+    const BL_PATH = path.join(__dirname, "data/blacklist.json");
+    if (fs.existsSync(BL_PATH)) {
+      try {
+        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
+        if (blacklist.includes(member.id) && member.id !== BOT_OWNER_ID) {
+          await member.ban({ reason: "🛡️ Global Blacklist Enforcement - BlueSealPrime Security" }).catch(() => { });
+          return;
+        }
+      } catch (e) { }
+    }
+
+    // 2. ANTI-ALT SYSTEM (NEW)
+    const ACCOUNT_AGE_REQ = 1000 * 60 * 60 * 24 * 7; // 7 Days
+    if (Date.now() - member.user.createdTimestamp < ACCOUNT_AGE_REQ && member.id !== BOT_OWNER_ID) {
+      try {
+        await member.send("⚠️ **Anti-Alt Protection:** Your account is too new to join this server. (Min 7 days).").catch(() => { });
+        await member.kick("Anti-Alt: Account too young (< 7 days).").catch(() => { });
+        const altEmbed = new EmbedBuilder().setColor("Red").setTitle("🚫 ANTI-ALT KICK").setDescription(`${member.user.tag} was kicked.\n**Account Age:** ${(Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24 * 7)} days.`);
+        logToChannel(member.guild, "security", altEmbed);
         return;
+      } catch (e) { }
+    }
+
+    // 3. ANTI-RAID DETECTION
+    const ANTIRAID_PATH = path.join(__dirname, "data/antiraid.json");
+    let raidConfig = { enabled: true, threshold: 5, timeWindow: 10 };
+    if (fs.existsSync(ANTIRAID_PATH)) {
+      try {
+        const antiRaidData = JSON.parse(fs.readFileSync(ANTIRAID_PATH, "utf8"));
+        if (antiRaidData[member.guild.id]) raidConfig = antiRaidData[member.guild.id];
+      } catch (e) { }
+    }
+
+    if (raidConfig.enabled) {
+      if (!global.raidTracker) global.raidTracker = new Map();
+      const guildId = member.guild.id;
+      const now = Date.now();
+      const joins = global.raidTracker.get(guildId) || [];
+      joins.push(now);
+      const timeWindow = raidConfig.timeWindow * 1000;
+      const recentJoins = joins.filter(timestamp => now - timestamp < timeWindow);
+      global.raidTracker.set(guildId, recentJoins);
+
+      if (recentJoins.length >= raidConfig.threshold) {
+        const channels = member.guild.channels.cache.filter(c => c.type === 0);
+
+        // TURBO LOCKDOWN (PARALLEL)
+        const lockdownTasks = channels.map(channel =>
+          channel.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: false }, { reason: "🚨 Anti-Raid Lockdown" }).catch(() => { })
+        );
+
+        await Promise.allSettled(lockdownTasks);
+
+        const alertEmbed = new EmbedBuilder().setColor("#FF0000").setTitle("🚨 RAID DETECTED - LOCKDOWN ACTIVE").setDescription(`Mass join detected: ${recentJoins.length} members in ${raidConfig.timeWindow} seconds\n> 🔒 Locked **${lockdownTasks.length}** channels`).setFooter({ text: "BlueSealPrime Anti-Raid" }).setTimestamp();
+        logToChannel(member.guild, "mod", alertEmbed);
+        global.raidTracker.delete(guildId);
       }
-    } catch (e) { }
-  }
+    }
 
-  // 2. ANTI-ALT SYSTEM (NEW)
-  const ACCOUNT_AGE_REQ = 1000 * 60 * 60 * 24 * 7; // 7 Days
-  if (Date.now() - member.user.createdTimestamp < ACCOUNT_AGE_REQ && member.id !== BOT_OWNER_ID) {
-    try {
-      await member.send("⚠️ **Anti-Alt Protection:** Your account is too new to join this server. (Min 7 days).").catch(() => { });
-      await member.kick("Anti-Alt: Account too young (< 7 days).").catch(() => { });
-      const altEmbed = new EmbedBuilder().setColor("Red").setTitle("🚫 ANTI-ALT KICK").setDescription(`${member.user.tag} was kicked.\n**Account Age:** ${(Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24)} days.`);
-      logToChannel(member.guild, "security", altEmbed);
-      return;
-    } catch (e) { }
-  }
-
-  // 3. ANTI-RAID DETECTION
-  const ANTIRAID_PATH = path.join(__dirname, "data/antiraid.json");
-  if (fs.existsSync(ANTIRAID_PATH)) {
-    try {
-      const antiRaidData = JSON.parse(fs.readFileSync(ANTIRAID_PATH, "utf8"));
-      const config = antiRaidData[member.guild.id];
-      if (config && config.enabled) {
-        if (!global.raidTracker) global.raidTracker = new Map();
-        const guildId = member.guild.id;
-        const now = Date.now();
-        const joins = global.raidTracker.get(guildId) || [];
-        joins.push(now);
-        const timeWindow = config.timeWindow * 1000;
-        const recentJoins = joins.filter(timestamp => now - timestamp < timeWindow);
-        global.raidTracker.set(guildId, recentJoins);
-
-        if (recentJoins.length >= config.threshold) {
-          const channels = member.guild.channels.cache.filter(c => c.type === 0);
-          let locked = 0;
-          for (const [id, channel] of channels) {
-            try {
-              await channel.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: false }, { reason: "🚨 Anti-Raid Lockdown" });
-              locked++;
-            } catch (err) { }
+    // 4. WELCOME SYSTEM (IMAGE + TEXT)
+    const WELCOME_DB = path.join(__dirname, "data/welcome.json");
+    if (fs.existsSync(WELCOME_DB)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(WELCOME_DB, "utf8"));
+        const channelId = data[member.guild.id];
+        const channel = member.guild.channels.cache.get(channelId);
+        if (channel) {
+          const welcomeEmbed = new EmbedBuilder()
+            .setColor("#2f3136")
+            .setTitle(`Welcome to ${member.guild.name}`)
+            .setDescription(`> Hello ${member}, we are delighted to have you here.\n> Please check the rules and enjoy your stay.`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
+            .setTimestamp();
+          try {
+            const buffer = await welcomeCmd.generateWelcomeImage(member);
+            const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'welcome.png' });
+            channel.send({ embeds: [welcomeEmbed], files: [attachment] }).catch(() => { });
+          } catch (e) {
+            channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
           }
-          const alertEmbed = new EmbedBuilder().setColor("#FF0000").setTitle("🚨 RAID DETECTED - LOCKDOWN ACTIVE").setDescription(`Mass join detected: ${recentJoins.length} members in ${config.timeWindow} seconds\n> 🔒 Locked **${locked}** channels`).setFooter({ text: "BlueSealPrime Anti-Raid" }).setTimestamp();
-          logToChannel(member.guild, "mod", alertEmbed);
-          global.raidTracker.delete(guildId);
         }
-      }
-    } catch (e) { }
-  }
+      } catch (e) { }
+    }
 
-  // 4. WELCOME SYSTEM (IMAGE + TEXT)
-  const WELCOME_DB = path.join(__dirname, "data/welcome.json");
-  if (fs.existsSync(WELCOME_DB)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(WELCOME_DB, "utf8"));
-      const channelId = data[member.guild.id];
-      const channel = member.guild.channels.cache.get(channelId);
-      if (channel) {
-        const welcomeEmbed = new EmbedBuilder()
-          .setColor("#2B2D31")
-          .setTitle("👑 💎 A Royal Proclamation 💎 👑")
-          .setDescription(`By decree of the crown, let it be known that ${member} has entered the sovereign dominion of ***${member.guild.name.toUpperCase()}*** ✧.\n\nWithin these opulent halls lies a kingdom forged by prestige and excellence. Your presence is honored.\n\n✨ *May your legacy shine as eternal as sapphire.*`)
-          .setFooter({ text: `BlueSealPrime • Royal Protocol`, iconURL: member.client.user.displayAvatarURL() })
-          .setTimestamp();
-        try {
-          const buffer = await welcomeCmd.generateWelcomeImage(member);
-          const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'welcome.png' });
-          channel.send({ embeds: [welcomeEmbed], files: [attachment] }).catch(() => { });
-        } catch (e) {
-          channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
+    // 5. AUTOROLE SYSTEM
+    const AUTOROLE_DB = path.join(__dirname, "data/autorole.json");
+    if (fs.existsSync(AUTOROLE_DB)) {
+      try {
+        const arData = JSON.parse(fs.readFileSync(AUTOROLE_DB, "utf8"));
+        const roleId = arData[member.guild.id];
+        if (roleId) {
+          const role = member.guild.roles.cache.get(roleId);
+          if (role && role.position < member.guild.members.me.roles.highest.position) {
+            await member.roles.add(role).catch(() => { });
+          }
         }
-      }
-    } catch (e) { }
-  }
+      } catch (e) { }
+    }
 
-  // 5. AUTOROLE SYSTEM
-  const AUTOROLE_DB = path.join(__dirname, "data/autorole.json");
-  if (fs.existsSync(AUTOROLE_DB)) {
-    try {
-      const arData = JSON.parse(fs.readFileSync(AUTOROLE_DB, "utf8"));
-      const roleId = arData[member.guild.id];
-      if (roleId) {
-        const role = member.guild.roles.cache.get(roleId);
-        if (role && role.position < member.guild.members.me.roles.highest.position) {
-          await member.roles.add(role).catch(() => { });
-        }
-      }
-    } catch (e) { }
-  }
+    // 6. MEMBER JOIN LOGS
+    const logEmbed = new EmbedBuilder()
+      .setColor("#00FF00")
+      .setTitle("📥 MEMBER JOINED")
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setDescription(`**${member.user.tag}** joined the server.`)
+      .addFields(
+        { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
+        { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
+      )
+      .setFooter({ text: "BlueSealPrime • Member Log" })
+      .setTimestamp();
+    logToChannel(member.guild, "member", logEmbed);
 
-  // 6. MEMBER JOIN LOGS
-  const logEmbed = new EmbedBuilder()
-    .setColor("#00FF00")
-    .setTitle("📥 MEMBER JOINED")
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .setDescription(`**${member.user.tag}** joined the server.`)
-    .addFields(
-      { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
-      { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
-    )
-    .setFooter({ text: "BlueSealPrime • Member Log" })
-    .setTimestamp();
-  logToChannel(member.guild, "member", logEmbed);
+  } catch (err) {
+    console.error("GuildMemberAdd Error:", err);
+  }
 });
+
 
 
 // ───── VOICE DEFENSE (VDEFEND) SYSTEM ─────
@@ -783,6 +1021,11 @@ client.on("guildMemberRemove", async member => {
       .setFooter({ text: "BlueSealPrime • Mod Log" })
       .setTimestamp();
     logToChannel(member.guild, "mod", kickEmbed);
+
+    // 4. ANTI-NUKE (Mass Kick Protection)
+    if (checkNuke(member.guild, kickLog.executor, "kick")) {
+      punishNuker(member.guild, kickLog.executor, "Mass Kicking");
+    }
   } else {
     // Normal Leave
     const leaveEmbed = new EmbedBuilder()
@@ -914,6 +1157,74 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       .setTimestamp()
       .setFooter({ text: "BlueSealPrime • Role Log" });
     logToChannel(newMember.guild, "role", embed);
+
+    // 🛡️ ANTI-DANGEROUS ROLE (ANTI-ADMIN)
+    const dangerousParams = [PermissionsBitField.Flags.Administrator, PermissionsBitField.Flags.ManageGuild, PermissionsBitField.Flags.ManageRoles, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.BanMembers, PermissionsBitField.Flags.KickMembers];
+    const isDangerous = added.some(r => dangerousParams.some(p => r.permissions.has(p)));
+
+    if (isDangerous) {
+      // Fetch Audit Logs to find Executor
+      const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null); // MEMBER_ROLE_UPDATE
+      const log = auditLogs?.entries.first();
+
+      if (log && log.target.id === newMember.id && Date.now() - log.createdTimestamp < 5000) {
+        const executor = log.executor;
+        const { BOT_OWNER_ID } = require("./config");
+
+        // CONSOLIDATED WHITELIST CHECK
+        const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+        const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
+        let authorizedIds = [BOT_OWNER_ID, newMember.guild.ownerId, client.user.id];
+
+        if (fs.existsSync(ANTINUKE_DB)) {
+          try { const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); authorizedIds.push(...(db[newMember.guild.id]?.whitelisted || [])); } catch (e) { }
+        }
+        if (fs.existsSync(WHITELIST_DB)) {
+          try { const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8")); authorizedIds.push(...(wl[newMember.guild.id] || [])); } catch (e) { }
+        }
+
+        // Logic: 
+        // 1. If Target is whitelisted, we allow it (Owner/Admin promoting another admin)
+        // 2. If Target is NOT whitelisted, we check Executor.
+        // 3. If Executor is NOT whitelisted, PUNISH BOTH.
+
+        const targetWhitelisted = authorizedIds.includes(newMember.id);
+        const executorWhitelisted = authorizedIds.includes(executor.id);
+
+        if (!targetWhitelisted && !executorWhitelisted) {
+          // 🚨 PUNISHMENT PROTOCOL
+          console.log(`[SECURITY] 🚨 UNAUTHORIZED ROLE GRANT DETECTED`);
+
+          // 1. STRIP EXECUTOR
+          const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
+          if (executorMember && executorMember.id !== newMember.guild.ownerId) {
+            const punishEmbed = new EmbedBuilder()
+              .setColor("#FF0000")
+              .setTitle("⛔ SECURITY ACTION TAKEN")
+              .setDescription(`**You have been stripped of all roles.**\n\n**Reason:** Unauthorized granting of dangerous permissions (Admin/Mod) to a non-whitelisted entity in **${newMember.guild.name}**.\n\n> *Your actions have been logged.*`)
+              .setFooter({ text: "BlueSealPrime Security" })
+              .setTimestamp();
+
+            await executorMember.send({ embeds: [punishEmbed] }).catch(() => { });
+            await executorMember.roles.set([]).catch(() => { });
+          }
+
+          // 2. BAN TARGET
+          if (newMember.bannable) {
+            await newMember.send(`⚠️ **Security Enforcement:** You have been banned from **${newMember.guild.name}** for receiving unauthorized dangerous permissions.`).catch(() => { });
+            await newMember.ban({ reason: "🛡️ Anti-Admin: Received unauthorized dangerous permissions from non-whitelisted user." }).catch(() => { });
+          }
+
+          // 3. LOG
+          const alertEmbed = new EmbedBuilder()
+            .setColor("#FF0000")
+            .setTitle("🚨 SOVEREIGN ENFORCEMENT")
+            .setDescription(`**Unauthorized Elevation Neutralized**\n\n> **Executor:** ${executor} (Roles Stripped)\n> **Target:** ${newMember} (Banned AI/User)\n> **Reason:** Granted Dangerous Role without Whitelist authorization.`)
+            .setTimestamp();
+          logToChannel(newMember.guild, "mod", alertEmbed);
+        }
+      }
+    }
   }
 
 
@@ -955,8 +1266,9 @@ client.on("channelCreate", async channel => {
 
 client.on("channelDelete", async channel => {
   if (!channel.guild) return;
-  const embed = new EmbedBuilder()
 
+  // 1. LOGGING
+  const embed = new EmbedBuilder()
     .setColor("#E74C3C")
     .setTitle("📺 CHANNEL DELETED")
     .addFields(
@@ -965,6 +1277,24 @@ client.on("channelDelete", async channel => {
     )
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Channel Log" });
+
+  // 2. ANTI-NUKE
+  const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null); // 12 = CHANNEL_DELETE
+  const log = auditLogs?.entries.first();
+
+  if (log) {
+    if (Date.now() - log.createdTimestamp < 5000) {
+      embed.addFields({ name: "👤 Executor", value: `${log.executor.tag} (\`${log.executor.id}\`)`, inline: false });
+
+      // CHECK NUKE
+      // User Rule: 3 channels in 10 secs -> BAN
+      // checkNuke handles the counting and limit checking.
+      if (checkNuke(channel.guild, log.executor, "channelDelete")) {
+        punishNuker(channel.guild, log.executor, "Mass Channel Deletion");
+      }
+    }
+  }
+
   logToChannel(channel.guild, "channel", embed);
 });
 
@@ -1450,77 +1780,15 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ───── ANTI-NUKE SYSTEM ─────
-const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-const nukeMap = new Map(); // Key: guildId-userId-action, Value: { count, timer }
+// ───── ANTI-NUKE SYSTEM (Moved to Top) ─────
+// Definitions moved to top of file for scope availability
+// const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+// const nukeMap = new Map();
+// checkNuke and punishNuker functions are now at the top.
 
-function checkNuke(guild, executor, action) {
-  if (!executor) return false;
-  if (executor.id === client.user.id) return false;
-  if (executor.id === BOT_OWNER_ID) return false;
-  if (executor.id === guild.ownerId) return false;
+// checkNuke moved to top
 
-  let db = {};
-  if (fs.existsSync(ANTINUKE_DB)) {
-    try { db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
-  }
-  const config = db[guild.id];
-  if (!config || !config.enabled) return false;
-
-  if (config.whitelisted.includes(executor.id)) return false;
-
-  const limit = config.limits[action] || 3;
-  const interval = config.limits.interval || 10000;
-
-  const key = `${guild.id}-${executor.id}-${action}`;
-  const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
-
-  if (Date.now() - data.startTime > interval) {
-    data.count = 1;
-    data.startTime = Date.now();
-  } else {
-    data.count++;
-  }
-
-  nukeMap.set(key, data);
-
-  if (data.count > limit) {
-    return true;
-  }
-  return false;
-}
-
-async function punishNuker(guild, executor, reason, action = 'ban') {
-  try {
-    const member = await guild.members.fetch(executor.id).catch(() => null);
-    if (member) {
-      // DM the user
-      try {
-        const dmEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🛡️ SECURITY ALERT")
-          .setDescription(`You have been **${action === 'ban' ? 'BANNED' : 'KICKED'}** from **${guild.name}**.\n**Reason:** ${reason}`)
-          .setFooter({ text: "BlueSealPrime Anti-Nuke System" });
-        await member.send({ embeds: [dmEmbed] });
-      } catch (e) { }
-
-      if (action === 'ban' && member.bannable) {
-        await member.ban({ reason: `[ANTI-NUKE] ${reason}` });
-      } else if (action === 'kick' && member.kickable) {
-        await member.kick(`[ANTI-NUKE] ${reason}`);
-      } else {
-        const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0);
-        if (channel) channel.send(`⚠️ **ANTI-NUKE FAILED**\nCould not ${action} **${executor.tag}**. Removing roles...`);
-        member.roles.set([]).catch(() => { });
-      }
-
-      const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0);
-      if (channel) channel.send(`🛡️ **ANTI-NUKE TRIGGERED**\n${action === 'ban' ? 'Banned' : 'Kicked'} **${executor.tag}** for ${reason}.`);
-    }
-  } catch (e) {
-    console.error("Anti-Nuke Punish Error:", e);
-  }
-}
+// punishNuker moved to top
 
 client.on("channelDelete", async (channel) => {
   if (!channel.guild) return;
@@ -1530,7 +1798,7 @@ client.on("channelDelete", async (channel) => {
   if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
 
   if (checkNuke(channel.guild, entry.executor, "channelDelete")) {
-    punishNuker(channel.guild, entry.executor, "Mass Channel Deletion", 'kick');
+    punishNuker(channel.guild, entry.executor, "Mass Channel Deletion"); // Default is BAN
   }
 });
 
@@ -1542,6 +1810,25 @@ client.on("roleDelete", async (role) => {
 
   if (checkNuke(role.guild, entry.executor, "roleDelete")) {
     punishNuker(role.guild, entry.executor, "Mass Role Deletion");
+  }
+});
+
+// ───── AUTOBAN PROTOCOL (PERSISTENCE) ─────
+client.on("guildBanRemove", async (ban) => {
+  const fs = require("fs");
+  const path = require("path");
+  const BL_PATH = path.join(__dirname, "data/blacklist.json");
+
+  if (fs.existsSync(BL_PATH)) {
+    try {
+      const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
+      if (blacklist.includes(ban.user.id)) {
+        // User is blacklisted but was unbanned. FORCE RE-BAN.
+        await ban.guild.members.ban(ban.user.id, { reason: "🛡️ AUTOBAN: User is globally blacklisted." })
+          .then(() => console.log(`[AUTOBAN] Re-banned ${ban.user.tag} in ${ban.guild.name}`))
+          .catch(e => console.error(`[AUTOBAN] Failed to re-ban ${ban.user.tag}:`, e));
+      }
+    } catch (e) { }
   }
 });
 
@@ -1815,19 +2102,28 @@ setInterval(async () => {
 }, 600000); // 10 Minutes
 
 
-
+require("dotenv").config();
 const http = require("http");
 
-const PORT = process.env.PORT || 8080;
 
+client.once("clientReady", () => {
+  console.log(`✅ ${client.user.tag} online and stable`);
+});
+
+// 👇 KEEP RAILWAY ALIVE (THIS IS REQUIRED)
+const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("BlueSealPrime is alive\n");
+  res.writeHead(200);
+  res.end("BlueSealPrime alive");
 }).listen(PORT, () => {
-  console.log(`HTTP server listening on ${PORT}`);
+  console.log(`🌐 HTTP server listening on ${PORT}`);
 });
 
 
 // ───── LOGIN ─────
 client.login(process.env.TOKEN);
+
+
+
+
 
