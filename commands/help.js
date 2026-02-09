@@ -132,6 +132,8 @@ module.exports = {
             `> *Grant time-limited role access (e.g., 1d, 1w).*\n\n\n` +
             `> 🔹 **!autorole <role>**\n` +
             `> *Configure automatic role assignment on join.*\n\n\n` +
+            `> 🔹 **!roleperm <role> <add|remove> <perm>** \`[rperm]\`\n` +
+            `> *Modify specific permissions for a role.*\n\n\n` +
 
             `### ⚙️ **[ REGISTRY_MODIFICATION ]**\n\n` +
             `> 🔹 **!createrole <name> [hex]**\n` +

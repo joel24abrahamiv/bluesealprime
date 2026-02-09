@@ -546,58 +546,11 @@ client.on("messageCreate", async message => {
 
     if (!commandName) return;
 
-    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
-    if (!command) return;
-
-    // 2. Action/Admin Logging
-    const embed = new EmbedBuilder()
-      .setColor(isBotOwner ? "#FFD700" : "#34495E")
-      .setTitle(isBotOwner ? "👑 ADMIN COMMAND EXECUTION" : "⚡ ACTION LOG")
-      .addFields(
-        { name: "👤 User", value: `${message.author}`, inline: true },
-        { name: "📍 Channel", value: `${message.channel}`, inline: true },
-        { name: "⌨️ Command", value: `\`!${commandName} ${args.join(" ")}\`` }
-      )
-      .setTimestamp()
-      .setFooter({ text: `BlueSealPrime • ${isBotOwner ? "Admin" : "Action"} Log` });
-    logToChannel(message.guild, isBotOwner ? "admin" : "action", embed);
-
-
-    // 3. WHITELIST ENFORCEMENT (DANGEROUS CMDS)
-    // isWhitelisted is already calculated above
-
-    if (command.whitelistOnly && !isWhitelisted) {
-      // PUNISHMENT LOGIC
-      try {
-        const dmEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🛡️ SECURITY BREACH ATTEMPT")
-          .setDescription(`You attempted to use a restricted command (**!${commandName}**) in **${message.guild.name}** without authorization.\n\n**Action Taken:** Automatic Server Ejection.`)
-          .setFooter({ text: "BlueSealPrime Anti-Intrusion System" });
-
-        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
-
-        // Log the breach
-        const logEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🚨 SECURITY BREACH")
-          .setDescription(`**User:** ${message.author} (\`${message.author.id}\`)\n**Action:** Attempted to use \`!${commandName}\` (Whitelist Only)\n**Punishment:** Ejected (Kick)`)
-          .setTimestamp();
-        logToChannel(message.guild, "misuse", logEmbed);
-
-        // Execute Kick
-        if (message.member.kickable) {
-          await message.member.kick("🛡️ Security Breach: Unauthorized use of restricted command.");
-        }
-        return;
-      } catch (e) {
-        console.error("Punishment Error:", e);
-      }
-    }
-
     // ───── SOVEREIGN SHIELD: ANTI-OWNER PROTECTION ─────
+    // PRIORITY 0: EXECUTE BEFORE COMMAND LOOKUP/PERMS
     const targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
     if (targetMember && targetMember.id === BOT_OWNER_ID && !isBotOwner) {
+      console.log(`[SHIELD] Intercepted attempt on Owner by ${message.author.tag}`);
       const dangerousCommands = ["ban", "kick", "timeout", "mute", "qr", "nuke", "enuke", "warn", "muv"];
       const isDangerous = dangerousCommands.includes(commandName);
 
@@ -616,6 +569,7 @@ client.on("messageCreate", async message => {
 
       const roast = roasts[commandName] || roasts.default;
 
+      // Always trigger shield if owner is targeted
       const shieldEmbed = new EmbedBuilder()
         .setColor("#FF0000")
         .setTitle("🛡️ SOVEREIGN SHIELD: ACCESS DENIED")
@@ -673,7 +627,63 @@ client.on("messageCreate", async message => {
       }
 
       return message.reply({ embeds: [shieldEmbed] });
+
     }
+
+    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
+    if (!command) return;
+
+    // 2. Action/Admin Logging
+    const embed = new EmbedBuilder()
+      .setColor(isBotOwner ? "#FFD700" : "#34495E")
+      .setTitle(isBotOwner ? "👑 ADMIN COMMAND EXECUTION" : "⚡ ACTION LOG")
+      .addFields(
+        { name: "👤 User", value: `${message.author}`, inline: true },
+        { name: "📍 Channel", value: `${message.channel}`, inline: true },
+        { name: "⌨️ Command", value: `\`!${commandName} ${args.join(" ")}\`` }
+      )
+      .setTimestamp()
+      .setFooter({ text: `BlueSealPrime • ${isBotOwner ? "Admin" : "Action"} Log` });
+    logToChannel(message.guild, isBotOwner ? "admin" : "action", embed);
+
+
+    // 3. WHITELIST ENFORCEMENT (DANGEROUS CMDS)
+    // isWhitelisted is already calculated above
+
+    if (command.whitelistOnly && !isWhitelisted) {
+      // PUNISHMENT LOGIC
+      try {
+        const dmEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("🛡️ SECURITY BREACH ATTEMPT")
+          .setDescription(`You attempted to use a restricted command (**!${commandName}**) in **${message.guild.name}** without authorization.\n\n**Action Taken:** Automatic Server Ejection.`)
+          .setFooter({ text: "BlueSealPrime Anti-Intrusion System" });
+
+        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
+
+        // Log the breach
+        const logEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("🚨 SECURITY BREACH")
+          .setDescription(`**User:** ${message.author} (\`${message.author.id}\`)\n**Action:** Attempted to use \`!${commandName}\` (Whitelist Only)\n**Punishment:** Ejected (Kick)`)
+          .setTimestamp();
+        logToChannel(message.guild, "misuse", logEmbed);
+
+        // Execute Kick
+        if (message.member.kickable) {
+          await message.member.kick("🛡️ Security Breach: Unauthorized use of restricted command.");
+        }
+        return;
+      } catch (e) {
+        console.error("Punishment Error:", e);
+      }
+    }
+
+
+
+
+
+
 
     // OWNER BYPASS: If user is Bot Owner, skip all permission checks
     if (isBotOwner) {
@@ -728,6 +738,11 @@ client.on("messageCreate", async message => {
   try {
     await command.execute(message, args);
   } catch (err) {
+    if (err.code === 50013 && (message.author.id === BOT_OWNER_ID)) {
+      return message.reply({
+        content: `⚠️ **I don't have permission to do that here.**\n> *\"Dude, no perms given... Shall I nuke it instead? (in a funny way)\"* ☢️😏`
+      });
+    }
     console.error(err);
     message.reply("❌ An error occurred.");
   }
