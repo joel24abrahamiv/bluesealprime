@@ -110,7 +110,17 @@ module.exports = {
             `> 🔹 **!locksound**\n` +
             `> *Disable soundboard usage for everyone.*\n` +
             `> 🔹 **!unlocksound**\n` +
-            `> *Enable soundboard usage for everyone.*`
+            `> *Enable soundboard usage for everyone.*\n\n` +
+
+            `### 🛠️ **[ CHANNEL_MANAGEMENT_PROTOCOLS ]**\n` +
+            `> 🔹 **!createch <name> [text|voice]**\n` +
+            `> *Initialize a brand new transmission sector.*\n` +
+            `> 🔹 **!deletech** \`[removech]\`\n` +
+            `> *Decommission the current active channel.*\n` +
+            `> 🔹 **!renamech <name>**\n` +
+            `> *Modify the sector identifier.*\n` +
+            `> 🔹 **!chperm <user|role> <allow|deny> <view|send>**\n` +
+            `> *Reconfigure sector access permissions.*`
           )
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "PROTOCOL STATUS: AUTHORIZED • MODULE_BETA_INIT" })
