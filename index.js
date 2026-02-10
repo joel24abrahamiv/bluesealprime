@@ -523,7 +523,14 @@ client.on("messageCreate", async message => {
       if (settings.antiBadWords) {
         const normalized = content.toLowerCase()
           .normalize('NFD').replace(/[\u0300-\u036f]/g, "") // Unicode normalization
-          .replace(/[\W_]+/g, ""); // Strip non-alphanumeric
+          .replace(/[0oO]/g, "o")
+          .replace(/[1iI!lL|]/g, "i")
+          .replace(/[3eE]/g, "e")
+          .replace(/[4aA@]/g, "a")
+          .replace(/[5sS$]/g, "s")
+          .replace(/[7tT]/g, "t")
+          .replace(/[8bB]/g, "b")
+          .replace(/[\W_]+/g, ""); // Strip remaining non-alphanumeric
 
         const BAD_WORDS = [
           "nigger", "faggot", "chink", "kike", "dyke", "tranny",
@@ -558,10 +565,52 @@ client.on("messageCreate", async message => {
 
   }
 
+  // ───── TAG RESPONSES (High Priority) ─────
+
+  // 1. OWNER TAG RESPONSE
+  if (message.mentions.users.has(BOT_OWNER_ID) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
+    if (!content.startsWith(PREFIX)) {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+      const tagEmbed = new EmbedBuilder()
+        .setColor("#0099FF")
+        .setDescription(
+          `**Time:** ${timeString}\n` +
+          `**Tagged by:** ${message.author}\n\n` +
+          `👑 **You tagged my master** <@${BOT_OWNER_ID}>\n\n` +
+          `**Status:** Offline\n` +
+          `**Response:** is offline 🔴, he will reach out to you when available`
+        )
+        .setThumbnail(client.user.displayAvatarURL())
+        .setFooter({ text: "BlueSealPrime • Automated Response" });
+
+      await message.reply({ embeds: [tagEmbed] });
+      return;
+    }
+  }
+
+  // 2. BOT TAG RESPONSE
+  if (message.mentions.users.has(client.user.id) && !message.author.bot) {
+    if (content === `<@${client.user.id}>` || content === `<@!${client.user.id}>`) {
+      const botEmbed = new EmbedBuilder()
+        .setColor("#0099FF")
+        .setAuthor({ name: "BLUESEALPRIME SYSTEM", iconURL: client.user.displayAvatarURL() })
+        .setDescription(
+          `**System Status:** 🟢 Online\n` +
+          `**Security Protocol:** 🛡️ Maximum\n\n` +
+          `👋 **Greetings,** ${message.author}\n` +
+          `I am **BlueSealPrime**, the sovereign security system for this server.\n` +
+          `\n**Commands:** \`!help\`\n**Ping:** \`${client.ws.ping}ms\``
+        )
+        .setThumbnail(client.user.displayAvatarURL())
+        .setFooter({ text: "BlueSealPrime • Sovereign Defense" });
+      return message.reply({ embeds: [botEmbed] });
+    }
+  }
+
   // ───── LOGGING: FILES, ADMIN CMDS, ACTIONS ─────
 
-  // 1. Files/Attachments
-  // 1. Files/Attachments
   if (message.attachments.size > 0) {
     const embed = new EmbedBuilder()
       .setColor("#9B59B6")
@@ -573,7 +622,6 @@ client.on("messageCreate", async message => {
       .setFooter({ text: "BlueSealPrime • File Log" });
     logToChannel(message.guild, "file", embed);
   }
-
 
   // ───── PREFIX COMMANDS (EVERYONE) ─────
   if (content.startsWith(PREFIX)) {
@@ -874,78 +922,23 @@ client.on("messageCreate", async message => {
     return;
   }
 
-  // ───── NO PREFIX: CHECK ONLY IF IT MATCHES A COMMAND ─────
-  // Only proceed if it doesn't have the prefix (which was handled above)
+  // ───── NO PREFIX: CHECK ONLY IF IT MATCHES A COMMAND (OWNER ONLY) ─────
   const args = content.split(/\s+/);
   const commandName = args[0].toLowerCase();
-
   const command = client.commands.get(commandName);
 
-  // If message is NOT a command → ignore silently
-  if (!command) return;
-
-  // No longer blocking all non-owner messages that match a command name.
-  // Instead, just allow execution if it's a valid command and user is owner/server owner.
-  if (!isBotOwner && !isServerOwner) return;
-
-  // Authorized no-prefix command
-  args.shift();
-
-  try {
-    await command.execute(message, args, commandName);
-  } catch (err) {
-    if (err.code === 50013 && (message.author.id === BOT_OWNER_ID)) {
-      return message.reply({
-        content: `⚠️ **I don't have permission to do that here.**\n> *\"Dude, no perms given... Shall I nuke it instead? (in a funny way)\"* ☢️😏`
-      });
-    }
-    console.error(err);
-    message.reply("❌ An error occurred.");
-  }
-  // ───── TAG RESPONSES (Low Priority) ─────
-
-  // 1. OWNER TAG RESPONSE
-  if (message.mentions.users.has(BOT_OWNER_ID) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
-    if (message.content.startsWith("!")) return; // Don't trigger if it might be a command
-
-    const now = new Date();
-    const timeString = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-    const tagEmbed = new EmbedBuilder()
-      .setColor("#0099FF") // Fully Blue
-      .setDescription(
-        `**Time:** ${timeString}\n` +
-        `**Tagged by:** ${message.author}\n\n` +
-        `👑 **You tagged my master** <@${BOT_OWNER_ID}>\n\n` +
-        `**Status:** Offline\n` +
-        `**Response:** is offline 🔴 , he will reach out to you when available`
-      )
-      .setThumbnail(client.user.displayAvatarURL())
-      .setFooter({ text: "BlueSealPrime • Automated Response" });
-
-    await message.reply({ embeds: [tagEmbed] });
-    return;
-  }
-
-  // 2. BOT TAG RESPONSE
-  if (message.mentions.users.has(client.user.id) && !message.author.bot) {
-    if (message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`)) {
-      const botEmbed = new EmbedBuilder()
-        .setColor("#0099FF")
-        .setAuthor({ name: "BLUESEALPRIME SYSTEM", iconURL: client.user.displayAvatarURL() })
-        .setDescription(
-          `**System Status:** 🟢 Online\n` +
-          `**Security Protocol:** 🛡️ Maximum\n\n` +
-          `👋 **Greetings,** ${message.author}\n` +
-          `I am **BlueSealPrime**, the sovereign security system for this server.\n` +
-          `\n**Commands:** \`!help\`\n**Ping:** \`${client.ws.ping}ms\``
-        )
-        .setThumbnail(client.user.displayAvatarURL())
-        .setFooter({ text: "BlueSealPrime • Sovereign Defense" });
-      return message.reply({ embeds: [botEmbed] });
+  if (command && (isBotOwner || isServerOwner)) {
+    args.shift();
+    try {
+      await command.execute(message, args, commandName);
+    } catch (err) {
+      if (err.code === 50013 && isBotOwner) {
+        return message.reply({ content: `⚠️ **I don't have permission to do that here.**\n> *\"Dude, no perms given... Shall I nuke it instead? (in a funny way)\"* ☢️😏` });
+      }
+      console.error(err);
+      message.reply("❌ An error occurred.");
     }
   }
-
 });
 
 // ───── COMPACT MEMBER JOIN HANDLER (LOGS + WELCOME + SECURITY) ─────
