@@ -3,5 +3,12 @@
     "antiLinks": true,
     "antiSpam": true,
     "whitelist": []
+  },
+  "1470692680362229921": {
+    "antiLinks": true,
+    "antiSpam": true,
+    "antiBadWords": true,
+    "antiMassMentions": true,
+    "whitelist": []
   }
 }

@@ -9,19 +9,14 @@ module.exports = {
   async execute(message) {
     const startTime = Date.now();
 
-    const initialEmbed = new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setDescription("📡 **ESTABLISHING SECURE CONNECTION...**")
-      .setFooter({ text: "BlueSealPrime Internal Terminal v2.0" });
-
-    const sent = await message.reply({ embeds: [initialEmbed] });
+    const sent = await message.reply({ content: "🏓 Pinging..." });
 
     // Calculate Latency
     const endPing = Date.now() - startTime;
     const apiPing = message.client.ws.ping;
 
     await sent.edit({
-      content: `🟦 📶 <@${message.author.id}> **Pong! Bot: ${endPing}ms | API: ${apiPing}ms**`,
+      content: `\`\`\`📶 Pong! Bot: ${endPing}ms | API: ${apiPing}ms\`\`\``,
       embeds: []
     });
   }

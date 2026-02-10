@@ -6,7 +6,8 @@ module.exports = {
   description: "Shows premium interactive help with a spacious blue theme",
   aliases: ["h"],
 
-  async execute(message, args, fromMention = false) {
+  async execute(message, args, source) {
+    const fromMention = source === "mention";
     const totalCommands = message.client.commands.size;
     const clientUser = message.client.user;
     const { BOT_OWNER_ID } = require("../config");
@@ -83,27 +84,27 @@ module.exports = {
           .setColor(EMBED_COLOR)
           .setAuthor({ name: "🛡️ MODERATION SET [ ALPHA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 👤 **[ USER_CONTROL_PROTOCOLS ]**\n\n` +
+            `### 👤 **[ USER_CONTROL_PROTOCOLS ]**\n` +
             `> 🔹 **!ban <user> [reason]**\n` +
-            `> *Permanently remove a threat from the server.*\n\n\n` +
+            `> *Permanently remove a threat from the server.*\n` +
             `> 🔹 **!kick <user> [reason]**\n` +
-            `> *Eject a user from the guild immediately.*\n\n\n` +
+            `> *Eject a user from the guild immediately.*\n` +
             `> 🔹 **!timeout <user> <time> [reason]**\n` +
-            `> *Apply a temporary communication restriction.*\n\n\n` +
+            `> *Apply a temporary communication restriction.*\n` +
             `> 🔹 **!unban <userID>**\n` +
-            `> *Restore access for a previously banned identifier.*\n\n\n` +
+            `> *Restore access for a previously banned identifier.*\n` +
             `> 🔹 **!warn <user> [reason]**\n` +
-            `> *Issue an official violation warning.*\n\n\n` +
+            `> *Issue an official violation warning.*\n\n` +
 
-            `### 📺 **[ CHANNEL_INTEGRITY_PROTOCOLS ]**\n\n` +
+            `### 📺 **[ CHANNEL_INTEGRITY_PROTOCOLS ]**\n` +
             `> 🔹 **!lock [reason]**\n` +
-            `> *Restrict all message flow in the current sector.*\n\n\n` +
+            `> *Restrict all message flow in the current sector.*\n` +
             `> 🔹 **!unlock**\n` +
-            `> *Restore standard communication permissions.*\n\n\n` +
+            `> *Restore standard communication permissions.*\n` +
             `> 🔹 **!purge <amount>** \`[clear]\`\n` +
-            `> *Bulk sanitize up to 100 recent transmissions.*\n\n\n` +
+            `> *Bulk sanitize up to 100 recent transmissions.*\n` +
             `> 🔹 **!slowmode <time>**\n` +
-            `> *Set channel message cooldown.*\n\n\n` +
+            `> *Set channel message cooldown.*\n` +
             `> 🔹 **!stick <msg>** \`[sticky, stickymsg]\`\n` +
             `> *📌 Pin a message to the bottom of the chat.*`
           )
@@ -119,33 +120,33 @@ module.exports = {
           .setColor(EMBED_COLOR)
           .setAuthor({ name: "💎 ROLE DYNAMICS [ BETA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 📊 **[ ANALYTICS_STREAM ]**\n\n` +
+            `### 📊 **[ ANALYTICS_STREAM ]**\n` +
             `> 🔹 **!roleinfo <role>** \`[rinfo, role]\`\n` +
-            `> *Retrieve detailed data metrics for a specific role.*\n\n\n` +
+            `> *Retrieve detailed data metrics for a specific role.*\n\n` +
 
-            `### 🔄 **[ DELEGATION_STREAM ]**\n\n` +
+            `### 🔄 **[ DELEGATION_STREAM ]**\n` +
             `> 🔹 **!addrole <user> <role>**\n` +
-            `> *Assign a specific server identity to a member.*\n\n\n` +
+            `> *Assign a specific server identity to a member.*\n` +
             `> 🔹 **!removerole <user> <role>**\n` +
-            `> *Strip a member of a specific role identity.*\n\n\n` +
+            `> *Strip a member of a specific role identity.*\n` +
             `> 🔹 **!temprole <user> <role> <time>**\n` +
-            `> *Grant time-limited role access (e.g., 1d, 1w).*\n\n\n` +
+            `> *Grant time-limited role access (e.g., 1d, 1w).*\n` +
             `> 🔹 **!autorole <role>**\n` +
-            `> *Configure automatic role assignment on join.*\n\n\n` +
+            `> *Configure automatic role assignment on join.*\n` +
             `> 🔹 **!roleperm <role> <add|remove> <perm>** \`[rperm]\`\n` +
-            `> *Modify specific permissions for a role.*\n\n\n` +
+            `> *Modify specific permissions for a role.*\n\n` +
 
-            `### ⚙️ **[ REGISTRY_MODIFICATION ]**\n\n` +
+            `### ⚙️ **[ REGISTRY_MODIFICATION ]**\n` +
             `> 🔹 **!createrole <name> [hex]**\n` +
-            `> *Initialize a brand new role with custom parameters.*\n\n\n` +
+            `> *Initialize a brand new role with custom parameters.*\n` +
             `> 🔹 **!deleterole <role>**\n` +
-            `> *Decommission an existing role from the registry.*\n\n\n` +
+            `> *Decommission an existing role from the registry.*\n` +
             `> 🔹 **!rolecopy <role>**\n` +
-            `> *Duplicate an existing role structure.*\n\n\n` +
+            `> *Duplicate an existing role structure.*\n\n` +
 
-            `### 🎭 **[ REACTION_ROLES ]**\n\n` +
+            `### 🎭 **[ REACTION_ROLES ]**\n` +
             `> 🔹 **!reactionrole create <#channel> <title>** \`[rr]\`\n` +
-            `> *Create a self-assign reaction role panel.*\n\n\n` +
+            `> *Create a self-assign reaction role panel.*\n` +
             `> 🔹 **!reactionrole add <msgID> <emoji> <role>**\n` +
             `> *Add a role to an existing panel.*`
           )
@@ -161,23 +162,23 @@ module.exports = {
           .setColor(EMBED_COLOR)
           .setAuthor({ name: "📡 GENERAL UTILITY [ GAMMA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 📢 **[ BROADCAST_LINK ]**\n\n` +
+            `### 📢 **[ BROADCAST_LINK ]**\n` +
             `> 🔹 **!say <content>**\n` +
-            `> *Bot transmission through standard or embed format.*\n\n\n` +
+            `> *Bot transmission through standard or embed format.*\n` +
             `> 🔹 **!announce <content>**\n` +
-            `> *Official system broadcast for high-importance updates.*\n\n\n` +
+            `> *Official system broadcast for high-importance updates.*\n\n` +
 
-            `### 💾 **[ DATA_INGESTION_LINK ]**\n\n` +
+            `### 💾 **[ DATA_INGESTION_LINK ]**\n` +
             `> 🔹 **!ping** \`[p, latency]\`\n` +
-            `> *Check API and host connection latency.*\n\n\n` +
+            `> *Check API and host connection latency.*\n` +
             `> 🔹 **!serverinfo**\n` +
-            `> *Fetch comprehensive guild analytics pathing.*\n\n\n` +
+            `> *Fetch comprehensive guild analytics pathing.*\n` +
             `> 🔹 **!userinfo [@user]**\n` +
-            `> *Detailed security scan of a member profile.*\n\n\n` +
+            `> *Detailed security scan of a member profile.*\n` +
             `> 🔹 **!avatar [@user]**\n` +
-            `> *Retrieve high-definition visualization of a user profile.*\n\n\n` +
+            `> *Retrieve high-definition visualization of a user profile.*\n` +
             `> 🔹 **!poll <Question> | <Opt1> | <Opt2>** \`[createpoll]\`\n` +
-            `> *Create an interactive poll.*\n\n\n` +
+            `> *Create an interactive poll.*\n` +
             `> 🔹 **!suggest <idea>** \`[suggestion, idea]\`\n` +
             `> *Submit a suggestion to the server.*`
           )
@@ -193,25 +194,25 @@ module.exports = {
           .setColor(EMBED_COLOR)
           .setAuthor({ name: "🔐 SECURITY SYSTEMS [ DELTA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### ⚙️ **[ AUTOMATION_SETUP_UNIT ]**\n\n` +
+            `### ⚙️ **[ AUTOMATION_SETUP_UNIT ]**\n` +
             `> 🔹 **!ticketsetup**\n` +
-            `> *Initialize the secure support ticketing interface.*\n\n\n` +
+            `> *Initialize the secure support ticketing interface.*\n` +
             `> 🔹 **!log <type> <channel>** \`[logs, logging, logset]\`\n` +
-            `> *Configure the multi-stream event logging system.*\n\n\n` +
+            `> *Configure the multi-stream event logging system.*\n` +
             `> 🔹 **!automod <link|spam>** \`[am, protection]\`\n` +
-            `> *Toggle Anti-Link or Anti-Spam protection.*\n\n\n` +
+            `> *Toggle Anti-Link or Anti-Spam protection.*\n` +
             `> 🔹 **!welcome <channel>**\n` +
-            `> *Configure the premium entry greeting interface.*\n\n\n` +
+            `> *Configure the premium entry greeting interface.*\n` +
             `> 🔹 **!left <channel>** \`[lv, leave]\`\n` +
-            `> *Configure the premium departure notification system.*\n\n\n` +
+            `> *Configure the premium departure notification system.*\n` +
             `> 🔹 **!setupverify @role #channel**\n` +
-            `> *Initialize verification panel.*\n\n\n` +
+            `> *Initialize verification panel.*\n\n` +
 
-            `### 🛡️ **[ HIGH_LEVEL_DEFENSE ]**\n\n` +
+            `### 🛡️ **[ HIGH_LEVEL_DEFENSE ]**\n` +
             `> 🔹 **!whitelist <user>** \`[wl, wllist]\`\n` +
-            `> *Authorize trusted personnel (Bypass Limits).*\n\n\n` +
+            `> *Authorize trusted personnel (Bypass Limits).*\n` +
             `> 🔹 **!blacklist <user>** \`[bl]\`\n` +
-            `> *Permanently revoke access to bot systems.*\n\n\n` +
+            `> *Permanently revoke access to bot systems.*\n` +
             `> 🔹 **!antiraid**\n` +
             `> *Emergency server lockdown protocol.*`
           )
@@ -235,8 +236,8 @@ module.exports = {
             `### **[ SYSTEM_STATUS ]**\n` +
             `> 🚀 **Host:** \`Hyper-Performance Cloud\`\n` +
             `> 🛡️ **Encryption:** \`AES-256 Global Standard\`\n` +
-            `> ⚡ **Latency:** \`${message.client.ws.ping}ms\`\n\n` +
-            `**Developed to ensure your server remains safe, organized, and superior.**`
+            `> ⚡ **Latency:** \`${message.client.ws.ping}ms\`\n` +
+            `> **Developed to ensure your server remains safe, organized, and superior.**`
           )
           .setFooter({ text: "BlueSealPrime • Priority Alpha Origin" })
       }
@@ -257,23 +258,23 @@ module.exports = {
           .setColor("#0099FF") // Blue
           .setAuthor({ name: "🔊 VOICE OPERATIONS", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 🎤 **[ VOICE_CONTROL_UNIT ]**\n\n` +
+            `### 🎤 **[ VOICE_CONTROL_UNIT ]**\n` +
             `> 🔹 **!vmute <@user>**\n` +
-            `> *Server mute user in Voice Channel.*\n\n\n` +
+            `> *Server mute user in Voice Channel.*\n` +
             `> 🔹 **!vunmute <@user>**\n` +
-            `> *Server unmute user in Voice Channel.*\n\n\n` +
+            `> *Server unmute user in Voice Channel.*\n` +
             `> 🔹 **!vmuteall**\n` +
-            `> *Mute everyone in your Voice Channel.*\n\n\n` +
+            `> *Mute everyone in your Voice Channel.*\n` +
             `> 🔹 **!vunmuteall**\n` +
-            `> *Unmute everyone in your Voice Channel.*\n\n\n` +
+            `> *Unmute everyone in your Voice Channel.*\n` +
             `> 🔹 **!muv <@user> [channel]**\n` +
-            `> *Move user to Void or specified channel.*\n\n\n` +
+            `> *Move user to Void or specified channel.*\n` +
             `> 🔹 **!muvu <@user>**\n` +
-            `> *Un-Void/Restore user to original VC.*\n\n\n` +
+            `> *Un-Void/Restore user to original VC.*\n` +
             `> 🔹 **!vmoveall <#channel>** \`[moveall, massmove]\`\n` +
-            `> *Mass move everyone in current VC to another.*\n\n\n` +
+            `> *Mass move everyone in current VC to another.*\n` +
             `> 🔹 **!vdefend <@user>**\n` +
-            `> *Protect user from being moved or disconnected.*\n\n\n` +
+            `> *Protect user from being moved or disconnected.*\n` +
             `> 🔹 **!vundefend <@user>**\n` +
             `> *Remove movement protection.*`
           )
@@ -290,14 +291,14 @@ module.exports = {
           .setColor("#FF4500") // Orange Red
           .setAuthor({ name: "☣️ QUARANTINE PROTOCOLS", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 🛡️ **[ ISOLATION_UNIT ]**\n\n` +
+            `### 🛡️ **[ ISOLATION_UNIT ]**\n` +
             `> 🔹 **!qr <@user> [reason]** \`[quarantine]\`\n` +
-            `> *Isolate user in Quarantine Zone. Revoke permissions.*\n\n\n` +
+            `> *Isolate user in Quarantine Zone. Revoke permissions.*\n` +
             `> 🔹 **!uq <@user>** \`[unquarantine]\`\n` +
-            `> *Release user from quarantine.*\n\n\n` +
-            `### 🛡️ **[ BASIC_MODERATION ]**\n\n` +
+            `> *Release user from quarantine.*\n\n` +
+            `### 🛡️ **[ BASIC_MODERATION ]**\n` +
             `> 🔹 **!warn <@user>**\n` +
-            `> *Issue official warning.*\n\n\n` +
+            `> *Issue official warning.*\n` +
             `> 🔹 **!mute <@user>**\n` +
             `> *Timeout/Silence user.*`
           )
@@ -314,33 +315,33 @@ module.exports = {
           .setColor("#2E8B57") // Sea Green
           .setAuthor({ name: "📝 LOGGING SYSTEMS [ EPSILON ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### ⚙️ **[ SYSTEM_LOGS ]**\n\n` +
+            `### ⚙️ **[ SYSTEM_LOGS ]**\n` +
             `> 🔹 **!log mod <#channel>**\n` +
-            `> *Moderation Actions.*\n\n\n` +
+            `> *Moderation Actions.*\n` +
             `> 🔹 **!log message <#channel>**\n` +
-            `> *Deleted/Edited Messages.*\n\n\n` +
+            `> *Deleted/Edited Messages.*\n` +
             `> 🔹 **!log member <#channel>**\n` +
-            `> *Joins/Leaves.*\n\n\n` +
+            `> *Joins/Leaves.*\n` +
             `> 🔹 **!log voice <#channel>**\n` +
-            `> *Voice Activity.*\n\n\n` +
+            `> *Voice Activity.*\n` +
             `> 🔹 **!log role <#channel>**\n` +
-            `> *Role Updates.*\n\n\n` +
+            `> *Role Updates.*\n` +
             `> 🔹 **!log server <#channel>**\n` +
-            `> *Server Changes.*\n\n\n` +
-            `### 🛡️ **[ SECURITY_LOGS ]**\n\n` +
+            `> *Server Changes.*\n\n` +
+            `### 🛡️ **[ SECURITY_LOGS ]**\n` +
             `> 🔹 **!log antinuke <#channel>**\n` +
-            `> *Anti-Nuke Triggers.*\n\n\n` +
+            `> *Anti-Nuke Triggers.*\n` +
             `> 🔹 **!log automod <#channel>**\n` +
-            `> *Auto-Mod Violations.*\n\n\n` +
+            `> *Auto-Mod Violations.*\n` +
             `> 🔹 **!log whitelist <#channel>**\n` +
-            `> *Whitelist Changes.*\n\n\n` +
+            `> *Whitelist Changes.*\n` +
             `> 🔹 **!log admin <#channel>**\n` +
-            `> *Admin Command Usage.*\n\n\n` +
-            `### 📂 **[ DATA_LOGS ]**\n\n` +
+            `> *Admin Command Usage.*\n\n` +
+            `### 📂 **[ DATA_LOGS ]**\n` +
             `> 🔹 **!log file <#channel>**\n` +
-            `> *File Uploads.*\n\n\n` +
+            `> *File Uploads.*\n` +
             `> 🔹 **!log ticket <#channel>**\n` +
-            `> *Ticket Transcripts.*\n\n\n` +
+            `> *Ticket Transcripts.*\n` +
             `> 🔹 **!log invite <#channel>**\n` +
             `> *Invite Tracking.*`
           )
@@ -356,10 +357,10 @@ module.exports = {
           .setColor("#FFD700") // Gold
           .setAuthor({ name: "⚡ ABSOLUTE POWER CONTROLS [ OMEGA ]", iconURL: clientUser.displayAvatarURL() })
           .setDescription(
-            `### 👥 **[ MASS_POPULATION_CONTROL ]**\n\n` +
-            `> 🔹 **System Locked:** *Mass operations are hidden for security.*\n\n\n` +
+            `### 👥 **[ MASS_POPULATION_CONTROL ]**\n` +
+            `> 🔹 **System Locked:** *Mass operations are hidden for security.*\n` +
             `> 🔹 **!serverlock**\n` +
-            `> *Lock the ENTIRE server.*\n\n\n` +
+            `> *Lock the ENTIRE server.*\n` +
             `> 🔹 **!serverunlock**\n` +
             `> *Unlock the ENTIRE server.*`
           )

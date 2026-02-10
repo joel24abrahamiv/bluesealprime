@@ -8,5 +8,10 @@
     "enabled": true,
     "threshold": 5,
     "timeWindow": 10
+  },
+  "1470692680362229921": {
+    "enabled": true,
+    "threshold": 5,
+    "timeWindow": 10
   }
 }

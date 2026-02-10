@@ -51,7 +51,6 @@ module.exports = {
             await target.roles.remove(qrRole, `Unquarantined by ${message.author.tag}`);
 
             // Restore roles
-            const savedRoleIds = getSavedRoles(message.guild.id, target.id);
             if (savedRoleIds && savedRoleIds.length > 0) {
                 // Filter valid/editable roles
                 const rolesToRestore = savedRoleIds.filter(id => {
@@ -60,7 +59,20 @@ module.exports = {
                 });
 
                 if (rolesToRestore.length > 0) {
-                    await target.roles.add(rolesToRestore, "Quarantine: Restoring roles");
+                    await target.roles.add(rolesToRestore, "Quarantine: Restoring roles").catch(() => { });
+                }
+            }
+
+            // 3. Remove from DB (CRITICAL FOR STICKY QUARANTINE)
+            if (fs.existsSync(DB_PATH)) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+                    if (data[message.guild.id] && data[message.guild.id][target.id]) {
+                        delete data[message.guild.id][target.id];
+                        fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+                    }
+                } catch (e) {
+                    console.error("Failed to remove from QR DB:", e);
                 }
             }
 
