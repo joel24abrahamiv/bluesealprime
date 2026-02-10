@@ -1,18 +1,25 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR, EMBED_COLOR } = require("../config");
+const { BOT_OWNER_ID, SUCCESS_COLOR, EMBED_COLOR, ERROR_COLOR } = require("../config");
 
 module.exports = {
   name: "enuke",
   description: "Elite Extreme Nuke (Protocol 0). Multi-stage verified destruction.",
-  aliases: ["exnuke", "extreme-nuke"],
   async execute(message, args) {
-    if (message.author.id !== BOT_OWNER_ID && message.author.id !== message.guild.ownerId) return;
+    // 0. Permission Check
+    const isOwner = message.author.id === BOT_OWNER_ID;
+    const isGuildOwner = message.guild.ownerId === message.author.id;
+
+    if (!isOwner && !isGuildOwner) {
+      return message.reply({
+        embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 **Access Denied:** You are not authorized to use Protocol 0.")]
+      });
+    }
 
     // STAGE 1: INITIAL AUTHORIZATION
     const authEmbed = new EmbedBuilder()
       .setColor("#FF0000")
       .setTitle("☣️ CRITICAL AUTHORIZATION: PROTOCOL 0")
-      .setDescription("You are initiating a full server sanitize. This will purge all channels, roles, and emojis.\n\n**Do you wish to proceed with the annihilation?**")
+      .setDescription("You are initiating a full server sanitize.\nThis will **PERMANENTLY DELETE** all channels, roles, and emojis.\n\n**Do you wish to proceed with the annihilation?**")
       .setFooter({ text: "Standard security timeouts applied (30s)." });
 
     const authRow = new ActionRowBuilder().addComponents(
@@ -22,11 +29,14 @@ module.exports = {
 
     const initialMsg = await message.channel.send({ embeds: [authEmbed], components: [authRow] });
 
-    const authCollector = initialMsg.createMessageComponentCollector({ time: 30000, max: 1 });
+    // Collector 1
+    const authCollector = initialMsg.createMessageComponentCollector({
+      filter: (i) => i.user.id === message.author.id,
+      time: 30000,
+      max: 1
+    });
 
     authCollector.on("collect", async i => {
-      if (i.user.id !== message.author.id) return i.reply({ content: "🚫 Logic restricted to owner.", ephemeral: true });
-
       if (i.customId === "enuke_auth_cancel") {
         return i.update({ content: "❌ **Protocol Aborted.** System standing down.", embeds: [], components: [] });
       }
@@ -45,11 +55,14 @@ module.exports = {
 
       const stratMsg = await i.update({ embeds: [strategyEmbed], components: [strategyRow], fetchReply: true });
 
-      const stratCollector = stratMsg.createMessageComponentCollector({ time: 30000, max: 1 });
+      // Collector 2
+      const stratCollector = stratMsg.createMessageComponentCollector({
+        filter: (i2) => i2.user.id === message.author.id,
+        time: 30000,
+        max: 1
+      });
 
       stratCollector.on("collect", async i2 => {
-        if (i2.user.id !== message.author.id) return i2.reply({ content: "🚫 Logic restricted.", ephemeral: true });
-
         const strategy = i2.customId;
 
         if (strategy === "enuke_strat_only") {
@@ -62,15 +75,15 @@ module.exports = {
 
           const nameInput = new TextInputBuilder()
             .setCustomId("rebuild_name")
-            .setLabel("What should the new channels be named?")
-            .setPlaceholder("e.g. general")
+            .setLabel("Channel Name")
+            .setPlaceholder("general")
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
           const countInput = new TextInputBuilder()
             .setCustomId("rebuild_count")
-            .setLabel("How many channels should be created?")
-            .setPlaceholder("e.g. 10")
+            .setLabel("Channel Count (1-50)")
+            .setPlaceholder("10")
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
@@ -90,7 +103,7 @@ module.exports = {
 
             await runEnuke(submitted, true, { name: chanName, count: chanCount });
           } catch (e) {
-            // Modal timed out or closed
+            // Modal timed out
           }
         }
       });
@@ -113,30 +126,27 @@ module.exports = {
       const guild = message.guild;
 
       try {
-        // HYPER-WAVE DELETION (PARALLEL)
-        const channels = guild.channels.cache.filter(c => c.id !== message.channel.id);
+        // HYPER-WAVE DELETION
+        // We defer deletions to not block the 'visual' update immediately, but we need to act fast.
+
+        const channels = guild.channels.cache;
         const roles = guild.roles.cache.filter(r => r.editable && r.id !== guild.id);
         const emojis = guild.emojis.cache;
-        const stickers = guild.stickers.cache;
-        const webhooks = await guild.fetchWebhooks().catch(() => []);
 
-        const allItems = [
-          ...Array.from(channels.values()),
-          ...Array.from(roles.values()),
-          ...Array.from(emojis.values()),
-          ...Array.from(stickers.values()),
-          ...Array.from(webhooks.values())
-        ];
+        // --- DELETE OPERATIONS ---
 
-        // Pulse Update
-        statusEmbed.addFields({ name: "📊 WAVE STATUS", value: `\`\`\`fix\nPurging ${allItems.length} entities...\n\`\`\`` });
-        if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [statusEmbed] });
+        // 1. Roles (Parallel)
+        roles.forEach(r => r.delete().catch(() => { }));
 
-        await Promise.allSettled(allItems.map(item => item.delete().catch(() => { })));
+        // 2. Channels (Parallel - Including current)
+        channels.forEach(c => c.delete().catch(() => { }));
+
+        // 3. Emojis (Parallel)
+        emojis.forEach(e => e.delete().catch(() => { }));
 
         if (rebuild) {
-          statusEmbed.setDescription("```diff\n+ SANITIZATION COMPLETE\n+ INITIALIZING RECONSTRUCTION PHASE\n```");
-          if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [statusEmbed] });
+          // Immediately start rebuilding without waiting for deletions to finish
+          // This is "Fast as F**k" mode
 
           const channelTasks = [];
           for (let i = 0; i < params.count; i++) {
@@ -148,27 +158,33 @@ module.exports = {
               }).catch(() => { })
             );
           }
-          await Promise.allSettled(channelTasks);
+          // We don't await this because the current channel is likely deleting, so we can't report back easily.
+          // Just fire and forget.
+          const results = await Promise.allSettled(channelTasks);
 
-          await message.channel.send({
-            embeds: [new EmbedBuilder()
-              .setColor(SUCCESS_COLOR)
-              .setTitle("✅ ANNIHILATION & REBUILD COMPLETE")
-              .setDescription(`Deployed \`${params.count}\` sectors named \`${params.name}\`.\nServer is now sanitized and structured.`)
-              .setFooter({ text: "BlueSealPrime • Priority Alpha Success" })]
-          });
+          // Find first successfully created channel
+          const firstChannel = results.find(r => r.status === "fulfilled")?.value;
+
+          if (firstChannel) {
+            firstChannel.send({
+              content: `# SERVER NUKED BY <@${message.author.id}>\n\n**Have a nice day! 🚮**\n*Go touch some grass.*`
+            }).catch(() => { });
+          }
         } else {
-          await message.channel.send({
-            embeds: [new EmbedBuilder()
-              .setColor(SUCCESS_COLOR)
-              .setTitle("✅ ANNIHILATION COMPLETE")
-              .setDescription("The server has been fully sanitized. All sectors purged.")
-              .setFooter({ text: "BlueSealPrime • Priority Alpha Success" })]
-          });
+          // Final goodbye before channel deletion/response
+          if (message.channel) {
+            await message.channel.send({
+              embeds: [new EmbedBuilder()
+                .setColor(SUCCESS_COLOR)
+                .setTitle("✅ ANNIHILATION COMPLETE")
+                .setDescription("The server has been fully sanitized.")
+                .setFooter({ text: "BlueSealPrime • Priority Alpha Success" })]
+            }).catch(() => { });
+          }
         }
       } catch (err) {
-        console.error(err);
-        message.channel.send("❌ **Critical Failure during Protocol 0.**");
+        console.error("Enuke Error:", err);
+        message.channel.send("❌ **Critical Failure during Protocol 0.**").catch(() => { });
       }
     }
   },

@@ -78,7 +78,16 @@ module.exports = {
             try {
                 const buffer = await module.exports.generateWelcomeImage(message.member);
                 const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'welcome-image.png' });
-                return message.channel.send({ files: [attachment] });
+
+                const welcomeEmbed = new EmbedBuilder()
+                    .setColor("#2f3136")
+                    .setTitle(`Welcome to ${message.guild.name}`)
+                    .setDescription(`> Hello ${message.member}! We are absolutely delighted to have you here.\n> Please make yourself at home, check the rules, and enjoy your stay! ❤️`)
+                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+                    .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
+                    .setTimestamp();
+
+                return message.channel.send({ embeds: [welcomeEmbed], files: [attachment] });
 
             } catch (error) {
                 console.error(error);

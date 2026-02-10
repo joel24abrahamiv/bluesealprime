@@ -4,7 +4,7 @@ const { BOT_OWNER_ID } = require("../config");
 module.exports = {
     name: "god_admin",
     description: "God Mode Administrative Commands",
-    aliases: ["eannoc", "edelnuke", "enuke"],
+    aliases: ["eannoc", "edelnuke"],
 
     async execute(message, args, commandName) {
         if (message.author.id !== BOT_OWNER_ID) return;
@@ -55,11 +55,6 @@ module.exports = {
             }
         }
 
-        // ENUKE: Wrapper
-        if (commandName === "enuke") {
-            const enukeCmd = message.client.commands.get("enuke");
-            if (enukeCmd) return enukeCmd.execute(message, args);
-            return message.reply("Enuke module not found.");
-        }
+
     }
 };

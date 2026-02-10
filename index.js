@@ -317,9 +317,8 @@ async function updateDashboard(client) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} online and stable`);
-
   // ───── UPDATE DASHBOARD ─────
   updateDashboard(client);
 
@@ -709,6 +708,7 @@ client.on("messageCreate", async message => {
     const args = content.slice(PREFIX.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
 
+
     if (!commandName) return;
 
     // ───── SOVEREIGN SHIELD: ANTI-OWNER PROTECTION ─────
@@ -991,7 +991,7 @@ client.on("guildMemberAdd", async member => {
           const welcomeEmbed = new EmbedBuilder()
             .setColor("#2f3136")
             .setTitle(`Welcome to ${member.guild.name}`)
-            .setDescription(`> Hello ${member}, we are delighted to have you here.\n> Please check the rules and enjoy your stay.`)
+            .setDescription(`> Hello ${member}! We are absolutely delighted to have you here.\n> Please make yourself at home, check the rules, and enjoy your stay! ❤️`)
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
             .setTimestamp();
@@ -1178,32 +1178,36 @@ client.on("guildMemberRemove", async member => {
             .setTitle("👑 ROYAL DEPARTURE")
             .setDescription(
               `***The Creator has departed the sovereign dominion.***\n\n` +
-              `> **Status:** INVINCIBLE\n` +
+              `> **Status:** LEGENDARY\n` +
               `> **Legacy:** ETERNAL\n\n` +
-              `*Systems remain operational under autonomous protocols.*`
+              `*Until next time, Master.*`
             )
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
             .setFooter({ text: `BlueSealPrime • Royal Protocol`, iconURL: member.client.user.displayAvatarURL() })
             .setTimestamp();
           channel.send({ embeds: [royalEmbed] }).catch(() => { });
         } else {
-          // 🛡️ NORMAL MEMBER (SECURITY BREACH)
+          // 🛡️ NORMAL MEMBER (SWEET GOODBYE)
           const goodbyeEmbed = new EmbedBuilder()
-            .setColor("#2B2D31") // Dark Carbon
-            .setTitle("🛡️ SECURITY PERIMETER BREACH")
+            .setColor("#2f3136") // Dark (Same as Welcome)
+            .setTitle(`Goodbye from ${member.guild.name}`)
             .setDescription(
-              "```diff\n" +
-              "- MEMBER STATUS: DEPARTED\n" +
-              "- CLEARANCE:     REVOKED\n" +
-              "- ACCESS LEVEL:  TERMINATED\n" +
-              "```\n\n" +
-              `**${member.user.tag}, your access to this secure facility has been terminated.**`
+              `> Goodbye ${member}! We are sad to see you go.\n` +
+              `> We hope you had a great time here. Take care and see you soon! ❤️`
             )
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
-            .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-            .setFooter({ text: `BlueSealPrime • Security Protocols`, iconURL: member.client.user.displayAvatarURL() })
+            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
             .setTimestamp();
-          channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
+
+          try {
+            const leftCmd = require("./commands/left.js");
+            const buffer = await leftCmd.generateGoodbyeImage(member);
+            const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
+            channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
+          } catch (e) {
+            console.error("Goodbye Image Error:", e);
+            channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
+          }
         }
       }
     }
