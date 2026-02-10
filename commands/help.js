@@ -106,7 +106,11 @@ module.exports = {
             `> 🔹 **!slowmode <time>**\n` +
             `> *Set channel message cooldown.*\n` +
             `> 🔹 **!stick <msg>** \`[sticky, stickymsg]\`\n` +
-            `> *📌 Pin a message to the bottom of the chat.*`
+            `> *📌 Pin a message to the bottom of the chat.*\n` +
+            `> 🔹 **!locksound**\n` +
+            `> *Disable soundboard usage for everyone.*\n` +
+            `> 🔹 **!unlocksound**\n` +
+            `> *Enable soundboard usage for everyone.*`
           )
           .setThumbnail(clientUser.displayAvatarURL())
           .setFooter({ text: "PROTOCOL STATUS: AUTHORIZED • MODULE_BETA_INIT" })

@@ -135,7 +135,7 @@ module.exports = {
             const channels = message.guild.channels.cache.filter(c => c.type === 0); // Text channels
             let unlocked = 0;
 
-            for (const [id, channel] of channels) {
+            const unlockPromises = channels.map(async ([id, channel]) => {
                 try {
                     await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
                         SendMessages: null
@@ -144,7 +144,9 @@ module.exports = {
                 } catch (err) {
                     console.error(`Failed to unlock ${channel.name}:`, err);
                 }
-            }
+            });
+
+            await Promise.all(unlockPromises);
 
             return message.reply({
                 embeds: [new EmbedBuilder()

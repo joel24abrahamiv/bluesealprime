@@ -126,14 +126,18 @@ module.exports = {
 
                 await Promise.all([...rolePromises, ...catPromises]);
 
-                // Helper to map overwrites
+                // Create Lookup Map for O(1) access
+                const originalRoleLookup = new Map(data.roles.map(r => [r.id, r.name]));
+
+                // Helper to map overwrites (Optimized)
                 const mapOverwrites = (oldOverwrites) => {
                     if (!oldOverwrites) return [];
                     return oldOverwrites.map(o => {
                         if (o.id === data.guildId) return { id: message.guild.id, type: o.type, allow: BigInt(o.allow), deny: BigInt(o.deny) };
-                        const originalRole = data.roles.find(r => r.id === o.id);
-                        if (originalRole) {
-                            const newRoleId = roleMap.get(originalRole.name);
+
+                        const roleName = originalRoleLookup.get(o.id);
+                        if (roleName) {
+                            const newRoleId = roleMap.get(roleName);
                             if (newRoleId) return { id: newRoleId, type: o.type, allow: BigInt(o.allow), deny: BigInt(o.deny) };
                         }
                         return null;

@@ -60,15 +60,23 @@ module.exports = {
             }
 
             // Delete the old channel
-            await channel.delete(`Nuked by ${message.author.tag}`);
+            try {
+                await channel.delete(`Nuked by ${message.author.tag}`);
+            } catch (e) {
+                // If it's already deleted (10003), ignore it. 
+                if (e.code !== 10003) throw e;
+            }
+
 
         } catch (err) {
-            console.error(err);
-            // If channel is deleted, we can't reply. 
-            // If it failed before delete:
-            if (message.channel) {
-                return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("❌ Failed to nuke channel.")] });
-            }
+            console.error("Nuke Command Error:", err);
+            // If the old channel still exists, try to reply
+            try {
+                const ch = await message.guild.channels.fetch(message.channel.id).catch(() => null);
+                if (ch) {
+                    await ch.send({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription(`❌ **Nuke Failed:** ${err.message}`)] });
+                }
+            } catch (e) { }
         }
     }
 };

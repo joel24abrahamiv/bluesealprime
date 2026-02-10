@@ -11,23 +11,28 @@ module.exports = {
 
         const code = args.join(" ");
 
-        // GOD MODE TOGGLE VISUAL (If no code is provided)
+        // GOD MODE TOGGLE (If no code is provided)
         if (!code) {
+            // Toggle Logic
+            global.GOD_MODE = !global.GOD_MODE;
+            const status = global.GOD_MODE ? "ENABLED" : "DISABLED";
+            const color = global.GOD_MODE ? "#00FF00" : "#FF0000";
+
             const godModeEmbed = new EmbedBuilder()
-                .setColor("#000000") // Black
-                .setTitle("🚨 EVAL MODE ACTIVATED")
+                .setColor(color)
+                .setTitle(`🚨 GOD MODE ${status}`)
                 .setAuthor({
-                    name: `${message.client.user.username} | God Mode`,
+                    name: `${message.client.user.username} | System Override`,
                     iconURL: message.client.user.displayAvatarURL({ dynamic: true })
                 })
                 .setThumbnail(message.client.user.displayAvatarURL({ dynamic: true }))
                 .setDescription(
-                    `### ⚠️ **OWNER MODE ENABLED**\n` +
-                    `You now have access to eval mode commands.\n\n` +
-                    `**Available Commands:**\n` +
-                    `> • **ehelp** or **!ehelp** - View all eval commands\n` +
-                    `> • **eexit** or **!eexit** - Exit eval mode (Visual only)\n` +
-                    `\n**Status:** ✅ Eval mode active`
+                    `### ⚠️ **ROOT ACCESS ${status}**\n` +
+                    `System Level Controls have been **${status}**.\n\n` +
+                    `**Unlocked Protocols:**\n` +
+                    `> • **!elog** - Universal Logging Config\n` +
+                    `> • **!ehelp** - Full God Mode Command List\n` +
+                    `\n**Current Status:** ${global.GOD_MODE ? "✅ Active" : "⛔ Inactive"}`
                 )
                 .setFooter({ text: "System Override • root@blueseal" })
                 .setTimestamp();
