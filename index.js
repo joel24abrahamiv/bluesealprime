@@ -247,119 +247,10 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 }
 
 // ───── CHANNEL RESTORATION (HYPER-SPEED) ─────
-client.on("channelDelete", async (channel) => {
-  if (!channel.guild) return;
-
-  // 1. INSTANT CLONE (Don't wait for audit logs)
-  const restorationPromise = channel.clone({
-    name: channel.name,
-    permissionOverwrites: channel.permissionOverwrites.cache,
-    topic: channel.topic,
-    parent: channel.parentId,
-    position: channel.position,
-    reason: "Sovereign Anti-Nuke: Pre-emptive Restoration"
-  }).catch(e => console.error("Immediate restoration failed:", e));
-
-  // 2. PARALLEL AUDIT & PUNISHMENT
-  try {
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-    if (!auditLogs) return;
-    const entry = auditLogs.entries.first();
-    if (!entry) return;
-
-    if (checkNuke(channel.guild, entry.executor, "channelDelete")) {
-      await punishNuker(channel.guild, entry.executor, "Mass Channel Deletion");
-      console.log(`♻️ Hyper-Restoration confirmed for: ${channel.name}`);
-    } else {
-      // If it wasn't a nuke (authorized deletion), we might want to delete the clone?
-      // But usually, if anti-nuke is ON, any deletion by non-owner is a nuke.
-      // We keep the clone for safety.
-    }
-  } catch (e) {
-    console.error("Audit log check failed during restoration:", e);
-  }
-});
+// Redundant channelDelete listener merged above (Line 1505)
 
 // ───── DANGEROUS ROLE MONITOR ─────
-client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  // Check for Role Additions
-  const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-  if (addedRoles.size === 0) return;
-
-  // Check if any added role is DANGEROUS
-  const dangerousPermissions = [
-    PermissionsBitField.Flags.Administrator,
-    PermissionsBitField.Flags.ManageGuild,
-    PermissionsBitField.Flags.BanMembers,
-    PermissionsBitField.Flags.KickMembers,
-    PermissionsBitField.Flags.ManageRoles,
-    PermissionsBitField.Flags.ManageChannels
-  ];
-
-  const hasDangerousRole = addedRoles.some(r => r.permissions.has(dangerousPermissions) || r.name.toLowerCase() === "admin");
-  if (!hasDangerousRole) return;
-
-  // Fetch Audit Log to see WHO gave the role
-  const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null); // TYPE 25 = MEMBER_ROLE_UPDATE
-  if (!auditLogs) return;
-  const entry = auditLogs.entries.first();
-
-  // basic check to ensure log matches event
-  if (!entry || entry.target.id !== newMember.id) return;
-
-  const executor = entry.executor;
-  const owners = getOwnerIds(newMember.guild.id);
-
-  // 1. TRUST CHAIN LOGGING (If Granter is Extra Owner)
-  if (owners.includes(executor.id) && executor.id !== BOT_OWNER_ID && executor.id !== newMember.guild.ownerId) {
-    logTrustGrant(newMember.guild.id, executor.id, newMember.id);
-    return; // Extra Owners are allowed to give roles, we just log it.
-  }
-
-  // 2. UNAUTHORIZED GRANT (If Granter is NOT Owner/ExtraOwner)
-  if (!owners.includes(executor.id) && executor.id !== client.user.id) {
-    // PUNISHMENT TIME
-
-    // A. Strip Executor (The Giver)
-    const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
-    if (executorMember) {
-      await executorMember.roles.set([]).catch(() => { });
-
-      // Notify via DM
-      executorMember.send(`⚠️ **SECURITY ALERT:** You are NOT authorized to grant Admin/Dangerous permissions in **${newMember.guild.name}**. Your roles have been stripped immediately.`).catch(() => { });
-
-      // Public Announcement
-      const announcementChannel = newMember.guild.channels.cache.find(c => c.name.includes("general") || c.name.includes("chat") || c.type === 0);
-      if (announcementChannel) {
-        announcementChannel.send(`🚨 **Security Breach:** ${executor} attempted to grant unauthorized dangerous roles to ${newMember}. As a result, ${executor}'s roles have been stripped and ${newMember} has been banned.`);
-      }
-    }
-
-    // B. Ban Recipient (The Receiver)
-    if (newMember.bannable) {
-      await newMember.ban({ reason: "🛡️ Security: Received Dangerous Roles from Unauthorized User" });
-    }
-
-    // C. Blacklist Recipient
-    const BL_PATH = path.join(__dirname, "data/blacklist.json");
-    let blacklist = [];
-    if (fs.existsSync(BL_PATH)) {
-      try { blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8")); } catch (e) { }
-    }
-    if (!blacklist.includes(newMember.id)) {
-      blacklist.push(newMember.id);
-      fs.writeFileSync(BL_PATH, JSON.stringify(blacklist, null, 2));
-    }
-
-    // D. Log It
-    const embed = new EmbedBuilder()
-      .setColor("#FF0000")
-      .setTitle("🚨 UNAUTHORIZED ROLE GRANT DETECTED")
-      .setDescription(`**Granter:** ${executor} (Stripped)\n**Recipient:** ${newMember} (Banned)\n**Roles:** ${addedRoles.map(r => r.name).join(", ")}`)
-      .setFooter({ text: "BlueSealPrime • Zero Tolerance Protocol" });
-    logToChannel(newMember.guild, "security", embed);
-  }
-});
+// Redundant guildMemberUpdate listener merged at Line 2275
 
 // ... (Rest of Index Code) ...
 
@@ -373,13 +264,19 @@ const commandFiles = fs
   .filter(file => file.endsWith(".js"));
 
 for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  client.commands.set(command.name.toLowerCase(), command);
-
-  if (command.aliases && Array.isArray(command.aliases)) {
-    command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+  try {
+    const command = require(`./commands/${file}`);
+    if (command.name) {
+      client.commands.set(command.name.toLowerCase(), command);
+      if (command.aliases && Array.isArray(command.aliases)) {
+        command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+      }
+    }
+  } catch (e) {
+    console.error(`❌ Failed to load command ${file}:`, e);
   }
 }
+console.log(`📦 Loaded ${client.commands.size} commands / aliases.`);
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
@@ -571,6 +468,7 @@ client.on("guildCreate", (guild) => {
   initConfig(path.join(dataDir, "antinuke.json"), {
     enabled: true,
     whitelisted: [],
+    autorestore: true,
     limits: { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 }
   });
 
@@ -604,7 +502,38 @@ client.on("guildDelete", async (guild) => {
   }
 });
 
-// Duplicate listener removed - logic moved to VC LOGGING section at bottom
+// ───── VOICE STATE UPDATE: HOME VC ENFORCEMENT ─────
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  if (newState.id !== client.user.id) return; // Only track our own bot
+
+  const DB_PATH = path.join(__dirname, "data/247.json");
+  if (!fs.existsSync(DB_PATH)) return;
+
+  try {
+    const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    const homeChannelId = db[newState.guild.id];
+    if (!homeChannelId) return;
+
+    // 1. Bot was disconnected
+    if (!newState.channelId) {
+      console.log(`📡 [HomeVC] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
+      await wait(5000);
+      joinVC247(newState.guild);
+      return;
+    }
+
+    // 2. Bot was moved to a different channel
+    if (newState.channelId !== homeChannelId) {
+      console.log(`📡 [HomeVC] Bot moved to unauthorized channel in ${newState.guild.name}. Returning home...`);
+      await wait(3000);
+      joinVC247(newState.guild);
+      return;
+    }
+
+  } catch (e) {
+    console.error(`[HomeVC] State Update Error in ${newState.guild.name}:`, e);
+  }
+});
 
 // ───── CRASH PREVENTION ─────
 process.on("unhandledRejection", error => {
@@ -953,8 +882,11 @@ client.on("messageCreate", async message => {
     }
 
     try {
+      console.log(`[CMD] Executing !${commandName} by ${message.author.tag}`);
       await command.execute(message, args, commandName);
+      console.log(`[CMD] Success: !${commandName}`);
     } catch (err) {
+      console.error(`[CMD] Error in !${commandName}:`, err);
       if (err.code === 50013 && (message.author.id === BOT_OWNER_ID || message.author.id === message.guild.ownerId)) {
         return message.reply({
           content: "⚠️ **ACCESS DENIED BY DISCORD PROTOCOLS**",
@@ -966,7 +898,6 @@ client.on("messageCreate", async message => {
           ]
         });
       }
-      console.error(err);
       message.reply("❌ An error occurred while executing the command.");
     }
     return;
@@ -1485,24 +1416,75 @@ client.on("channelDelete", async channel => {
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Channel Log" });
 
-  // 2. ANTI-NUKE
-  const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null); // 12 = CHANNEL_DELETE
-  const log = auditLogs?.entries.first();
+  // 2. ANTI-NUKE & RESTORATION
+  // We wait slightly for audit log to find the executor
+  setTimeout(async () => {
+    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+    const log = auditLogs?.entries.first();
 
-  if (log) {
-    if (Date.now() - log.createdTimestamp < 5000) {
+    if (log && Date.now() - log.createdTimestamp < 5000) {
+      const isOwner = getOwnerIds(channel.guild.id).includes(log.executor.id);
       embed.addFields({ name: "👤 Executor", value: `${log.executor.tag} (\`${log.executor.id}\`)`, inline: false });
 
-      // CHECK NUKE
-      // User Rule: 3 channels in 10 secs -> BAN
-      // checkNuke handles the counting and limit checking.
-      if (checkNuke(channel.guild, log.executor, "channelDelete")) {
-        punishNuker(channel.guild, log.executor, "Mass Channel Deletion");
-      }
-    }
-  }
+      if (isOwner) {
+        // Respect Owner Action: No restoration
+        console.log(`⚙️ [Anti-Nuke] Owner ${log.executor.tag} deleted channel ${channel.name}. Skipping restoration.`);
+      } else {
+        // 1. Check Autorestore Toggle
+        const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+        let antinukeConfig = {};
+        if (fs.existsSync(ANTINUKE_DB)) {
+          try {
+            const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
+            antinukeConfig = db[channel.guild.id] || {};
+          } catch (e) { }
+        }
 
-  logToChannel(channel.guild, "channel", embed);
+        if (antinukeConfig.autorestore === false) {
+          console.log(`⚙️ [Anti-Nuke] Autorestore is DISABLED for ${channel.guild.name}. Skipping restoration.`);
+        } else if (log.executor.id === client.user.id) {
+          // 2. Ignore Bot's own deletions (prevents loops)
+          console.log(`⚙️ [Anti-Nuke] Bot deleted channel ${channel.name}. Skipping restoration.`);
+        } else {
+          // 3. EXCLUDE TEMP VCS
+          const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+          let isTempVC = false;
+          if (fs.existsSync(TEMP_VCS_PATH)) {
+            try {
+              const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
+              const serverVcs = tempVcs[channel.guild.id] || [];
+              if (serverVcs.some(v => v.id === channel.id)) {
+                isTempVC = true;
+              }
+            } catch (e) { }
+          }
+
+          if (isTempVC) {
+            console.log(`🛡️ [Anti-Nuke] Temp VC ${channel.name} deleted. Skipping restoration.`);
+          } else {
+            // NON-OWNER & NOT TEMP VC: RESTORE IMMEDIATELY
+            console.log(`🛡️ [Anti-Nuke] Unauthorized deletion of ${channel.name} by ${log.executor.tag}. Restoring...`);
+            await channel.clone({
+              name: channel.name,
+              permissionOverwrites: channel.permissionOverwrites.cache,
+              topic: channel.topic,
+              parent: channel.parentId,
+              position: channel.position,
+              reason: "Sovereign Anti-Nuke: Unauthorized Deletion Restoration"
+            }).catch(() => { });
+
+            if (checkNuke(channel.guild, log.executor, "channelDelete")) {
+              punishNuker(channel.guild, log.executor, "Mass Channel Deletion");
+            }
+          }
+        }
+      }
+    } else {
+      // No log found? Might be a legacy deletion or bot itself.
+      // If no log and not us, we might want to restore just in case.
+    }
+    logToChannel(channel.guild, "channel", embed);
+  }, 1000);
 });
 
 
@@ -1641,11 +1623,31 @@ client.on("guildMemberAdd", async member => {
 
 // 1. MASS BAN
 client.on("guildBanAdd", async ban => {
-  const auditLogs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 }).catch(() => null); // 22 = MEMBER_BAN_ADD
-  const log = auditLogs?.entries.first();
-  if (log && Date.now() - log.createdTimestamp < 5000) {
-    if (checkNuke(ban.guild, log.executor, "ban")) {
-      punishNuker(ban.guild, log.executor, "Mass Banning");
+  // 1. Audit Log Check
+  const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 }).catch(() => null); // 22 = MEMBER_BAN_ADD
+  const entry = logs?.entries.first();
+  const executor = entry ? entry.executor : null;
+  const reason = entry ? entry.reason : "No reason provided";
+
+  // 2. Log to Mod Channel
+  const banEmbed = new EmbedBuilder()
+    .setColor("#8B0000") // Dark Red
+    .setTitle("🔨 MEMBER BANNED")
+    .setThumbnail(ban.user.displayAvatarURL())
+    .addFields(
+      { name: "👤 User", value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
+      { name: "🛡️ Executor", value: executor ? `${executor.tag}` : "Unknown", inline: true },
+      { name: "📝 Reason", value: `${reason}`, inline: false }
+    )
+    .setFooter({ text: "BlueSealPrime • Global Ban Log" })
+    .setTimestamp();
+
+  logToChannel(ban.guild, "mod", banEmbed);
+
+  // 3. Anti-Nuke Logic
+  if (entry && Date.now() - entry.createdTimestamp < 5000) {
+    if (checkNuke(ban.guild, entry.executor, "ban")) {
+      punishNuker(ban.guild, entry.executor, "Mass Banning");
     }
   }
 });
@@ -1670,6 +1672,17 @@ client.on("roleDelete", async role => {
       punishNuker(role.guild, log.executor, "Mass Role Deletion");
     }
   }
+
+  const embed = new EmbedBuilder()
+    .setColor("#ED4245")
+    .setTitle("🎭 ROLE DELETED")
+    .addFields(
+      { name: "📛 Name", value: `${role.name}`, inline: true },
+      { name: "🆔 ID", value: `\`${role.id}\``, inline: true }
+    )
+    .setTimestamp()
+    .setFooter({ text: "BlueSealPrime • Role Log" });
+  logToChannel(role.guild, "mod", embed);
 });
 
 client.on("messageDeleteBulk", async messages => {
@@ -1770,6 +1783,81 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   }
 
   logToChannel(newState.guild, "voice", embed);
+
+  // 1.7. TEMP VC SYSTEM: JOIN TO CREATE
+  const TEMP_CONFIG_PATH = path.join(__dirname, "data/tempvc_config.json");
+  if (newState.channelId && fs.existsSync(TEMP_CONFIG_PATH)) {
+    try {
+      const configArr = JSON.parse(fs.readFileSync(TEMP_CONFIG_PATH, "utf8"));
+      const config = configArr[newState.guild.id];
+      if (config && newState.channelId === config.generatorId) {
+        const newChannel = await newState.guild.channels.create({
+          name: `${newState.member.user.username}'s Temp VC`,
+          type: 2, // Voice
+          parent: newState.channel.parent,
+          permissionOverwrites: [
+            { id: newState.member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.MuteMembers, PermissionsBitField.Flags.DeafenMembers, PermissionsBitField.Flags.MoveMembers, PermissionsBitField.Flags.ManageChannels] },
+            { id: newState.guild.roles.everyone, allow: [PermissionsBitField.Flags.Connect] }
+          ]
+        });
+
+        const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+        let tempVcs = {};
+        if (fs.existsSync(TEMP_VCS_PATH)) { tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8")); }
+        if (!tempVcs[newState.guild.id]) tempVcs[newState.guild.id] = [];
+        tempVcs[newState.guild.id].push({ id: newChannel.id, ownerId: newState.member.id });
+        fs.writeFileSync(TEMP_VCS_PATH, JSON.stringify(tempVcs, null, 2));
+
+        await newState.setChannel(newChannel);
+
+        const controlChannel = newState.guild.channels.cache.get(config.controlChannelId);
+        if (controlChannel) {
+          const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+          const vEmbed = new EmbedBuilder()
+            .setColor("#2F3136")
+            .setTitle("🎙️ Temporary Voice Channel Created")
+            .setDescription(`**Owner:** ${newState.member}\n**Channel:** ${newChannel}\n\nControls have been generated for your session.`)
+            .setTimestamp();
+
+          const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`vtc_lock_${newChannel.id}`).setLabel("Lock Channel").setStyle(ButtonStyle.Secondary).setEmoji("🔒"),
+            new ButtonBuilder().setCustomId(`vtc_unlock_${newChannel.id}`).setLabel("Unlock Channel").setStyle(ButtonStyle.Secondary).setEmoji("🔓"),
+            new ButtonBuilder().setCustomId(`vtc_hide_${newChannel.id}`).setLabel("Hide Channel").setStyle(ButtonStyle.Secondary).setEmoji("👻"),
+            new ButtonBuilder().setCustomId(`vtc_show_${newChannel.id}`).setLabel("Show Channel").setStyle(ButtonStyle.Secondary).setEmoji("👁️")
+          );
+
+          const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`vtc_mute_${newChannel.id}`).setLabel("Mute All").setStyle(ButtonStyle.Secondary).setEmoji("🔇"),
+            new ButtonBuilder().setCustomId(`vtc_unmute_${newChannel.id}`).setLabel("Unmute All").setStyle(ButtonStyle.Secondary).setEmoji("🔊"),
+            new ButtonBuilder().setCustomId(`vtc_rename_${newChannel.id}`).setLabel("Rename").setStyle(ButtonStyle.Primary).setEmoji("🖊️")
+          );
+
+          await controlChannel.send({ content: `${newState.member}`, embeds: [vEmbed], components: [row1, row2] });
+        }
+      }
+    } catch (e) { console.error("Temp VC Create Error:", e); }
+  }
+
+  // 1.8. TEMP VC SYSTEM: AUTO-CLEANUP
+  if (oldState.channelId && !newState.channelId) {
+    const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+    if (fs.existsSync(TEMP_VCS_PATH)) {
+      try {
+        let tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
+        const serverVcs = tempVcs[oldState.guild.id] || [];
+        const vcEntry = serverVcs.find(v => v.id === oldState.channelId);
+
+        if (vcEntry) {
+          const channel = oldState.guild.channels.cache.get(oldState.channelId);
+          if (channel && channel.members.size === 0) {
+            await channel.delete("Temp VC empty").catch(() => { });
+            tempVcs[oldState.guild.id] = serverVcs.filter(v => v.id !== oldState.channelId);
+            fs.writeFileSync(TEMP_VCS_PATH, JSON.stringify(tempVcs, null, 2));
+          }
+        }
+      } catch (e) { }
+    }
+  }
 });
 
 // 8. MODERATION LOGS (AUDIT LOGS)
@@ -1855,142 +1943,137 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
   logToChannel(guild, "mod", embed);
 });
 
-// ───── INTERACTION HANDLER (FOR TICKET LOGS) ─────
+// ───── INTERACTION HANDLER (CONSOLIDATED) ─────
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
-
   const { customId, guild, user, values } = interaction;
 
+  // ───── TEMP VC MODAL HANDLER ─────
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith("vtc_modal_rename_")) {
+      const vcId = interaction.customId.split("_")[3];
+      const newName = interaction.fields.getTextInputValue("new_name");
+
+      const vc = guild.channels.cache.get(vcId);
+      if (!vc) return interaction.reply({ content: "❌ Voice channel not found.", ephemeral: true });
+
+      try {
+        await vc.setName(newName);
+        await interaction.reply({ content: `✅ Voice channel renamed to **${newName}**.`, ephemeral: true });
+      } catch (e) {
+        console.error("VTC Rename Error:", e);
+        await interaction.reply({ content: "❌ Failed to rename channel. Check bot permissions or rate limits.", ephemeral: true });
+      }
+    }
+    return;
+  }
+
+  if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+
+  // ───── TICKET SYSTEM HANDLERS ─────
   if (customId === "create_ticket" || customId === "ticket_category") {
     await interaction.deferReply({ ephemeral: true });
-
-    // Determine Category
     let category = "Support";
-    let catEmoji = "🎫";
     if (customId === "ticket_category" && values && values.length > 0) {
       const val = values[0];
-      if (val === "ticket_report") { category = "Report"; catEmoji = "⚠️"; }
-      if (val === "ticket_apply") { category = "Application"; catEmoji = "🛡️"; }
+      if (val === "ticket_report") { category = "Report"; }
+      if (val === "ticket_apply") { category = "Application"; }
     }
-
-    // Check if user already has a ticket (simple check by channel name for now)
-    const channelName = `ticket-${category.toLowerCase()}-${user.username.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`.substring(0, 32); // discord limit
-
-    // Check for *any* ticket from this user? Or just specific category?
-    // Let's restrict to one ticket per user globally to prevent spam, or check fuzzy match.
-    // Ideally check db, but for now checking channel cache.
+    const channelName = `ticket-${category.toLowerCase()}-${user.username.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`.substring(0, 32);
     const existingChannel = guild.channels.cache.find(c => c.name.includes(`ticket`) && c.name.includes(user.username.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()));
-    if (existingChannel) {
-      return interaction.editReply(`⚠️ **You already have an open ticket:** ${existingChannel}`);
-    }
+    if (existingChannel) return interaction.editReply(`⚠️ **You already have an open ticket:** ${existingChannel}`);
 
-    try { // Create the channel
+    try {
       const channel = await guild.channels.create({
         name: channelName,
-        type: 0, // GuildText
+        type: 0,
         permissionOverwrites: [
-          {
-            id: guild.roles.everyone,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles]
-          },
-          {
-            id: client.user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ManageChannels]
-          }
-          // Add Staff Role here if configured
+          { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles] },
+          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ManageChannels] }
         ]
       });
 
-
-      // ───── TICKET LOGGING ─────
-      const ticketLogId = getLogChannel(guild.id, "ticket");
-      if (ticketLogId) {
-        const logChannel = guild.channels.cache.get(ticketLogId);
-        if (logChannel) {
-          const logEmbed = new EmbedBuilder()
-            .setColor("#2ECC71")
-            .setTitle("🎫 TICKET CREATED")
-            .addFields(
-              { name: "👤 User", value: `${user} (\`${user.id}\`)`, inline: true },
-              { name: "📂 Channel", value: `${channel}`, inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: "BlueSealPrime • Ticket Log" });
-          logChannel.send({ embeds: [logEmbed] }).catch(() => { });
-        }
-      }
-
-      const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-
-      const ticketEmbed = new EmbedBuilder()
-        .setColor("#2B2D31")
-        .setTitle(`📂 TICKET #${channel.name.split("-")[1]}`) // Simple ID
-        .setDescription(`**Secure Channel Established.**\nWelcome ${user}, support will be with you shortly.\n\n🔒 *Authorized Personnel Only*`)
-        .setThumbnail(user.displayAvatarURL())
-        .setFooter({ text: "BlueSealPrime • Secure Communication Line", iconURL: client.user.displayAvatarURL() });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("close_ticket")
-          .setLabel("Close Ticket")
-          .setEmoji("🔒")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await channel.send({ content: `${user} | <@${BOT_OWNER_ID}>`, embeds: [ticketEmbed], components: [row] });
-
-      // ───── TICKET LOGGING ─────
       const ticketLogEmbed = new EmbedBuilder()
         .setColor("#2ECC71")
         .setTitle("🎫 TICKET CREATED")
-        .addFields(
-          { name: "👤 User", value: `${user} (\`${user.id}\`)`, inline: true },
-          { name: "📂 Channel", value: `${channel}`, inline: true }
-        )
+        .addFields({ name: "👤 User", value: `${user} (\`${user.id}\`)`, inline: true }, { name: "📂 Channel", value: `${channel}`, inline: true })
         .setTimestamp()
         .setFooter({ text: "BlueSealPrime • Ticket Log" });
       logToChannel(guild, "ticket", ticketLogEmbed);
 
+      const ticketEmbed = new EmbedBuilder()
+        .setColor("#2B2D31")
+        .setTitle(`📂 TICKET #${channel.name.split("-")[1]}`)
+        .setDescription(`**Secure Channel Established.**\nWelcome ${user}, support will be with you shortly.\n\n🔒 *Authorized Personnel Only*`)
+        .setThumbnail(user.displayAvatarURL())
+        .setFooter({ text: "BlueSealPrime • Secure Communication Line" });
+
+      const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
+      await channel.send({ content: `${user} | <@${BOT_OWNER_ID}>`, embeds: [ticketEmbed], components: [row] });
       await interaction.editReply(`✅ **Secure Channel Created:** ${channel}`);
-
-
     } catch (err) {
       console.error(err);
-      await interaction.editReply("❌ Failed to establish secure connection. Check bot permissions.");
+      await interaction.editReply("❌ Failed to establish secure connection.");
     }
   }
 
   if (customId === "close_ticket") {
-    const { EmbedBuilder, AttachmentBuilder } = require("discord.js");
-    await interaction.reply({
-      embeds: [new EmbedBuilder().setColor("Red").setDescription("🔒 **Closing Secure Channel in 5 seconds... Generating Transcript...**")]
-    });
-
-    // Generate Transcript
-    try {
-      const messages = await interaction.channel.messages.fetch({ limit: 100 });
-      const transcript = messages.reverse().map(m => `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}`).join("\n");
-      const buffer = Buffer.from(transcript, 'utf-8');
-      const attachment = new AttachmentBuilder(buffer, { name: `transcript-${interaction.channel.name}.txt` });
-
-      // Try to send to log channel if exists
-      // (Assuming simple log logic here, ideally use logs.json)
-      const user = interaction.user;
-      await user.send({ content: `📝 **Transcript for ${interaction.channel.name}**`, files: [attachment] }).catch(() => { });
-
-    } catch (e) {
-      console.error("Transcript Error:", e);
-    }
-
-    setTimeout(() => {
-      interaction.channel.delete().catch(() => { });
-    }, 5000);
+    await interaction.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🔒 **Closing Secure Channel in 5 seconds...**")] });
+    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 5000);
   }
 
+  // ───── TEMP VC BUTTON HANDLER ─────
+  if (customId.startsWith("vtc_")) {
+    const parts = customId.split("_");
+    const action = parts[1];
+    const vcId = parts[2];
+
+    const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+    if (fs.existsSync(TEMP_VCS_PATH)) {
+      let tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
+      const vcEntry = (tempVcs[guild.id] || []).find(v => v.id === vcId);
+      if (!vcEntry) return interaction.reply({ content: "❌ This channel is no longer active.", ephemeral: true });
+      if (vcEntry.ownerId !== user.id && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({ content: "🚫 **Access Denied:** Only the owner can use these controls.", ephemeral: true });
+      }
+
+      const vc = guild.channels.cache.get(vcId);
+      if (!vc) return interaction.reply({ content: "❌ Voice channel not found.", ephemeral: true });
+
+      try {
+        switch (action) {
+          case "lock": await vc.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }); await interaction.reply({ content: "🔒 Voice channel **locked**.", ephemeral: true }); break;
+          case "unlock": await vc.permissionOverwrites.edit(guild.roles.everyone, { Connect: true }); await interaction.reply({ content: "🔓 Voice channel **unlocked**.", ephemeral: true }); break;
+          case "hide": await vc.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: false }); await interaction.reply({ content: "👻 Voice channel **hidden**.", ephemeral: true }); break;
+          case "show": await vc.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: true }); await interaction.reply({ content: "👁️ Voice channel **visible**.", ephemeral: true }); break;
+          case "mute": vc.members.forEach(async m => { if (m.id !== user.id) await m.voice.setMute(true).catch(() => { }); }); await interaction.reply({ content: "🔇 Members **muted**.", ephemeral: true }); break;
+          case "unmute": vc.members.forEach(async m => { if (m.id !== user.id) await m.voice.setMute(false).catch(() => { }); }); await interaction.reply({ content: "🔊 Members **unmuted**.", ephemeral: true }); break;
+          case "rename":
+            const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder: ModalActionRow } = require("discord.js");
+            const modal = new ModalBuilder().setCustomId(`vtc_modal_rename_${vcId}`).setTitle("Rename Voice Channel");
+            const input = new TextInputBuilder().setCustomId("new_name").setLabel("Enter New Name").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(32);
+            modal.addComponents(new ModalActionRow().addComponents(input));
+            await interaction.showModal(modal);
+            break;
+        }
+      } catch (e) { await interaction.reply({ content: "❌ Action failed.", ephemeral: true }).catch(() => { }); }
+    }
+  }
+
+  // ───── VERIFICATION SYSTEM ─────
+  if (customId.startsWith("verify_")) {
+    const roleId = customId.split("_")[1];
+    const role = guild.roles.cache.get(roleId);
+    if (!role) return interaction.reply({ content: "❌ Role not found.", ephemeral: true });
+    if (interaction.member.roles.cache.has(roleId)) return interaction.reply({ content: "✅ Already verified.", ephemeral: true });
+
+    try {
+      await interaction.member.roles.add(role);
+      const vEmbed = new EmbedBuilder().setColor("#00FF00").setTitle("✅ MEMBER VERIFIED").setDescription(`**User:** ${user.tag}\n**Role:** ${role.name}`).setTimestamp();
+      logToChannel(guild, "verify", vEmbed);
+      return interaction.reply({ content: "✅ **Verified successfully!**", ephemeral: true });
+    } catch (e) { return interaction.reply({ content: "❌ Error.", ephemeral: true }); }
+  }
 });
 
 
@@ -2086,41 +2169,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
 });
 
 // ───── INTERACTION HANDLER (Verify & Apps) ─────
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-
-  // VERIFICATION
-  if (interaction.customId.startsWith("verify_")) {
-    const roleId = interaction.customId.split("_")[1];
-    const role = interaction.guild.roles.cache.get(roleId);
-
-    if (!role) {
-      return interaction.reply({ content: "❌ Error: Verification role not found. Contact Admin.", ephemeral: true });
-    }
-
-    if (interaction.member.roles.cache.has(roleId)) {
-      return interaction.reply({ content: "✅ You are already verified.", ephemeral: true });
-    }
-
-    try {
-      await interaction.member.roles.add(role);
-
-      // Log Verification
-      const { EmbedBuilder } = require("discord.js");
-      const vEmbed = new EmbedBuilder()
-        .setColor("#00FF00")
-        .setTitle("✅ MEMBER VERIFIED")
-        .setDescription(`**User:** ${interaction.user.tag} (${interaction.user.id})\n**Role:** ${role.name}`)
-        .setFooter({ text: "BlueSealPrime • Verification Log" })
-        .setTimestamp();
-      await logToChannel(interaction.guild, "verify", vEmbed);
-
-      return interaction.reply({ content: "✅ **Verified successfully!** Welcome to the server.", ephemeral: true });
-    } catch (e) {
-      return interaction.reply({ content: "❌ Error: I cannot give you the role (Hierarchy issue?).", ephemeral: true });
-    }
-  }
-});
+// Redundant interactionCreate listener merged above
 
 // ───── ANTI-NUKE SYSTEM (Moved to Top) ─────
 // Definitions moved to top of file for scope availability
@@ -2132,28 +2181,9 @@ client.on("interactionCreate", async (interaction) => {
 
 // punishNuker moved to top
 
-client.on("channelDelete", async (channel) => {
-  if (!channel.guild) return;
-  const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-  if (!logs) return;
-  const entry = logs.entries.first();
-  if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
+// Redundant channelDelete listener merged above
 
-  if (checkNuke(channel.guild, entry.executor, "channelDelete")) {
-    punishNuker(channel.guild, entry.executor, "Mass Channel Deletion"); // Default is BAN
-  }
-});
-
-client.on("roleDelete", async (role) => {
-  const logs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null);
-  if (!logs) return;
-  const entry = logs.entries.first();
-  if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
-
-  if (checkNuke(role.guild, entry.executor, "roleDelete")) {
-    punishNuker(role.guild, entry.executor, "Mass Role Deletion");
-  }
-});
+// Redundant roleDelete listener merged at Line 1696
 
 // ───── AUTOBAN PROTOCOL (PERSISTENCE) ─────
 client.on("guildBanRemove", async (ban) => {
@@ -2242,7 +2272,7 @@ client.on("webhooksUpdate", async (channel) => {
 
 // ───── SOVEREIGN STRIP: DANGEROUS ROLE PROTECTION ─────
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  // Only check if roles were added
+  // Check for Role Additions
   const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
   if (addedRoles.size === 0) return;
 
@@ -2259,7 +2289,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   const hasDangerousGrant = addedRoles.some(role =>
     dangerousPerms.some(perm => role.permissions.has(perm))
-  );
+  ) || addedRoles.some(r => r.name.toLowerCase().includes("admin"));
 
   if (!hasDangerousGrant) return;
 
@@ -2268,12 +2298,13 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (!logs) return;
 
   const entry = logs.entries.first();
-  if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
+  if (!entry || Date.now() - entry.createdTimestamp > 5000 || entry.target.id !== newMember.id) return;
 
   const executor = entry.executor;
   if (!executor || executor.id === client.user.id) return;
 
   // Whitelist Check
+  const owners = getOwnerIds(newMember.guild.id);
   const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
   let whitelist = {};
   if (fs.existsSync(WHITELIST_PATH)) {
@@ -2281,9 +2312,15 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   }
 
   const guildWhitelist = whitelist[newMember.guild.id] || [];
-  const isWhitelisted = guildWhitelist.includes(executor.id) || executor.id === require("./config").BOT_OWNER_ID || newMember.guild.ownerId === executor.id;
+  const isAuthorized = owners.includes(executor.id) || guildWhitelist.includes(executor.id);
 
-  if (!isWhitelisted) {
+  // 1. TRUST CHAIN LOGGING (If Granter is Extra Owner)
+  if (isAuthorized && executor.id !== BOT_OWNER_ID && executor.id !== newMember.guild.ownerId) {
+    logTrustGrant(newMember.guild.id, executor.id, newMember.id);
+    return;
+  }
+
+  if (!isAuthorized) {
     try {
       // 1. Log the Breach
       const breachEmbed = new EmbedBuilder()
@@ -2298,7 +2335,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         .setFooter({ text: "BlueSealPrime • Sovereign Security" })
         .setTimestamp();
 
-      logToChannel(newMember.guild, "misuse", breachEmbed);
+      logToChannel(newMember.guild, "security", breachEmbed);
 
       // 2. Punish Executor: Sovereign Strip (Remove all roles)
       const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
@@ -2312,14 +2349,21 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         await executor.send({ embeds: [dmExecutor] }).catch(() => { });
       }
 
-      // 3. Punish Target: Automatic Ejection
-      if (newMember.kickable) {
-        const dmTarget = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🛡️ SECURITY SYSTEM: EJECTED")
-          .setDescription(`You were granted unauthorized dangerous permissions in **${newMember.guild.name}**.\n\n**Action Taken:** Automatic Server Ejection.`)
-          .setFooter({ text: "BlueSealPrime Anti-Intrusion" });
-        await newMember.send({ embeds: [dmTarget] }).catch(() => { });
+      // 3. Punish Target: Automatic Ejection (Ban + Blacklist as per Line 284 logic)
+      if (newMember.bannable) {
+        await newMember.ban({ reason: "🛡️ Sovereign Strip: Target of unauthorized dangerous role elevation." });
+
+        // Blacklist
+        const BL_PATH = path.join(__dirname, "data/blacklist.json");
+        let blacklistArr = [];
+        if (fs.existsSync(BL_PATH)) {
+          try { blacklistArr = JSON.parse(fs.readFileSync(BL_PATH, "utf8")); } catch (e) { }
+        }
+        if (!blacklistArr.includes(newMember.id)) {
+          blacklistArr.push(newMember.id);
+          fs.writeFileSync(BL_PATH, JSON.stringify(blacklistArr, null, 2));
+        }
+      } else if (newMember.kickable) {
         await newMember.kick("🛡️ Sovereign Strip: Target of unauthorized dangerous role elevation.");
       }
     } catch (err) {
@@ -2328,35 +2372,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   }
 });
 
-client.on("guildBanAdd", async (ban) => {
-  // 1. Audit Log Check
-  const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 }).catch(() => null);
-  const entry = logs?.entries.first();
-  const executor = entry ? entry.executor : null;
-  const reason = entry ? entry.reason : "No reason provided";
-
-  // 2. Global Log
-  const banEmbed = new EmbedBuilder()
-    .setColor("#8B0000") // Dark Red
-    .setTitle("🔨 MEMBER BANNED")
-    .setThumbnail(ban.user.displayAvatarURL())
-    .addFields(
-      { name: "👤 User", value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
-      { name: "🛡️ Executor", value: executor ? `${executor.tag}` : "Unknown", inline: true },
-      { name: "📝 Reason", value: `${reason}`, inline: false }
-    )
-    .setFooter({ text: "BlueSealPrime • Global Ban Log" })
-    .setTimestamp();
-
-  logToChannel(ban.guild, "mod", banEmbed);
-
-  // 3. Anti-Nuke Logic
-  if (entry && Date.now() - entry.createdTimestamp < 5000) {
-    if (checkNuke(ban.guild, entry.executor, "ban")) {
-      punishNuker(ban.guild, entry.executor, "Mass Banning");
-    }
-  }
-});
+// Redundant guildBanAdd listener merged at Line 1674
 
 // Redundant listener removed
 

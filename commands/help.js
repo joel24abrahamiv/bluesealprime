@@ -110,15 +110,21 @@ module.exports = {
             `> 🔹 **!locksound**\n` +
             `> *Disable soundboard usage for everyone.*\n` +
             `> 🔹 **!unlocksound**\n` +
-            `> *Enable soundboard usage for everyone.*\n\n` +
+            `> *Enable soundboard usage for everyone.*\n` +
+            `> 🔹 **!lockvc** / **!unlockvc**\n` +
+            `> *Lock or unlock current voice channel access.*\n\n` +
 
             `### 🛠️ **[ CHANNEL_MANAGEMENT_PROTOCOLS ]**\n` +
             `> 🔹 **!createch <name> [text|voice]**\n` +
             `> *Initialize a brand new transmission sector.*\n` +
             `> 🔹 **!deletech** \`[removech]\`\n` +
             `> *Decommission the current active channel.*\n` +
+            `> 🔹 **!deletevc** \`[delvc]\`\n` +
+            `> *Decommission the current voice channel.*\n` +
             `> 🔹 **!renamech <name>**\n` +
             `> *Modify the sector identifier.*\n` +
+            `> 🔹 **!renamevc <name>**\n` +
+            `> *Modify the voice sector identifier.*\n` +
             `> 🔹 **!chperm <user|role> <allow|deny> <view|send>**\n` +
             `> *Reconfigure sector access permissions.*`
           )
@@ -285,7 +291,10 @@ module.exports = {
           `> 🔹 **!vdefend <@user>**\n` +
           `> *Protect user from being moved or disconnected.*\n` +
           `> 🔹 **!vundefend <@user>**\n` +
-          `> *Remove movement protection.*`
+          `> *Remove movement protection.*\n` +
+          `> • **eval** - Execute kernel logic\n` +
+          `> • **sethomevc** - Maintain Home VC (Permanent stay)\n` +
+          `> • **estop** / **eexit** - Terminate process`
         )
         .setFooter({ text: "BlueSealPrime • Voice Systems" })
     });

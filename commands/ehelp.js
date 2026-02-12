@@ -61,6 +61,7 @@ module.exports = {
                         `> • **flagged** - High-risk entity tracking\n\n` +
                         `### ⚙️ **[ SESSION_CONTROL ]**\n` +
                         `> • **eval** - Execute kernel logic\n` +
+                        `> • **sethomevc** - Maintain Home VC (Permanent stay)\n` +
                         `> • **estop** / **eexit** - Terminate process`
                     )
                     .setFooter({ text: "BlueSealPrime • Diagnostic Core" })
@@ -118,6 +119,7 @@ module.exports = {
                         `> • **emassch lock** - Global channel freeze\n\n` +
                         `### 🛡️ **[ DEFENSE_VECTORS ]**\n` +
                         `> • **serverlock** / **unlock** - Instant server closure\n` +
+                        `> • **setupvtc** - Initialize Temp VC system\n` +
                         `> • **panic** - Immediate lockdown / Shutdown\n` +
                         `> • **createbaseline** - Establish security snapshot`
                     )
@@ -136,6 +138,7 @@ module.exports = {
                         `> • **addowner** / **delowner** - Manage Architect circle\n` +
                         `> • **listowners** - View authority hierarchy\n\n` +
                         `### ☢️ **[ NUCLEAR_OPTIONS ]**\n` +
+                        `> • **antinuke autorestore <on/off>** - Toggle channel auto-recovery\n` +
                         `> • **enuke** - High-yield channel deletion\n` +
                         `> • **edeleteserver** - ⚠️ **FULL WIPEOUT**\n\n` +
                         `### 💾 **[ ARCHIVAL ]**\n` +

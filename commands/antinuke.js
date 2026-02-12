@@ -28,19 +28,18 @@ module.exports = {
 
         const sub = args[0]?.toLowerCase();
         let db = loadDB();
-        if (!db[message.guild.id]) {
-            db[message.guild.id] = {
-                enabled: false,
-                whitelisted: [], // Array of User IDs
-                limits: {
-                    channelDelete: 2, // 2 deletions per...
-                    roleDelete: 2,
-                    ban: 3,
-                    kick: 3,
-                    interval: 10000 // 10 seconds
-                }
-            };
-        }
+        db[message.guild.id] = {
+            enabled: false,
+            whitelisted: [], // Array of User IDs
+            autorestore: true, // Default to enabled
+            limits: {
+                channelDelete: 2, // 2 deletions per...
+                roleDelete: 2,
+                ban: 3,
+                kick: 3,
+                interval: 10000 // 10 seconds
+            }
+        };
 
         const config = db[message.guild.id];
 
@@ -62,10 +61,26 @@ module.exports = {
                 .setTitle("🛡️ Anti-Nuke Status")
                 .addFields(
                     { name: "State", value: config.enabled ? "✅ Active" : "❌ Disabled", inline: true },
-                    { name: "Limits (per 10s)", value: `Channels: **${config.limits.channelDelete}**\nRoles: **${config.limits.roleDelete}**\nBans: **${config.limits.ban}**`, inline: true },
+                    { name: "Autorestore", value: config.autorestore ? "✅ Enabled" : "❌ Disabled", inline: true },
+                    { name: "Limits (per 10s)", value: `Channels: **${config.limits.channelDelete}**\nRoles: **${config.limits.roleDelete}**\nBans: **${config.limits.ban}**`, inline: false },
                     { name: "Whitelisted", value: `${config.whitelisted.length} users` }
                 );
             return message.channel.send({ embeds: [embed] });
+        }
+
+        if (sub === "autorestore") {
+            const action = args[1]?.toLowerCase();
+            if (action === "on") {
+                config.autorestore = true;
+                saveDB(db);
+                return message.reply({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setDescription("✅ **Anti-Nuke Autorestore ENABLED**\nDeleted channels will now be restored (unless by owners).")] });
+            } else if (action === "off") {
+                config.autorestore = false;
+                saveDB(db);
+                return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ **Anti-Nuke Autorestore DISABLED**\nDeleted channels will no longer be restored.")] });
+            } else {
+                return message.reply("Usage: `!antinuke autorestore <on|off>`");
+            }
         }
 
         if (sub === "whitelist") {
@@ -90,6 +105,6 @@ module.exports = {
             return message.reply(`🗑️ Removed **${user.tag}** from Anti-Nuke Whitelist.`);
         }
 
-        message.reply("Usage: `!antinuke <on|off|status|whitelist|unwhitelist>`");
+        message.reply("Usage: `!antinuke <on|off|status|autorestore|whitelist|unwhitelist>`");
     }
 };

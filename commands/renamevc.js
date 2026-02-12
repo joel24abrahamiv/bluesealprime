@@ -1,11 +1,12 @@
-const { PermissionsBitField, EmbedBuilder } = require("discord.js");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
 
 module.exports = {
-    name: "deletevc",
-    description: "Deletes the voice channel you are currently in",
-    aliases: ["dvc", "delvc"],
+    name: "renamevc",
+    description: "Rename the voice channel you are currently in",
+    usage: "!renamevc <new name>",
     permissions: [PermissionsBitField.Flags.ManageChannels],
+    aliases: ["rvc"],
 
     async execute(message, args) {
         const isBotOwner = message.author.id === BOT_OWNER_ID;
@@ -22,29 +23,34 @@ module.exports = {
 
         const channel = message.member.voice.channel;
         if (!channel) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ You must be in a voice channel to delete it.")] });
+            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ You must be in a voice channel to rename it.")] });
         }
 
-        const channelName = channel.name;
+        if (!args[0]) {
+            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ Usage: `!renamevc <new name>`")] });
+        }
+
+        const oldName = channel.name;
+        const newName = args.join(" ");
 
         try {
-            await channel.delete(`Deleted by ${message.author.tag}`);
+            await channel.setName(newName);
 
             const embed = new EmbedBuilder()
-                .setColor("#FF0000") // Red
-                .setTitle("🗑️ VOICE CHANNEL DELETED")
-                .setDescription(`Successfully deleted the voice channel: \`${channelName}\``)
+                .setColor(SUCCESS_COLOR || "#00FF00")
+                .setTitle("🏷️ VOICE CHANNEL RENAMED")
+                .setDescription(`**${oldName}** ➡️ **${newName}**`)
                 .addFields(
-                    { name: "🛡️ Deleted By", value: `> ${message.author}`, inline: true },
+                    { name: "🛡️ Modified By", value: `> ${message.author}`, inline: true },
                     { name: "⏱️ Time", value: `> <t:${Math.floor(Date.now() / 1000)}:f>`, inline: true }
                 )
                 .setFooter({ text: "BlueSealPrime • Moderation System", iconURL: message.client.user.displayAvatarURL() });
 
             await message.channel.send({ embeds: [embed] });
 
-        } catch (e) {
-            console.error(e);
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ Failed to delete the voice channel.")] });
+        } catch (err) {
+            console.error(err);
+            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ Failed to rename the voice channel.")] });
         }
     }
 };
