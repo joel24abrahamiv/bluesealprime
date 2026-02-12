@@ -6,7 +6,6 @@ module.exports = {
     description: "Remove timeout from a user",
     usage: "!untimeout @user [reason]",
     permissions: [PermissionsBitField.Flags.ModerateMembers],
-    whitelistOnly: true,
     async execute(message, args) {
         const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
         if (!target) return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ User not found.")] });

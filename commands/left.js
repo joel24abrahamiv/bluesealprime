@@ -75,43 +75,23 @@ module.exports = {
 
         // ───── TEST ─────
         if (subCommand === "test") {
-            if (message.author.id === BOT_OWNER_ID) {
-                // 👑 OWNER LEAVE (INVINCIBLE)
-                const royalEmbed = new EmbedBuilder()
-                    .setColor("#FFD700") // Gold
-                    .setTitle("👑 ROYAL DEPARTURE")
-                    .setDescription(
-                        `***The Creator has departed the sovereign dominion.***\n\n` +
-                        `> **Status:** LEGENDARY\n` +
-                        `> **Legacy:** ETERNAL\n\n` +
-                        `*Until next time, Master.*`
-                    )
-                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 512 }))
-                    .setFooter({ text: `BlueSealPrime • Royal Protocol`, iconURL: message.client.user.displayAvatarURL() })
+            try {
+                const buffer = await module.exports.generateGoodbyeImage(message.member);
+                const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye-image.png' });
+
+                const embed = new EmbedBuilder()
+                    .setColor("#2f3136")
+                    .setTitle(`Goodbye from ${message.guild.name}`)
+                    .setDescription(`> Goodbye ${message.member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
+                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+                    .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
                     .setTimestamp();
-                return message.channel.send({ embeds: [royalEmbed] });
-            } else {
-                try {
-                    const buffer = await module.exports.generateGoodbyeImage(message.member);
-                    const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye-image.png' });
 
-                    // 🛡️ NORMAL MEMBER (SWEET GOODBYE)
-                    const embed = new EmbedBuilder()
-                        .setColor("#2f3136") // Dark (Same as Welcome)
-                        .setTitle(`Goodbye from ${message.guild.name}`)
-                        .setDescription(
-                            `> Goodbye ${message.author}! We are sad to see you go.\n` +
-                            `> We hope you had a great time here. Take care and see you soon! ❤️`
-                        )
-                        .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 512 }))
-                        .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
-                        .setTimestamp();
+                return message.channel.send({ embeds: [embed], files: [attachment] });
 
-                    return message.channel.send({ embeds: [embed], files: [attachment] });
-                } catch (error) {
-                    console.error(error);
-                    return message.reply("❌ Error generating goodbye image.");
-                }
+            } catch (error) {
+                console.error(error);
+                return message.reply("❌ Error generating goodbye image.");
             }
         }
 

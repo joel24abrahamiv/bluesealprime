@@ -38,29 +38,26 @@ module.exports = {
             ]
         });
 
-        // 5. TURBO PROCESSING (PARALLEL WAVES)
+        // 5. STAGGERED PROCESSING (Anti-Rate Limit)
         let successCount = 0;
         let failCount = 0;
-        const members = (await message.guild.members.fetch()).filter(m => !m.user.bot); // Skip bots for safety
+        const members = (await message.guild.members.fetch()).filter(m => !m.user.bot);
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        const tasks = Array.from(members.values()).map(async (member) => {
+        for (const member of members.values()) {
             try {
                 if (action === "add" && !member.roles.cache.has(role.id)) {
                     await member.roles.add(role, "Mass Role Operation");
                     successCount++;
+                    await wait(250); // 🛡️ Anti-Rate Limit Stagger
                 } else if (action === "remove" && member.roles.cache.has(role.id)) {
                     await member.roles.remove(role, "Mass Role Operation");
                     successCount++;
+                    await wait(250); // 🛡️ Anti-Rate Limit Stagger
                 }
             } catch (err) {
                 failCount++;
             }
-        });
-
-        // Use chunks to avoid extreme rate limits on massive guilds
-        const CHUNK_SIZE = 25;
-        for (let i = 0; i < tasks.length; i += CHUNK_SIZE) {
-            await Promise.allSettled(tasks.slice(i, i + CHUNK_SIZE));
         }
 
         // 6. Final Report

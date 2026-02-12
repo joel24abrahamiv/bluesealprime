@@ -4,7 +4,6 @@ module.exports = {
     description: "Remove timeout",
     usage: "!unmute @user",
     permissions: [PermissionsBitField.Flags.ModerateMembers],
-    whitelistOnly: true,
     execute(message, args) {
         const cmd = message.client.commands.get("timeout");
         // Timeout can't really "untimeout" easily unless we pass 0 duration?

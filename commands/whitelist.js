@@ -43,12 +43,26 @@ module.exports = {
   description: "Manage the server whitelist",
 
   async execute(message, args) {
+    // ───── PERMISSION CHECK ─────
+    const ownersDbPath = path.join(__dirname, "../data/owners.json");
+    let extraOwners = [];
+    if (fs.existsSync(ownersDbPath)) {
+      try {
+        const db = JSON.parse(fs.readFileSync(ownersDbPath, "utf8"));
+        extraOwners = db[message.guild.id] || [];
+      } catch (e) { }
+    }
+
+    const isExtraOwner = extraOwners.includes(message.author.id);
     const isBotOwner = message.author.id === BOT_OWNER_ID;
     const isServerOwner = message.guild.ownerId === message.author.id;
 
-    // ───── PERMISSION CHECK ─────
-    if (!isBotOwner && !isServerOwner) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 **Access Denied**\nOnly the **bot owner** or **server owner** can manage the whitelist.")] });
+    if (!isBotOwner && !isServerOwner && !isExtraOwner) {
+      return message.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(require("../config").ERROR_COLOR)
+          .setDescription("🚫 **Access Denied**\nOnly the **Bot Owner**, **Server Owner**, or **Extra Owners** can manage the whitelist.")]
+      });
     }
 
     if (!args.length) {

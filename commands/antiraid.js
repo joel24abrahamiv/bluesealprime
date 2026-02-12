@@ -50,14 +50,12 @@ module.exports = {
                 .setColor("#2B2D31")
                 .setTitle("🛡️ ANTI-RAID PROTECTION STATUS")
                 .setDescription(
-                    "```diff\n" +
-                    `${guildConfig.enabled ? "+ STATUS:    ACTIVE" : "- STATUS:    INACTIVE"}\n` +
-                    `  THRESHOLD: ${guildConfig.threshold} joins\n` +
-                    `  TIMEFRAME: ${guildConfig.timeWindow} seconds\n` +
-                    "```\n\n\n" +
-                    `**Current Configuration:**\n\n` +
-                    `> ${guildConfig.enabled ? "✅" : "❌"} Protection is **${guildConfig.enabled ? "ENABLED" : "DISABLED"}**\n\n` +
-                    `> ⚡ Triggers when **${guildConfig.threshold}** members join within **${guildConfig.timeWindow}** seconds\n\n\n` +
+                    `**Security Protocols Status:**\n` +
+                    `> **Status:** ${guildConfig.enabled ? "✅ ACTIVE" : "❌ INACTIVE"}\n` +
+                    `> **Threshold:** \`${guildConfig.threshold}\` joins\n` +
+                    `> **Timeframe:** \`${guildConfig.timeWindow}\` seconds\n\n` +
+                    `**Current Detail:**\n` +
+                    `Triggers when **${guildConfig.threshold}** members join within **${guildConfig.timeWindow}** seconds.\n\n` +
                     `🔒 **BlueSealPrime Security Network**`
                 )
                 .setFooter({ text: "BlueSealPrime • Anti-Raid System", iconURL: message.client.user.displayAvatarURL() })

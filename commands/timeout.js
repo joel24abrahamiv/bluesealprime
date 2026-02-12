@@ -29,7 +29,6 @@ module.exports = {
   name: "timeout",
   description: "Timeout a member with confirmation",
   permissions: [PermissionsBitField.Flags.ModerateMembers],
-  whitelistOnly: true,
 
   async execute(message, args) {
     const isBotOwner = message.author.id === BOT_OWNER_ID;

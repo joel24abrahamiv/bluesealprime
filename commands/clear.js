@@ -7,7 +7,6 @@ module.exports = {
     aliases: ["purge"],
     usage: "!clear <amount>",
     permissions: [PermissionsBitField.Flags.ManageMessages],
-    whitelistOnly: true,
 
     async execute(message, args) {
         const isBotOwner = message.author.id === BOT_OWNER_ID;

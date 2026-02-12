@@ -6,7 +6,6 @@ module.exports = {
     description: "Modify role permissions (Admin/Whitelist Only)",
     aliases: ["rperm", "editrole"],
     permissions: [PermissionsBitField.Flags.Administrator],
-    whitelistOnly: true,
 
     async execute(message, args) {
         // Usage: !roleperm <role> <add|remove> <permission>

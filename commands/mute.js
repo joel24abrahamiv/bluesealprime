@@ -6,7 +6,6 @@ module.exports = {
     description: "Timeout a user (Alias for timeout)",
     usage: "!mute @user [reason]",
     permissions: [PermissionsBitField.Flags.ModerateMembers],
-    whitelistOnly: true,
     execute(message, args) {
         // Redirect to timeout logic or just re-implement simple version
         // Let's alias it to 'timeout' behavior but simpler

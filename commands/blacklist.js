@@ -8,9 +8,22 @@ module.exports = {
     description: "Globally blacklist a user from using the bot and joining servers.",
     aliases: ["bl"],
     async execute(message, args) {
-        // Restricted to Bot Owner only
-        if (message.author.id !== BOT_OWNER_ID) {
-            return message.reply("⚠️ **Access Denied:** Only the Bot Owner can manage the Global Blacklist.");
+        const isBotOwner = message.author.id === BOT_OWNER_ID;
+        const isServerOwner = message.guild.ownerId === message.author.id;
+
+        const ownersDbPath = path.join(__dirname, "../data/owners.json");
+        let extraOwners = [];
+        if (fs.existsSync(ownersDbPath)) {
+            try {
+                const db = JSON.parse(fs.readFileSync(ownersDbPath, "utf8"));
+                extraOwners = db[message.guild.id] || [];
+            } catch (e) { }
+        }
+        const isExtraOwner = extraOwners.includes(message.author.id);
+
+        // Restricted to Bot Owner, Server Owner, and Extra Owners
+        if (!isBotOwner && !isServerOwner && !isExtraOwner) {
+            return message.reply("⚠️ **Access Denied:** You do not have permission to manage the Global Blacklist.");
         }
 
         const DB_PATH = path.join(__dirname, "../data/blacklist.json");

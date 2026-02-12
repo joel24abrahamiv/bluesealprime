@@ -257,131 +257,125 @@ module.exports = {
       }
     ];
 
-    // Add Admin-Only Category (Anti-Raid)
-    const isBotOwner = message.author.id === require("../config").BOT_OWNER_ID;
-    const isAdmin = message.member.permissions.has(require("discord.js").PermissionsBitField.Flags.Administrator);
+    // VOICE MANAGEMENT
+    categories.push({
+      label: "Voice Management",
+      value: "voice",
+      emoji: "🔊",
+      description: "Control voice channels and members",
+      embed: new EmbedBuilder()
+        .setColor("#0099FF") // Blue
+        .setAuthor({ name: "🔊 VOICE OPERATIONS", iconURL: clientUser.displayAvatarURL() })
+        .setDescription(
+          `### 🎤 **[ VOICE_CONTROL_UNIT ]**\n` +
+          `> 🔹 **!vmute <@user>**\n` +
+          `> *Server mute user in Voice Channel.*\n` +
+          `> 🔹 **!vunmute <@user>**\n` +
+          `> *Server unmute user in Voice Channel.*\n` +
+          `> 🔹 **!vmuteall**\n` +
+          `> *Mute everyone in your Voice Channel.*\n` +
+          `> 🔹 **!vunmuteall**\n` +
+          `> *Unmute everyone in your Voice Channel.*\n` +
+          `> 🔹 **!muv <@user> [channel]**\n` +
+          `> *Move user to Void or specified channel.*\n` +
+          `> 🔹 **!muvu <@user>**\n` +
+          `> *Un-Void/Restore user to original VC.*\n` +
+          `> 🔹 **!vmoveall <#channel>** \`[moveall, massmove]\`\n` +
+          `> *Mass move everyone in current VC to another.*\n` +
+          `> 🔹 **!vdefend <@user>**\n` +
+          `> *Protect user from being moved or disconnected.*\n` +
+          `> 🔹 **!vundefend <@user>**\n` +
+          `> *Remove movement protection.*`
+        )
+        .setFooter({ text: "BlueSealPrime • Voice Systems" })
+    });
 
-    if (isBotOwner || isAdmin) {
-      // VOICE MANAGEMENT
-      categories.push({
-        label: "Voice Management",
-        value: "voice",
-        emoji: "🔊",
-        description: "Control voice channels and members",
-        embed: new EmbedBuilder()
-          .setColor("#0099FF") // Blue
-          .setAuthor({ name: "🔊 VOICE OPERATIONS", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `### 🎤 **[ VOICE_CONTROL_UNIT ]**\n` +
-            `> 🔹 **!vmute <@user>**\n` +
-            `> *Server mute user in Voice Channel.*\n` +
-            `> 🔹 **!vunmute <@user>**\n` +
-            `> *Server unmute user in Voice Channel.*\n` +
-            `> 🔹 **!vmuteall**\n` +
-            `> *Mute everyone in your Voice Channel.*\n` +
-            `> 🔹 **!vunmuteall**\n` +
-            `> *Unmute everyone in your Voice Channel.*\n` +
-            `> 🔹 **!muv <@user> [channel]**\n` +
-            `> *Move user to Void or specified channel.*\n` +
-            `> 🔹 **!muvu <@user>**\n` +
-            `> *Un-Void/Restore user to original VC.*\n` +
-            `> 🔹 **!vmoveall <#channel>** \`[moveall, massmove]\`\n` +
-            `> *Mass move everyone in current VC to another.*\n` +
-            `> 🔹 **!vdefend <@user>**\n` +
-            `> *Protect user from being moved or disconnected.*\n` +
-            `> 🔹 **!vundefend <@user>**\n` +
-            `> *Remove movement protection.*`
-          )
-          .setFooter({ text: "BlueSealPrime • Voice Systems" })
-      });
+    // QUARANTINE MANAGEMENT (Admin)
+    categories.push({
+      label: "Quarantine Management",
+      value: "quarantine",
+      emoji: "☣️",
+      description: "Isolation and containment systems",
+      embed: new EmbedBuilder()
+        .setColor("#FF4500") // Orange Red
+        .setAuthor({ name: "☣️ QUARANTINE PROTOCOLS", iconURL: clientUser.displayAvatarURL() })
+        .setDescription(
+          `### 🛡️ **[ ISOLATION_UNIT ]**\n` +
+          `> 🔹 **!qr <@user> [reason]** \`[quarantine]\`\n` +
+          `> *Isolate user in Quarantine Zone. Revoke permissions.*\n` +
+          `> 🔹 **!uq <@user>** \`[unquarantine]\`\n` +
+          `> *Release user from quarantine.*\n\n` +
+          `### 🛡️ **[ BASIC_MODERATION ]**\n` +
+          `> 🔹 **!warn <@user>**\n` +
+          `> *Issue official warning.*\n` +
+          `> 🔹 **!mute <@user>**\n` +
+          `> *Timeout/Silence user.*`
+        )
+        .setFooter({ text: "BlueSealPrime • Containment" })
+    });
 
-      // QUARANTINE MANAGEMENT (Admin)
-      categories.push({
-        label: "Quarantine Management",
-        value: "quarantine",
-        emoji: "☣️",
-        description: "Isolation and containment systems",
-        embed: new EmbedBuilder()
-          .setColor("#FF4500") // Orange Red
-          .setAuthor({ name: "☣️ QUARANTINE PROTOCOLS", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `### 🛡️ **[ ISOLATION_UNIT ]**\n` +
-            `> 🔹 **!qr <@user> [reason]** \`[quarantine]\`\n` +
-            `> *Isolate user in Quarantine Zone. Revoke permissions.*\n` +
-            `> 🔹 **!uq <@user>** \`[unquarantine]\`\n` +
-            `> *Release user from quarantine.*\n\n` +
-            `### 🛡️ **[ BASIC_MODERATION ]**\n` +
-            `> 🔹 **!warn <@user>**\n` +
-            `> *Issue official warning.*\n` +
-            `> 🔹 **!mute <@user>**\n` +
-            `> *Timeout/Silence user.*`
-          )
-          .setFooter({ text: "BlueSealPrime • Containment" })
-      });
+    // LOGGING (Redundant with Security but kept for depth if needed, strictly logging focused)
+    categories.push({
+      label: "Logging Module",
+      value: "logging",
+      emoji: "📝",
+      description: "Configure Server Logging Channels",
+      embed: new EmbedBuilder()
+        .setColor("#2E8B57") // Sea Green
+        .setAuthor({ name: "📝 LOGGING SYSTEMS [ EPSILON ]", iconURL: clientUser.displayAvatarURL() })
+        .setDescription(
+          `### ⚙️ **[ SYSTEM_LOGS ]**\n` +
+          `> 🔹 **!log mod <#channel>**\n` +
+          `> *Moderation Actions.*\n` +
+          `> 🔹 **!log message <#channel>**\n` +
+          `> *Deleted/Edited Messages.*\n` +
+          `> 🔹 **!log member <#channel>**\n` +
+          `> *Joins/Leaves.*\n` +
+          `> 🔹 **!log voice <#channel>**\n` +
+          `> *Voice Activity.*\n` +
+          `> 🔹 **!log role <#channel>**\n` +
+          `> *Role Updates.*\n` +
+          `> 🔹 **!log server <#channel>**\n` +
+          `> *Server Changes.*\n\n` +
+          `### 🛡️ **[ SECURITY_LOGS ]**\n` +
+          `> 🔹 **!log antinuke <#channel>**\n` +
+          `> *Anti-Nuke Triggers.*\n` +
+          `> 🔹 **!log automod <#channel>**\n` +
+          `> *Auto-Mod Violations.*\n` +
+          `> 🔹 **!log whitelist <#channel>**\n` +
+          `> *Whitelist Changes.*\n` +
+          `> 🔹 **!log admin <#channel>**\n` +
+          `> *Admin Command Usage.*\n\n` +
+          `### 📂 **[ DATA_LOGS ]**\n` +
+          `> 🔹 **!log file <#channel>**\n` +
+          `> *File Uploads.*\n` +
+          `> 🔹 **!log ticket <#channel>**\n` +
+          `> *Ticket Transcripts.*\n` +
+          `> 🔹 **!log invite <#channel>**\n` +
+          `> *Invite Tracking.*`
+        )
+        .setFooter({ text: "BlueSealPrime • Comprehensive Logging" })
+    });
 
-      // LOGGING (Redundant with Security but kept for depth if needed, strictly logging focused)
-      categories.push({
-        label: "Logging Module",
-        value: "logging",
-        emoji: "📝",
-        description: "Configure Server Logging Channels",
-        embed: new EmbedBuilder()
-          .setColor("#2E8B57") // Sea Green
-          .setAuthor({ name: "📝 LOGGING SYSTEMS [ EPSILON ]", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `### ⚙️ **[ SYSTEM_LOGS ]**\n` +
-            `> 🔹 **!log mod <#channel>**\n` +
-            `> *Moderation Actions.*\n` +
-            `> 🔹 **!log message <#channel>**\n` +
-            `> *Deleted/Edited Messages.*\n` +
-            `> 🔹 **!log member <#channel>**\n` +
-            `> *Joins/Leaves.*\n` +
-            `> 🔹 **!log voice <#channel>**\n` +
-            `> *Voice Activity.*\n` +
-            `> 🔹 **!log role <#channel>**\n` +
-            `> *Role Updates.*\n` +
-            `> 🔹 **!log server <#channel>**\n` +
-            `> *Server Changes.*\n\n` +
-            `### 🛡️ **[ SECURITY_LOGS ]**\n` +
-            `> 🔹 **!log antinuke <#channel>**\n` +
-            `> *Anti-Nuke Triggers.*\n` +
-            `> 🔹 **!log automod <#channel>**\n` +
-            `> *Auto-Mod Violations.*\n` +
-            `> 🔹 **!log whitelist <#channel>**\n` +
-            `> *Whitelist Changes.*\n` +
-            `> 🔹 **!log admin <#channel>**\n` +
-            `> *Admin Command Usage.*\n\n` +
-            `### 📂 **[ DATA_LOGS ]**\n` +
-            `> 🔹 **!log file <#channel>**\n` +
-            `> *File Uploads.*\n` +
-            `> 🔹 **!log ticket <#channel>**\n` +
-            `> *Ticket Transcripts.*\n` +
-            `> 🔹 **!log invite <#channel>**\n` +
-            `> *Invite Tracking.*`
-          )
-          .setFooter({ text: "BlueSealPrime • Comprehensive Logging" })
-      });
-
-      categories.push({
-        label: "Administrator Controls",
-        value: "admin",
-        emoji: "⚡",
-        description: "Absolute Power & Server Control (Admin Only)",
-        embed: new EmbedBuilder()
-          .setColor("#FFD700") // Gold
-          .setAuthor({ name: "⚡ ABSOLUTE POWER CONTROLS [ OMEGA ]", iconURL: clientUser.displayAvatarURL() })
-          .setDescription(
-            `### 👥 **[ MASS_POPULATION_CONTROL ]**\n` +
-            `> 🔹 **System Locked:** *Mass operations are hidden for security.*\n` +
-            `> 🔹 **!serverlock**\n` +
-            `> *Lock the ENTIRE server.*\n` +
-            `> 🔹 **!serverunlock**\n` +
-            `> *Unlock the ENTIRE server.*`
-          )
-          .setThumbnail(clientUser.displayAvatarURL())
-          .setFooter({ text: "⚠️ RESTRICTED ACCESS • AUTHORIZED PERSONNEL ONLY" })
-      });
-    }
+    categories.push({
+      label: "Administrator Controls",
+      value: "admin",
+      emoji: "⚡",
+      description: "Absolute Power & Server Control (Admin Only)",
+      embed: new EmbedBuilder()
+        .setColor("#FFD700") // Gold
+        .setAuthor({ name: "⚡ ABSOLUTE POWER CONTROLS [ OMEGA ]", iconURL: clientUser.displayAvatarURL() })
+        .setDescription(
+          `### 👥 **[ MASS_POPULATION_CONTROL ]**\n` +
+          `> 🔹 **System Locked:** *Mass operations are hidden for security.*\n` +
+          `> 🔹 **!serverlock**\n` +
+          `> *Lock the ENTIRE server.*\n` +
+          `> 🔹 **!serverunlock**\n` +
+          `> *Unlock the ENTIRE server.*`
+        )
+        .setThumbnail(clientUser.displayAvatarURL())
+        .setFooter({ text: "⚠️ RESTRICTED ACCESS • AUTHORIZED PERSONNEL ONLY" })
+    });
 
     let currentPage = 0;
 

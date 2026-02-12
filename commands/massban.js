@@ -6,7 +6,6 @@ module.exports = {
     description: "Mass Ban multiple users by ID (Admin Only)",
     usage: "!massban <id1> <id2> <id3> ... [reason]",
     permissions: [PermissionsBitField.Flags.Administrator],
-    whitelistOnly: true,
 
     async execute(message, args) {
         // Owner/Admin Check
@@ -54,6 +53,8 @@ module.exports = {
         let successCount = 0;
         let failCount = 0;
 
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         for (const id of ids) {
             // Safety: Never ban the Bot Owner
             if (id === BOT_OWNER_ID) {
@@ -64,6 +65,7 @@ module.exports = {
             try {
                 await message.guild.members.ban(id, { reason: reason });
                 successCount++;
+                await wait(400); // 🛡️ Anti-Rate Limit Stagger
             } catch (err) {
                 console.error(`Failed to ban ${id}:`, err);
                 failCount++;

@@ -12,7 +12,6 @@ module.exports = {
   name: "ban",
   description: "Ban a member from the server with confirmation",
   permissions: [PermissionsBitField.Flags.BanMembers],
-  whitelistOnly: true,
 
   async execute(message, args) {
     const isBotOwner = message.author.id === BOT_OWNER_ID;

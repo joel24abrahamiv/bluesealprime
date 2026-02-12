@@ -12,7 +12,6 @@ module.exports = {
   name: "kick",
   description: "Kicks a member from the server with confirmation",
   permissions: [PermissionsBitField.Flags.KickMembers],
-  whitelistOnly: true,
 
   async execute(message, args) {
     const isBotOwner = message.author.id === BOT_OWNER_ID;

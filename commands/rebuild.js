@@ -33,13 +33,24 @@ module.exports = {
 
         try {
             const startTime = Date.now();
-            await Promise.allSettled(Array.from({ length: count }, () =>
-                message.guild.channels.create({
-                    name: channelName,
-                    type: ChannelType.GuildText,
-                    reason: "Turbo Rebuild"
-                }).catch(() => { })
-            ));
+            const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const batchSize = 10;
+
+            for (let i = 0; i < count; i += batchSize) {
+                const batch = [];
+                for (let j = 0; j < batchSize && (i + j) < count; j++) {
+                    batch.push(
+                        message.guild.channels.create({
+                            name: channelName,
+                            type: ChannelType.GuildText,
+                            reason: "Turbo Rebuild"
+                        }).catch(() => { })
+                    );
+                }
+                await Promise.all(batch);
+                if (i + batchSize < count) await wait(150); // Stagger batches
+            }
+
             const endTime = Date.now();
             const duration = ((endTime - startTime) / 1000).toFixed(2);
 

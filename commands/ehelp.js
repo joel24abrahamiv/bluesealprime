@@ -22,10 +22,13 @@ module.exports = {
             .setTitle("🔒 GOD MODE INTELLIGENCE PANEL")
             .setDescription(
                 `**System Override Active.**\n` +
-                `access to restricted kernel commands.\n\n` +
+                `Access to restricted kernel commands.\n\n` +
                 `**Select a module below:**\n` +
-                `• 🛡️ **System & Utils** (Stats, Logging, Scanning)\n` +
-                `• ☢️ **Danger & Backup** (Nukes, Deletions, Recovery)`
+                `• 🛡️ **System & Utils** (Stats, Session, Diagnostic)\n` +
+                `• 📡 **Broadcasting** (Neural Comms, Say, Announce)\n` +
+                `• ⚡ **Elite Operations** (Mass Ops, Meta Control)\n` +
+                `• 🔒 **Security & Locks** (God-Locks, Baseline, Panic)\n` +
+                `• 👑 **Authority & Trust** (Owners, Nukes, Backups)`
             )
             .setThumbnail(clientUser.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: "BlueSealPrime • Root Access Granted" })
@@ -44,53 +47,102 @@ module.exports = {
                 label: "System & Utils",
                 value: "system",
                 emoji: "🛡️",
-                description: "Stats, Logs, Scans, Announcements",
+                description: "Stats, Logs, Diagnostics",
                 embed: new EmbedBuilder()
-                    .setColor("#000000") // Black
+                    .setColor("#000000")
                     .setTitle("🛡️ SYSTEM & UTILS MODULE")
                     .setDescription(
                         `### 📊 **[ SYSTEM_METRICS ]**\n` +
-                        `> • **eram** - View hosting resources (RAM/CPU)\n` +
-                        `> • **estats** - View bot latency & heartbeat\n` +
-                        `> • **eusers** - Global user correlation stats\n\n` +
+                        `> • **eram** / **estats** - Resource & Latency check\n` +
+                        `> • **eusers** - Global user correlation\n` +
+                        `> • **devinfo** - Internal developer data\n\n` +
                         `### 📝 **[ LOGGING_INTERCEPT ]**\n` +
-                        `> • **elogs** - Audit current server logs\n` +
-                        `> • **eloggings <id>** - Bridge logs to channel\n` +
-                        `> • **elogsbot** - Global cross-server spy\n` +
-                        `> • **flagged** - Identify high-risk entities\n\n` +
-                        `### 📡 **[ BROADCAST ]**\n` +
-                        `> • **eannoc <msg>** - Global Neural Broadcast\n` +
-                        `> • **scanserver** - Run Deep Scan Protocol\n` +
-                        `> • **createabaseline** - Establish Security Baseline\n` +
-                        `> • **eval** - Toggle Root Access\n` +
-                        `> • **eexit** - Terminate Session`
+                        `> • **elogs** / **elogsbot** - server & global audit\n` +
+                        `> • **flagged** - High-risk entity tracking\n\n` +
+                        `### ⚙️ **[ SESSION_CONTROL ]**\n` +
+                        `> • **eval** - Execute kernel logic\n` +
+                        `> • **estop** / **eexit** - Terminate process`
                     )
-                    .setFooter({ text: "BlueSealPrime • System Module" })
+                    .setFooter({ text: "BlueSealPrime • Diagnostic Core" })
             },
             {
-                label: "Danger & Backup",
-                value: "danger",
-                emoji: "☢️",
-                description: "Nukes, Deletions, Restores",
+                label: "Broadcasting",
+                value: "broadcasting",
+                emoji: "📡",
+                description: "Global Comms & Announcements",
                 embed: new EmbedBuilder()
-                    .setColor("#FF0000") // RED
-                    .setTitle("☢️ DANGER & BACKUP MODULE")
+                    .setColor("#00FFFF")
+                    .setTitle("📡 BROADCASTING MODULE")
                     .setDescription(
-                        `### ⛔ **[ DESTRUCTIVE_OPS ]**\n` +
-                        `> • **edeleteserver** - ⚠️ **TERMINATE SERVER**\n` +
-                        `> • **enuke <id>** - Nuclear Option (Server)\n` +
-                        `> • **edelnuke <id>** - Channel Annihilation\n` +
-                        `> • **purgebots** - Unauthorized Bot Purge\n\n` +
-                        `### 💾 **[ RECOVERY_SYSTEMS ]**\n` +
-                        `> • **backup** - Create System Snapshot\n` +
-                        `> • **restore <id>** - Restore from Snapshot\n` +
-                        `> • **recovery** - Emergency Recovery Mode\n` +
-                        `> • **rembck <id>** - Delete Snapshot\n` +
-                        `> • **bckstatus** - View Snapshot Integrity\n` +
-                        `> • **backuplist** - Global Snapshot Index\n` +
-                        `> • **autobackup** - Toggle Auto-Archival`
+                        `### 📢 **[ NEURAL_COMMUNICATION ]**\n` +
+                        `> • **eannoc <msg>** - Global Neural Broadcast\n` +
+                        `> • **announce <#ch> <msg>** - Standard Announcement\n` +
+                        `> • **say <msg>** - Force bot speech in channel\n\n` +
+                        `### 📡 **[ SIGNAL_CONTROL ]**\n` +
+                        `> • **createticket** - Trigger ticket system\n` +
+                        `> • **scanserver** - Run Deep Scan Protocol`
                     )
-                    .setFooter({ text: "BlueSealPrime • Danger Module" })
+                    .setFooter({ text: "BlueSealPrime • Comms Hub" })
+            },
+            {
+                label: "Elite Operations",
+                value: "elite",
+                emoji: "⚡",
+                description: "Mass Ops & Control",
+                embed: new EmbedBuilder()
+                    .setColor("#FF00FF")
+                    .setTitle("⚡ ELITE OPERATIONS MODULE")
+                    .setDescription(
+                        `### 🌊 **[ MASS_OPERATIONS ]**\n` +
+                        `> • **massban <ids>** - Rapid multi-target deletion\n` +
+                        `> • **massrole <r> <ids>** - Bulk role assignment\n\n` +
+                        `### ⚙️ **[ META_CONTROL ]**\n` +
+                        `> • **renamech <name>** - Stealth channel renaming\n` +
+                        `> • **rolecopy <r1> <r2>** - Inherit role DNA/perms\n` +
+                        `> • **hide** / **show** - Invisibility protocol`
+                    )
+                    .setFooter({ text: "BlueSealPrime • Alpha Operations" })
+            },
+            {
+                label: "Security & Locks",
+                value: "security",
+                emoji: "🔒",
+                description: "God-Locks & Baselines",
+                embed: new EmbedBuilder()
+                    .setColor("#2E8B57")
+                    .setTitle("🔒 SECURITY & LOCKS MODULE")
+                    .setDescription(
+                        `### ⛓️ **[ GOD_LOCKS ]**\n` +
+                        `> • **elock <type>** - Restrict Media/Links/Cmds\n` +
+                        `> • **eunlock <type>** - Revoke God-Lock\n` +
+                        `> • **emassch lock** - Global channel freeze\n\n` +
+                        `### 🛡️ **[ DEFENSE_VECTORS ]**\n` +
+                        `> • **serverlock** / **unlock** - Instant server closure\n` +
+                        `> • **panic** - Immediate lockdown / Shutdown\n` +
+                        `> • **createbaseline** - Establish security snapshot`
+                    )
+                    .setFooter({ text: "BlueSealPrime • Defense Kernel" })
+            },
+            {
+                label: "Authority & Trust",
+                value: "trust",
+                emoji: "👑",
+                description: "Owners, Nukes, Backups",
+                embed: new EmbedBuilder()
+                    .setColor("#FFD700")
+                    .setTitle("☢️ AUTHORITY & TRUST MODULE")
+                    .setDescription(
+                        `### 👑 **[ ABSOLUTE_POWER ]**\n` +
+                        `> • **addowner** / **delowner** - Manage Architect circle\n` +
+                        `> • **listowners** - View authority hierarchy\n\n` +
+                        `### ☢️ **[ NUCLEAR_OPTIONS ]**\n` +
+                        `> • **enuke** - High-yield channel deletion\n` +
+                        `> • **edeleteserver** - ⚠️ **FULL WIPEOUT**\n\n` +
+                        `### 💾 **[ ARCHIVAL ]**\n` +
+                        `> • **backup** / **restore** - DNA state preservation\n` +
+                        `> • **backuplist** - View system snapshots`
+                    )
+                    .setFooter({ text: "BlueSealPrime • Omega Protocol" })
             }
         ];
 

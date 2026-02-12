@@ -5,7 +5,6 @@ module.exports = {
   name: "unban",
   description: "Unban a user using mention, ID, or username",
   permissions: [PermissionsBitField.Flags.BanMembers],
-  whitelistOnly: true,
 
   async execute(message, args) {
     // ───── BASIC CHECKS ─────

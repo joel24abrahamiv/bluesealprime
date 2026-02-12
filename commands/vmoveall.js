@@ -42,13 +42,15 @@ module.exports = {
 
         const loadingMsg = await message.reply(`🔄 **Moving ${count} members...**`);
 
-        // Move Loop
-        // TURBO MASS MOVE (PARALLEL)
-        const moveTasks = Array.from(fromChannel.members.values()).map(member =>
-            member.voice.setChannel(toChannel, "Mass Move Protocol").then(() => moved++).catch(() => { })
-        );
-
-        await Promise.allSettled(moveTasks);
+        // Move Loop (Anti-Rate Limit Staggered)
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        for (const member of fromChannel.members.values()) {
+            try {
+                await member.voice.setChannel(toChannel, "Mass Move Protocol");
+                moved++;
+                await wait(200); // 🛡️ Anti-Rate Limit
+            } catch (err) { }
+        }
 
         const embed = new EmbedBuilder()
             .setColor(EMBED_COLOR)

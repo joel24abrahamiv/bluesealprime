@@ -22,8 +22,8 @@ module.exports = {
 
     async execute(message, args) {
         // Only Owner can manage Anti-Nuke to prevent rogue admins from disabling it
-        if (message.author.id !== BOT_OWNER_ID && message.author.id !== message.guild.ownerId) {
-            return message.reply("🚫 **Security Alert:** Only the Server Owner or Bot Owner can manage Anti-Nuke.");
+        if (message.author.id !== BOT_OWNER_ID && message.author.id !== message.guild.ownerId && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("🚫 **Security Alert:** Only Administrators or Owners can manage Anti-Nuke.");
         }
 
         const sub = args[0]?.toLowerCase();
