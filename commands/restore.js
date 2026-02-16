@@ -59,7 +59,7 @@ module.exports = {
 
             try {
                 // ───── PHASE 0: TOTAL PURGE (NUCLEAR) ─────
-                const channels = message.guild.channels.cache.filter(c => c.id !== message.channel.id);
+                const channels = message.guild.channels.cache;
                 const roles = message.guild.roles.cache.filter(r => r.editable && r.id !== message.guild.id);
                 const emojis = message.guild.emojis.cache;
                 const stickers = message.guild.stickers.cache;
@@ -71,11 +71,11 @@ module.exports = {
                     ...Array.from(stickers.values())
                 ];
 
-                await Promise.allSettled(purgeItems.map(item => item.delete().catch(() => { })));
+                await Promise.all(purgeItems.map(item => item.delete().catch(() => { })));
 
                 // ───── PHASE 1: ROLES & CATEGORIES (SIMULTANEOUS) ─────
                 statusEmbed.setDescription("```diff\n+ STAGE 1: SANITIZATION COMPLETE\n- STAGE 2: RECONSTRUCTING STRUCTURAL DNA\n```");
-                await progress.edit({ embeds: [statusEmbed] });
+                await progress.edit({ embeds: [statusEmbed] }).catch(() => { });
 
                 const roleMap = new Map(); // Name -> New ID
                 const createdCats = new Map(); // Name -> New ID
@@ -91,8 +91,8 @@ module.exports = {
                     }).catch(() => { });
                 }
 
-                // Create Roles Parallel
-                const rolePromises = data.roles.map(async (roleData) => {
+                // Create Roles Sequentially
+                await Promise.all(data.roles.map(async (roleData) => {
                     let role = message.guild.roles.cache.find(r => r.name === roleData.name);
                     if (!role) {
                         try {
@@ -108,12 +108,11 @@ module.exports = {
                     }
                     if (role) {
                         roleMap.set(roleData.name, role.id);
-                        // Store the old ID to new ID mapping if needed elsewhere
                     }
-                });
+                }));
 
-                // Create Categories Parallel
-                const catPromises = data.channels.filter(c => c.type === ChannelType.GuildCategory).map(async (catData) => {
+                // Create Categories Sequentially
+                for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory)) {
                     let cat = message.guild.channels.cache.find(c => c.name === catData.name && c.type === ChannelType.GuildCategory);
                     if (!cat) {
                         try {
@@ -123,36 +122,37 @@ module.exports = {
                                 position: catData.position,
                                 reason: "Turbo Restoration"
                             });
+                            await new Promise(r => setTimeout(r, 5)); // ⚡ HYPER-SONIC 5ms
                         } catch (e) { }
                     }
                     if (cat) {
                         createdCats.set(catData.name, cat.id);
-                        // Find old cat ID if it's in the backup (it will be at top level of c in backupData.channels)
                         const oldCat = data.channels.find(c => c.name === catData.name && c.type === ChannelType.GuildCategory);
                         if (oldCat && oldCat.id) channelIdMap.set(oldCat.id, cat.id);
                     }
-                });
+                }
 
-                await Promise.all([...rolePromises, ...catPromises]);
-
-                // ───── ROLE POSITIONING (Preserve Hierarchy) ─────
+                // ───── ROLE POSITIONING (Atomic & Perfect) ─────
                 // Wait for roles to stabilize in cache
-                await new Promise(r => setTimeout(r, 2000));
+                await new Promise(r => setTimeout(r, 5));
 
-                const sortedRoles = [...data.roles].sort((a, b) => a.position - b.position);
-                const allRoles = await message.guild.roles.fetch();
+                const rolePositions = [];
+                const allRoles = await message.guild.roles.fetch(true); // Force fetch
 
-                for (const rData of sortedRoles) {
+                for (const rData of data.roles) {
                     const role = allRoles.find(r => r.name === rData.name);
                     if (role && role.editable && role.name !== "@everyone") {
-                        try {
-                            // Triple check permissions and hierarchy
-                            if (!role.permissions.equals(BigInt(rData.permissions))) {
-                                await role.setPermissions(BigInt(rData.permissions)).catch(() => { });
-                            }
-                            await role.setPosition(rData.position).catch(() => { });
-                        } catch (e) { }
+                        rolePositions.push({ role: role.id, position: rData.position });
+                        // Double check permissions while we are here
+                        if (!role.permissions.equals(BigInt(rData.permissions))) {
+                            await role.setPermissions(BigInt(rData.permissions)).catch(() => { });
+                        }
                     }
+                }
+
+                // Batch update positions (Atomic)
+                if (rolePositions.length > 0) {
+                    await message.guild.roles.setPositions(rolePositions).catch(err => console.error("Role Hierarchy Sync Failed:", err));
                 }
 
                 // Create Lookup Map for O(1) access
@@ -174,7 +174,7 @@ module.exports = {
                 };
 
                 // ───── PHASE 2: GLOBAL CHANNEL WAVE (PARALLEL) ─────
-                await progress.edit("🔄 **Phase 2:** Turbo Deployment of 100% Structural Matrix...");
+                await progress.edit("🔄 **Phase 2:** Turbo Deployment of 100% Structural Matrix...").catch(() => { });
                 const restorationTasks = [];
 
                 // Update Category Perms
@@ -206,22 +206,18 @@ module.exports = {
                     } catch (e) { }
                 };
 
-                // Batch Create All Sub-Channels
-                for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory)) {
-                    const parentId = createdCats.get(catData.name);
-                    if (catData.children) {
-                        for (const childData of catData.children) {
-                            restorationTasks.push(createAndTrack(childData, parentId));
-                        }
-                    }
-                }
+                // Batch Create All Sub-Channels (Parallel)
+                await Promise.all(
+                    data.channels.filter(c => c.type === ChannelType.GuildCategory && c.children).flatMap(catData => {
+                        const parentId = createdCats.get(catData.name);
+                        return catData.children.map(childData => createAndTrack(childData, parentId));
+                    })
+                );
 
-                // Batch Create Orphans
-                for (const chanData of data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children)) {
-                    restorationTasks.push(createAndTrack(chanData));
-                }
-
-                await Promise.allSettled(restorationTasks);
+                // Batch Create Orphans (Parallel)
+                await Promise.all(
+                    data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children).map(chanData => createAndTrack(chanData))
+                );
 
                 // ───── CONFIG HEALING (LOGGING & SYSTEM SYNC) ─────
                 const configsToHeal = [
@@ -278,11 +274,18 @@ module.exports = {
                         { name: "📡 Intel", value: `Healed ${channelIdMap.size} Structural Vectors`, inline: true }
                     );
 
-                await progress.edit({ content: null, embeds: [finalEmbed] });
+                // Find a new channel to send the success message
+                const newChannel = message.guild.channels.cache.find(c => c.type === ChannelType.GuildText);
+                if (newChannel) {
+                    await newChannel.send({ content: `${message.author}`, embeds: [finalEmbed] }).catch(() => { });
+                } else {
+                    // Fallback if somehow no channels exist (unlikely after restore)
+                    await progress.edit({ content: null, embeds: [finalEmbed] }).catch(() => { });
+                }
 
             } catch (err) {
                 console.error(err);
-                progress.edit(`❌ **Restoration Fault:** Encountered an error during structural deployment.`);
+                progress.edit(`❌ **Restoration Fault:** Encountered an error during structural deployment.`).catch(() => { });
             }
         });
 

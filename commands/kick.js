@@ -111,7 +111,7 @@ module.exports = {
 
         // ───── DM USER BEFORE KICK ─────
         try {
-          const owner = await message.guild.fetchOwner();
+          const owner = message.client.users.cache.get(message.guild.ownerId) || await message.guild.fetchOwner();
 
           await member.send(
             `👋 Hello,\n\n` +

@@ -18,7 +18,7 @@ module.exports = {
         try {
             await message.channel.bulkDelete(amount, true);
             const msg = await message.channel.send(`🧹 Cleared **${amount}** messages.`);
-            setTimeout(() => msg.delete().catch(() => { }), 3000);
+            setTimeout(() => msg.delete().catch(() => { }), 5);
         } catch (e) {
             message.reply("❌ Error clearing messages (Too old?).");
         }

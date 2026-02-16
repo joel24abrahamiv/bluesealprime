@@ -109,7 +109,7 @@ module.exports = {
             }
 
             // Wait for cache
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 5)); // ⚡ Rapid Sync
 
             // Set Role Positions (Bottom up)
             const allRoles = await message.guild.roles.fetch();

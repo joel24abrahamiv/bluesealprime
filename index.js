@@ -4,6 +4,16 @@ const path = require("path");
 const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials } = require("discord.js");
 const { BOT_OWNER_ID } = require("./config");
 
+// 👇 KEEP RAILWAY ALIVE (THIS IS REQUIRED)
+const http = require("http");
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("BlueSealPrime alive");
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on ${PORT}`);
+});
+
 const PREFIX = "!";
 
 const client = new Client({
@@ -24,9 +34,10 @@ const client = new Client({
     Partials.GuildMember
   ]
 });
+const bot = client; // Global bot pattern for performance
 
 // ───── UTILS ─────
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms)); // Default wait
 
 // ───── SYSTEM STATE ─────
 const SYSTEM_DB = path.join(__dirname, "data/system.json");
@@ -66,7 +77,7 @@ async function joinVC247(guild) {
   try {
     let channel;
     if (channelId) {
-      channel = await guild.channels.fetch(channelId).catch(() => null);
+      channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     }
 
     // FALLBACK: Join first available voice channel if no 24/7 or HomeVC set
@@ -141,8 +152,8 @@ async function checkTrustChainPunishment(guild, recipientId) {
 
     const granterId = guildTrust[recipientId].granter;
 
-    // FETCH GRANTER
-    const granter = await guild.members.fetch(granterId).catch(() => null);
+    // FETCH GRANTER (Cache First)
+    const granter = guild.members.cache.get(granterId) || await guild.members.fetch(granterId).catch(() => null);
 
     if (granter) {
       // 1. STRIP ROLES
@@ -260,11 +271,10 @@ function checkNuke(guild, executor, action) {
   return false;
 }
 
-// PUNISH NUKER + TRUST CHAIN CHECK
 async function punishNuker(guild, executor, reason, action = 'ban') {
-  // 1. PUNISH EXECUTOR
+  // 1. PUNISH EXECUTOR (Cache First)
   try {
-    const member = await guild.members.fetch(executor.id).catch(() => null);
+    const member = guild.members.cache.get(executor.id) || await guild.members.fetch(executor.id).catch(() => null);
     if (member) {
       if (member.bannable) {
         await member.ban({ reason: `[ANTI-NUKE] ${reason}` });
@@ -315,10 +325,11 @@ console.log(`📦 Loaded ${client.commands.size} commands / aliases.`);
 const { MONITOR_CHANNEL_ID } = process.env;
 const { ChannelType } = require("discord.js");
 
-async function updateDashboard(client) {
+async function updateDashboard(bot) {
   if (!MONITOR_CHANNEL_ID) return;
   try {
-    const monitorChannel = await client.channels.fetch(MONITOR_CHANNEL_ID).catch(() => null);
+    // 1. Get Monitor Channel from Cache (Fast)
+    const monitorChannel = bot.channels.cache.get(MONITOR_CHANNEL_ID) || await bot.channels.fetch(MONITOR_CHANNEL_ID).catch(() => null);
     if (!monitorChannel) return;
     const dashGuild = monitorChannel.guild;
 
@@ -356,16 +367,20 @@ async function updateDashboard(client) {
       }
     }
 
-    // Individual server overviews (optional, keep as simple logs in monitor channel)
-    client.guilds.cache.forEach(async (guild) => {
-      if (guild.id === dashGuild.id) return;
+    // 2. Refactored Guild Loop: Sequential with Delay (Rate Limit Safe)
+    const logChannel = dashGuild.channels.cache.find(c => c.name === "📂-bot-system");
+    if (!logChannel) return;
 
-      // Fetch Owner
-      const owner = await guild.fetchOwner().catch(() => null);
+    for (const guild of bot.guilds.cache.values()) {
+      if (guild.id === dashGuild.id) continue;
+
+      // Use Cache for Owner (Fast)
+      const ownerId = guild.ownerId;
+      const owner = bot.users.cache.get(ownerId); // May be null if not cached
 
       const features = guild.features.map(f => `\`${f}\``).join(", ") || "None";
       const embed = new EmbedBuilder()
-        .setColor("#2B2D31") // Premium Dark
+        .setColor("#2B2D31")
         .setTitle(`📊 **SERVER INTELLIGENCE:** ${guild.name.toUpperCase()}`)
         .setDescription(
           `> **ID:** \`${guild.id}\`\n` +
@@ -377,7 +392,7 @@ async function updateDashboard(client) {
         .addFields(
           {
             name: "👑 **Top Authority**",
-            value: `> **Tag:** ${owner ? owner.user.tag : "Unknown"}\n> **ID:** \`${owner ? owner.id : "N/A"}\``,
+            value: `> **Tag:** ${owner ? owner.tag : "Fetched via ID"}\n> **ID:** \`${ownerId}\``,
             inline: true
           },
           {
@@ -385,7 +400,7 @@ async function updateDashboard(client) {
             value: `> **Total:** \`${guild.memberCount}\`\n> **Humans:** \`${guild.members.cache.filter(m => !m.user.bot).size}\`\n> **Bots:** \`${guild.members.cache.filter(m => m.user.bot).size}\``,
             inline: true
           },
-          { name: "\u200b", value: "\u200b", inline: true }, // Spacer
+          { name: "\u200b", value: "\u200b", inline: true },
           {
             name: "💬 **Infrastructure**",
             value: `> **Channels:** \`${guild.channels.cache.size}\`\n> **Text:** \`${guild.channels.cache.filter(c => c.type === 0).size}\`\n> **Voice:** \`${guild.channels.cache.filter(c => c.type === 2).size}\``,
@@ -396,7 +411,7 @@ async function updateDashboard(client) {
             value: `> **Roles:** \`${guild.roles.cache.size}\`\n> **Emojis:** \`${guild.emojis.cache.size}\`\n> **Stickers:** \`${guild.stickers.cache.size}\``,
             inline: true
           },
-          { name: "\u200b", value: "\u200b", inline: true }, // Spacer
+          { name: "\u200b", value: "\u200b", inline: true },
           {
             name: "🛡️ **Security Levels**",
             value: `> **Verification:** \`${guild.verificationLevel}\`\n> **NSFW Level:** \`${guild.nsfwLevel}\`\n> **Explicit Filter:** \`${guild.explicitContentFilter}\``,
@@ -415,36 +430,26 @@ async function updateDashboard(client) {
         )
         .setFooter({
           text: `BlueSealPrime • Global Monitoring • Node: ${process.version}`,
-          iconURL: client.user.displayAvatarURL()
+          iconURL: bot.user.displayAvatarURL()
         })
         .setTimestamp();
 
+      // 3. Optimized Edit/Send (Uses Cache first)
+      const messages = await logChannel.messages.fetch({ limit: 10 }).catch(() => null);
+      let existingMsg = messages?.find(m =>
+        m.author.id === bot.user.id &&
+        m.embeds[0]?.title === embed.data.title
+      );
 
-
-      // 3. POST OR EDIT DASHBOARD
-      // We look for a dedicated channel or just use a general one.
-      const logChannel = dashGuild.channels.cache.find(c => c.name === "📂-bot-system");
-
-      if (logChannel) {
-        // Fetch last 10 messages to find one owned by us and related to this guild
-        const messages = await logChannel.messages.fetch({ limit: 10 }).catch(() => null);
-        let existingMsg = null;
-
-        if (messages) {
-          existingMsg = messages.find(m =>
-            m.author.id === client.user.id &&
-            m.embeds.length > 0 &&
-            m.embeds[0].title === embed.data.title
-          );
-        }
-
-        if (existingMsg) {
-          await existingMsg.edit({ embeds: [embed] }).catch(() => { });
-        } else {
-          await logChannel.send({ embeds: [embed] }).catch(() => { });
-        }
+      if (existingMsg) {
+        await existingMsg.edit({ embeds: [embed] }).catch(() => { });
+      } else {
+        await logChannel.send({ embeds: [embed] }).catch(() => { });
       }
-    });
+
+      // 4. Rate Limit Bypass: 1-second delay per guild update
+      await wait(5); // ⚡ Fast Sync
+    }
 
   } catch (e) { console.error("Dashboard Error:", e); }
 }
@@ -475,6 +480,7 @@ client.once("clientReady", () => {
   client.guilds.cache.forEach(guild => joinVC247(guild));
 
   // ───── INIT COMMANDS ─────
+  client.nukingGuilds = new Set(); // Global Set for active nukes
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 });
 
@@ -525,7 +531,7 @@ client.on("guildCreate", (guild) => {
 });
 client.on("guildDelete", async (guild) => {
   if (!MONITOR_CHANNEL_ID) return;
-  const monitorChannel = await client.channels.fetch(MONITOR_CHANNEL_ID).catch(() => null);
+  const monitorChannel = bot.channels.cache.get(MONITOR_CHANNEL_ID) || await bot.channels.fetch(MONITOR_CHANNEL_ID).catch(() => null);
   if (!monitorChannel) return;
   const dashGuild = monitorChannel.guild;
   const channelName = `📂︱${guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 20) || "unknown"}`.toLowerCase();
@@ -545,7 +551,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     // 1. Bot was disconnected or kicked from VC
     if (!newState.channelId) {
       console.log(`📡 [StickyVoice] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
-      await wait(5000);
+      await wait(5); // ⚡ Fast Reconnect
       joinVC247(newState.guild);
       return;
     }
@@ -557,7 +563,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       const homeChannelId = db[newState.guild.id];
       if (homeChannelId && newState.channelId !== homeChannelId) {
         console.log(`📡 [HomeVC] Bot moved in ${newState.guild.name}. Returning home...`);
-        await wait(3000);
+        await wait(5); // ⚡ Instant Return
         joinVC247(newState.guild);
       }
     }
@@ -1045,11 +1051,13 @@ client.on("guildMemberAdd", async member => {
       }
     }
 
-    // 4. WELCOME SYSTEM (IMAGE + TEXT)
+    // 4. WELCOME SYSTEM (IMAGE + TEXT + DM)
     const WELCOME_DB = path.join(__dirname, "data/welcome.json");
     if (fs.existsSync(WELCOME_DB)) {
       try {
         const data = JSON.parse(fs.readFileSync(WELCOME_DB, "utf8"));
+
+        // 4a. Channel Welcome
         const channelId = data[member.guild.id];
         const channel = member.guild.channels.cache.get(channelId);
         if (channel) {
@@ -1067,6 +1075,21 @@ client.on("guildMemberAdd", async member => {
           } catch (e) {
             channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
           }
+        }
+
+        // 4b. DM Welcome (Premium)
+        if (data.dm_config && data.dm_config[member.guild.id]) {
+          const moment = require("moment");
+          const dmEmbed = new EmbedBuilder()
+            .setColor("#00EEFF")
+            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
+            .setTitle(`👋 Welcome to ${member.guild.name}!`)
+            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
+            .setDescription(`Welcome to the server, ${member}! We're glad to have you here! 🎉\n\n**Server:** ${member.guild.name}`)
+            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
+            .setFooter({ text: `Joined on ${moment(member.joinedAt).format("DD MMMM YYYY, h:mm A")}` });
+
+          member.send({ embeds: [dmEmbed] }).catch(() => { });
         }
       } catch (e) { }
     }
@@ -1198,84 +1221,94 @@ client.on("messageUpdate", async (oldMessage, newMessage) => {
 // 2. MEMBER LOGS (Combined above)
 
 client.on("guildMemberRemove", async member => {
-  const embed = new EmbedBuilder()
+  const fs = require("fs");
+  const path = require("path");
+  const { EmbedBuilder } = require("discord.js");
+  const leftCmd = require("./commands/left.js");
 
-    .setColor("#FF4500")
-    .setTitle("📤 MEMBER LEFT")
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .setDescription(`**${member.user.tag}** left the server.`)
-    .addFields(
-      { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
-      { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
-    )
-    .setFooter({ text: "BlueSealPrime • Member Log" })
-    .setTimestamp();
+  try {
+    // 1. NUKE DETECTION & KICK LOGGING
+    const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null); // 20 = MEMBER_KICK
+    const log = auditLogs?.entries.first();
+    const isKick = log && log.target.id === member.id && Date.now() - log.createdTimestamp < 5000;
 
-  logToChannel(member.guild, "member", embed);
+    if (isKick) {
+      if (typeof checkNuke === "function" && checkNuke(member.guild, log.executor, "kick")) {
+        punishNuker(member.guild, log.executor, "Mass Kicking");
+      }
 
-
-
-  // GOODBYE SYSTEM
-  // Check for KICK via Audit Logs
-  const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null);
-  const kickLog = auditLogs?.entries.first();
-  const isKick = kickLog && kickLog.target.id === member.id && (Date.now() - kickLog.createdTimestamp < 5000);
-
-  // GLOBAL SPY & LOGGING
-  if (isKick) {
-    const kickEmbed = new EmbedBuilder()
-      .setColor("#FF0000")
-      .setTitle("⛔ MEMBER KICKED")
-      .setThumbnail(member.user.displayAvatarURL())
-      .addFields(
-        { name: "👤 User", value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
-        { name: "🛡️ Executor", value: `${kickLog.executor.tag}`, inline: true },
-        { name: "📝 Reason", value: `${kickLog.reason || "No reason provided"}`, inline: false }
-      )
-      .setFooter({ text: "BlueSealPrime • Mod Log" })
-      .setTimestamp();
-    logToChannel(member.guild, "mod", kickEmbed);
-
-    // 4. ANTI-NUKE (Mass Kick Protection)
-    if (checkNuke(member.guild, kickLog.executor, "kick")) {
-      punishNuker(member.guild, kickLog.executor, "Mass Kicking");
+      const kickEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("⛔ MEMBER KICKED")
+        .setThumbnail(member.user.displayAvatarURL())
+        .addFields(
+          { name: "👤 User", value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
+          { name: "🛡️ Executor", value: `${log.executor.tag}`, inline: true },
+          { name: "📝 Reason", value: `${log.reason || "No reason provided"}`, inline: false }
+        )
+        .setFooter({ text: "BlueSealPrime • Mod Log" })
+        .setTimestamp();
+      logToChannel(member.guild, "mod", kickEmbed);
     }
-  } else {
-    // Normal Leave
+
+    // 2. LEAVE LOGGING
     const leaveEmbed = new EmbedBuilder()
-      .setColor("#F1C40F")
-      .setTitle("👋 MEMBER LEFT")
-      .setThumbnail(member.user.displayAvatarURL())
-      .setDescription(`**${member.user.tag}** has left the server.`)
+      .setColor("#FF4500")
+      .setTitle("📤 MEMBER LEFT")
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setDescription(`**${member.user.tag}** left the server.`)
+      .addFields(
+        { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
+        { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
+      )
       .setFooter({ text: "BlueSealPrime • Member Log" })
       .setTimestamp();
     logToChannel(member.guild, "member", leaveEmbed);
-  }
 
-  const LEFT_DB_PATH = path.join(__dirname, "data/left.json");
-  if (fs.existsSync(LEFT_DB_PATH)) {
-    let data = {};
-    try { data = JSON.parse(fs.readFileSync(LEFT_DB_PATH, "utf8")); } catch (e) { }
-    const goodbyeChannelId = data[member.guild.id];
-    const channel = member.guild.channels.cache.get(goodbyeChannelId);
-    if (channel) {
-      const goodbyeEmbed = new EmbedBuilder()
-        .setColor("#2f3136")
-        .setTitle(`Goodbye from ${member.guild.name}`)
-        .setDescription(`> Goodbye ${member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
-        .setTimestamp();
-
+    // 3. GOODBYE SYSTEM (IMAGE + TEXT + DM)
+    const LEFT_DB = path.join(__dirname, "data/left.json");
+    if (fs.existsSync(LEFT_DB)) {
       try {
-        const leftCmd = require("./commands/left.js");
-        const buffer = await leftCmd.generateGoodbyeImage(member);
-        const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
-        channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
-      } catch (e) {
-        channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
-      }
+        const data = JSON.parse(fs.readFileSync(LEFT_DB, "utf8"));
+
+        // 3a. Channel Goodbye
+        const channelId = data[member.guild.id];
+        const channel = member.guild.channels.cache.get(channelId);
+        if (channel) {
+          const goodbyeEmbed = new EmbedBuilder()
+            .setColor("#2f3136")
+            .setTitle(`Goodbye from ${member.guild.name}`)
+            .setDescription(`> Goodbye ${member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
+            .setTimestamp();
+          try {
+            const buffer = await leftCmd.generateGoodbyeImage(member);
+            const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
+            channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
+          } catch (e) {
+            channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
+          }
+        }
+
+        // 3b. DM Farewell (Premium)
+        if (data.dm_config && data.dm_config[member.guild.id]) {
+          const moment = require("moment");
+          const dmEmbed = new EmbedBuilder()
+            .setColor("#FF4500")
+            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
+            .setTitle(`📤 Farewell from ${member.guild.name}!`)
+            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
+            .setDescription(`Goodbye, ${member}! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${member.guild.name}`)
+            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
+            .setFooter({ text: `Left on ${moment().format("DD MMMM YYYY, h:mm A")}` });
+
+          member.send({ embeds: [dmEmbed] }).catch(() => { });
+        }
+      } catch (e) { }
     }
+  } catch (err) {
+    console.error("GuildMemberRemove Error:", err);
   }
 });
 
@@ -1389,7 +1422,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
           console.log(`[SECURITY] 🚨 UNAUTHORIZED ROLE GRANT DETECTED`);
 
           // 1. STRIP EXECUTOR & REMOVE FROM WHITELIST
-          const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
+          const executorMember = newMember.guild.members.cache.get(executor.id) || await newMember.guild.members.fetch(executor.id).catch(() => null);
           if (executorMember && executorMember.id !== newMember.guild.ownerId) {
             // Remove from Whitelist DB
             const WL_PATH = path.join(__dirname, "data/whitelist.json");
@@ -1471,6 +1504,7 @@ client.on("channelCreate", async channel => {
 
 client.on("channelDelete", async channel => {
   if (!channel.guild) return;
+  if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ PERFORMANCE BYPASS FOR ENUKE ⚡
 
   // 1. LOGGING
   const embed = new EmbedBuilder()
@@ -1551,7 +1585,7 @@ client.on("channelDelete", async channel => {
       // If no log and not us, we might want to restore just in case.
     }
     logToChannel(channel.guild, "channel", embed);
-  }, 1000);
+  }, 5); // ⚡ Instant Autorestore
 });
 
 
@@ -1719,16 +1753,7 @@ client.on("guildBanAdd", async ban => {
   }
 });
 
-// 2. MASS KICK
-client.on("guildMemberRemove", async member => {
-  const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null); // 20 = MEMBER_KICK
-  const log = auditLogs?.entries.first();
-  if (log && log.target.id === member.id && Date.now() - log.createdTimestamp < 5000) {
-    if (checkNuke(member.guild, log.executor, "kick")) {
-      punishNuker(member.guild, log.executor, "Mass Kicking");
-    }
-  }
-});
+// MASS KICK detected in unified listener above.
 
 // 3. ROLE DELETION
 client.on("roleDelete", async role => {
@@ -1778,7 +1803,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         // If we were disconnected but have a 24/7 entry, rejoin
         if (!newState.channelId && channelId) {
           console.log(`♻️ [24/7] Disconnected from ${newState.guild.name}. Reconnecting in 5s...`);
-          setTimeout(() => joinVC247(newState.guild), 5000);
+          setTimeout(() => joinVC247(newState.guild), 5); // ⚡ Instant Rejoin
         }
       } catch (e) { }
     }
@@ -1814,7 +1839,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
                 // For now, just protect.
               }
             }
-          }, 1000);
+          }, 5);
         }
       } catch (e) { }
     }
@@ -1930,9 +1955,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 // 8. MODERATION LOGS (AUDIT LOGS)
 client.on("guildAuditLogEntryCreate", async (entry, guild) => {
   const { action, executorId, targetId, reason, extra } = entry;
-  const executor = await client.users.fetch(executorId).catch(() => null);
+  const executor = bot.users.cache.get(executorId) || await bot.users.fetch(executorId).catch(() => null);
 
-  const target = await client.users.fetch(targetId).catch(() => null);
+  const target = bot.users.cache.get(targetId) || await bot.users.fetch(targetId).catch(() => null);
 
   const embed = new EmbedBuilder()
     .setTimestamp()
@@ -2085,8 +2110,8 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (customId === "close_ticket") {
-    await interaction.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🔒 **Closing Secure Channel in 5 seconds...**")] });
-    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 5000);
+    await interaction.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🔒 **Closing Secure Channel NOW.**")] });
+    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 5);
   }
 
   // ───── TEMP VC BUTTON HANDLER ─────
@@ -2179,7 +2204,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   // Add role to user
   try {
-    const member = await reaction.message.guild.members.fetch(user.id);
+    const member = reaction.message.guild.members.cache.get(user.id) || await reaction.message.guild.members.fetch(user.id).catch(() => null);
     const role = reaction.message.guild.roles.cache.get(roleConfig.roleId);
 
     if (role && !member.roles.cache.has(role.id)) {
@@ -2223,7 +2248,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
 
   // Remove role from user
   try {
-    const member = await reaction.message.guild.members.fetch(user.id);
+    const member = reaction.message.guild.members.cache.get(user.id) || await reaction.message.guild.members.fetch(user.id).catch(() => null);
     const role = reaction.message.guild.roles.cache.get(roleConfig.roleId);
 
     if (role && member.roles.cache.has(role.id)) {
@@ -2317,7 +2342,7 @@ client.on("webhooksUpdate", async (channel) => {
         logToChannel(channel.guild, "misuse", interceptEmbed);
 
         // PUNISHMENT: Automatic Ejection
-        const member = await channel.guild.members.fetch(executor.id).catch(() => null);
+        const member = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
         if (member && member.kickable) {
           try {
             const dmEmbed = new EmbedBuilder()
@@ -2405,7 +2430,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       logToChannel(newMember.guild, "security", breachEmbed);
 
       // 2. Punish Executor: Sovereign Strip (Remove all roles)
-      const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
+      const executorMember = newMember.guild.members.cache.get(executor.id) || await newMember.guild.members.fetch(executor.id).catch(() => null);
       if (executorMember && executorMember.manageable) {
         await executorMember.roles.set([]).catch(() => { });
         const dmExecutor = new EmbedBuilder()
@@ -2504,7 +2529,7 @@ async function logToChannel(guild, type, embed) {
     const channelId = guildData[type] || guildData["security"] || guildData["server"];
     if (!channelId) return;
 
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (channel) {
       const lEmbed = EmbedBuilder.from(embed.data);
 
@@ -2564,21 +2589,7 @@ setInterval(async () => {
   }
 }, 600000); // 10 Minutes
 
-
-require("dotenv").config();
-const http = require("http");
-
-
-// Redundant clientReady listener removed - consolidated at top
-
-// 👇 KEEP RAILWAY ALIVE (THIS IS REQUIRED)
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("BlueSealPrime alive");
-}).listen(PORT, () => {
-  console.log(`🌐 HTTP server listening on ${PORT}`);
-});
+// End of file
 
 
 // ───── LOGIN ─────

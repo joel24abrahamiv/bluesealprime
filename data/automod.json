@@ -10,5 +10,12 @@
     "antiBadWords": true,
     "antiMassMentions": true,
     "whitelist": []
+  },
+  "1470271006269771900": {
+    "antiLinks": true,
+    "antiSpam": true,
+    "antiBadWords": true,
+    "antiMassMentions": true,
+    "whitelist": []
   }
 }

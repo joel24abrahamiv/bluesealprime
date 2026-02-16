@@ -132,7 +132,7 @@ module.exports = {
 
       setTimeout(() => {
         done.delete().catch(() => { });
-      }, 3000);
+      }, 5);
     } catch (error) {
       console.error(error);
       message.reply(

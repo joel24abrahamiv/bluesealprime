@@ -31,5 +31,17 @@
       "kick": 3,
       "interval": 10000
     }
+  },
+  "1470271006269771900": {
+    "enabled": true,
+    "whitelisted": [],
+    "autorestore": true,
+    "limits": {
+      "channelDelete": 2,
+      "roleDelete": 2,
+      "ban": 3,
+      "kick": 3,
+      "interval": 10000
+    }
   }
 }

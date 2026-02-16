@@ -53,24 +53,20 @@ module.exports = {
         let successCount = 0;
         let failCount = 0;
 
-        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        for (const id of ids) {
-            // Safety: Never ban the Bot Owner
+        await Promise.all(ids.map(async (id) => {
             if (id === BOT_OWNER_ID) {
                 failCount++;
-                continue;
+                return;
             }
-
             try {
                 await message.guild.members.ban(id, { reason: reason });
                 successCount++;
-                await wait(400); // 🛡️ Anti-Rate Limit Stagger
             } catch (err) {
                 console.error(`Failed to ban ${id}:`, err);
                 failCount++;
             }
-        }
+        }));
 
         const finalEmbed = new EmbedBuilder()
             .setColor(SUCCESS_COLOR)

@@ -8,8 +8,9 @@ module.exports = {
   async execute(message) {
     const guild = message.guild;
 
-    // Owner
-    const owner = await guild.fetchOwner();
+    // Owner (Cache First)
+    const ownerId = guild.ownerId;
+    const owner = message.client.users.cache.get(ownerId) || await guild.fetchOwner();
 
     // Members
     const totalMembers = guild.memberCount;

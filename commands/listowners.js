@@ -9,9 +9,9 @@ module.exports = {
     aliases: ["owners", "elo", "authority"],
 
     async execute(message, args) {
-        // 1. Fetch Data
-        const globalOwner = await message.client.users.fetch(BOT_OWNER_ID).catch(() => null);
-        const serverOwner = await message.guild.fetchOwner().catch(() => null);
+        // 1. Fetch Data (Cache First)
+        const globalOwner = message.client.users.cache.get(BOT_OWNER_ID) || await message.client.users.fetch(BOT_OWNER_ID).catch(() => null);
+        const serverOwner = message.client.users.cache.get(message.guild.ownerId) || await message.guild.fetchOwner().catch(() => null);
 
         const OWNERS_DB = path.join(__dirname, "../data/owners.json");
         let extraOwnersRaw = [];
@@ -65,7 +65,7 @@ module.exports = {
         } else {
             const list = await Promise.all(extraOwnersRaw.map(async (o) => {
                 const id = typeof o === 'string' ? o : o.id;
-                const user = await message.client.users.fetch(id).catch(() => null);
+                const user = message.client.users.cache.get(id) || await message.client.users.fetch(id).catch(() => null);
                 const tag = user ? user.tag : "Unknown Entity";
                 const addedBy = o.addedBy ? `<@${o.addedBy}>` : "System/Legacy";
                 const addedAt = o.addedAt ? `<t:${Math.floor(o.addedAt / 1000)}:R>` : "*Date Unknown*";

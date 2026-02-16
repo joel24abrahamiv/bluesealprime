@@ -164,7 +164,9 @@ module.exports = {
                         `> • **ping** - Latency & Core status\n` +
                         `> • **ediagnose** - Deep Module Integrity Scan\n\n` +
                         `### 👁️ **[ VISUAL_PREVIEWS ]**\n` +
-                        `> • **tmpdisplay** - Owner Security Tag Preview\n\n` +
+                        `> • **tmpdisplay** - Owner Security Tag Preview\n` +
+                        `> • **welcome test** / **welcome dm test**\n` +
+                        `> • **left test** / **left dm test**\n\n` +
                         `### 🛡️ **[ DEFENSE_TESTS ]**\n` +
                         `> • **vdefend** / **vundefend** - Test VC Sticky presence`
                     )

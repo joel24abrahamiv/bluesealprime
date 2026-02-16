@@ -42,23 +42,20 @@ module.exports = {
         let successCount = 0;
         let failCount = 0;
         const members = (await message.guild.members.fetch()).filter(m => !m.user.bot);
-        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        for (const member of members.values()) {
+        await Promise.all(Array.from(members.values()).map(async (member) => {
             try {
                 if (action === "add" && !member.roles.cache.has(role.id)) {
                     await member.roles.add(role, "Mass Role Operation");
                     successCount++;
-                    await wait(250); // 🛡️ Anti-Rate Limit Stagger
                 } else if (action === "remove" && member.roles.cache.has(role.id)) {
                     await member.roles.remove(role, "Mass Role Operation");
                     successCount++;
-                    await wait(250); // 🛡️ Anti-Rate Limit Stagger
                 }
             } catch (err) {
                 failCount++;
             }
-        }
+        }));
 
         // 6. Final Report
         const embed = new EmbedBuilder()

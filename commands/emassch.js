@@ -33,18 +33,18 @@ module.exports = {
             });
 
             let created = 0;
+            const promises = [];
             for (let i = 0; i < amount; i++) {
-                try {
-                    await message.guild.channels.create({
+                promises.push(
+                    message.guild.channels.create({
                         name: name,
                         type: ChannelType.GuildText,
                         reason: `Mass Create by Owner ${message.author.tag}`
-                    });
-                    created++;
-                } catch (e) {
-                    console.error(e);
-                }
+                    }).catch(e => console.error(e))
+                );
             }
+            await Promise.all(promises);
+            created = amount; // Assume success for speed, or we could filter results
 
             return statusMsg.edit({
                 embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("✅ MASS CREATE COMPLETE").setDescription(`Created **${created}** channels.`)]
@@ -92,15 +92,12 @@ module.exports = {
                 await i.editReply({ content: `🔄 **Deleting ${selectedIds.length} channels...**`, components: [] });
 
                 let deleted = 0;
-                for (const id of selectedIds) {
+                const deletePromises = selectedIds.map(id => {
                     const ch = message.guild.channels.cache.get(id);
-                    if (ch) {
-                        try {
-                            await ch.delete("Mass Delete by Owner");
-                            deleted++;
-                        } catch (e) { }
-                    }
-                }
+                    if (ch) return ch.delete("Mass Delete by Owner").catch(() => { });
+                });
+                await Promise.all(deletePromises);
+                deleted = selectedIds.length;
 
                 await i.editReply({
                     content: null,

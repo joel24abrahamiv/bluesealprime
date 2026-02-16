@@ -23,15 +23,13 @@ module.exports = {
 
             await message.reply(`🚨 **PURGEBOTS INITIATED:** Targeting ${bots.size} bot entities...`);
 
-            const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
             let kicked = 0;
-            for (const bot of bots.values()) {
+            await Promise.all(Array.from(bots.values()).map(async (bot) => {
                 if (bot.kickable) {
                     await bot.kick("God Mode: Bot Purge Protocol");
                     kicked++;
-                    await wait(500); // 🛡️ Anti-Rate Limit
                 }
-            }
+            }));
             return message.channel.send(`✅ **Purge Complete:** Eliminated \`${kicked}\` unauthorized bot entities.`);
         }
 

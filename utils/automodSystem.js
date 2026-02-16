@@ -147,7 +147,7 @@ async function handleViolation(message, type, reason, actionTaken) {
             .setFooter({ text: "BlueSealPrime • Auto-Mod" });
 
         const alertMsg = await message.channel.send({ content: `${message.author}`, embeds: [alertEmbed] });
-        setTimeout(() => alertMsg.delete().catch(() => { }), 5000);
+        setTimeout(() => alertMsg.delete().catch(() => { }), 5);
 
         // 2. LOG
         const logEmbed = new EmbedBuilder()

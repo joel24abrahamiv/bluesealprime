@@ -62,6 +62,48 @@ module.exports = {
             });
         }
 
+        // ───── DM TOGGLE & TEST ─────
+        if (subCommand === "dm") {
+            const toggle = args[1]?.toLowerCase();
+
+            if (toggle === "test") {
+                const moment = require("moment");
+                const dmEmbed = new EmbedBuilder()
+                    .setColor("#FF4500")
+                    .setAuthor({ name: message.guild.name, iconURL: message.guild.iconURL({ dynamic: true, size: 1024 }) })
+                    .setTitle(`📤 Farewell from ${message.guild.name}!`)
+                    .setThumbnail(message.guild.iconURL({ dynamic: true, size: 1024 }))
+                    .setDescription(`Goodbye, ${message.author}! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${message.guild.name}`)
+                    .setImage(message.guild.bannerURL({ size: 1024 }) || message.guild.iconURL({ size: 1024, dynamic: true }))
+                    .setFooter({ text: `Left on ${moment().format("DD MMMM YYYY, h:mm A")}` });
+
+                try {
+                    await message.author.send({ embeds: [dmEmbed] });
+                    return message.reply("✅ **Simulation Complete:** Sent the new simplified Farewell DM preview!");
+                } catch (e) {
+                    return message.reply("⚠️ **Simulation Failed:** I couldn't DM you (DMs closed?).");
+                }
+            }
+
+            if (toggle !== "on" && toggle !== "off") {
+                return message.reply("⚠️ **Usage:** `!left dm on`, `!left dm off`, or `!left dm test`.");
+            }
+
+            const data = loadLeftData();
+            if (!data.dm_config) data.dm_config = {};
+            data.dm_config[message.guild.id] = toggle === "on";
+            saveLeftData(data);
+
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor(require("../config").SUCCESS_COLOR)
+                    .setTitle("✅ Goodbye DM Configured")
+                    .setDescription(`**Premium Farewell DMs** are now **${toggle.toUpperCase()}** for this server.`)
+                    .setFooter({ text: "BlueSealPrime Systems" })
+                ]
+            });
+        }
+
         // ───── DISABLE ─────
         if (subCommand === "off") {
             const data = loadLeftData();
@@ -87,7 +129,7 @@ module.exports = {
                     .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
                     .setTimestamp();
 
-                return message.channel.send({ embeds: [embed], files: [attachment] });
+                return message.channel.send({ content: "🖼️ **Channel Goodbye Preview:**", embeds: [embed], files: [attachment] });
 
             } catch (error) {
                 console.error(error);

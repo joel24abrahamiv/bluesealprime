@@ -42,15 +42,13 @@ module.exports = {
 
         const loadingMsg = await message.reply(`🔄 **Moving ${count} members...**`);
 
-        // Move Loop (Anti-Rate Limit Staggered)
-        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-        for (const member of fromChannel.members.values()) {
+        // Parallel Move
+        await Promise.all(Array.from(fromChannel.members.values()).map(async (member) => {
             try {
                 await member.voice.setChannel(toChannel, "Mass Move Protocol");
                 moved++;
-                await wait(200); // 🛡️ Anti-Rate Limit
             } catch (err) { }
-        }
+        }));
 
         const embed = new EmbedBuilder()
             .setColor(EMBED_COLOR)

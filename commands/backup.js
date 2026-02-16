@@ -137,23 +137,29 @@ module.exports = {
                 fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
 
                 const successEmbed = new EmbedBuilder()
-                    .setColor("#FFD700") // Gold
-                    .setTitle("💾 ARCHIVE SYNCHRONIZED")
-                    .setThumbnail(message.guild.iconURL())
+                    .setColor("#2F3136") // Dark Neutral
+                    .setAuthor({ name: "SYSTEM SNAPSHOT SECURED", iconURL: "https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif" })
+                    .setThumbnail(message.guild.iconURL({ dynamic: true }) || message.client.user.displayAvatarURL())
                     .setDescription(
-                        `### **[ ARCHIVE_DATA_LOCKED ]**\n` +
-                        `> **ID:** \`${backupId}\`\n` +
-                        `> **Source:** \`${message.guild.name}\`\n` +
-                        `> **Timestamp:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
-                        `**STRUCTURAL BREAKDOWN:**\n` +
-                        `\`\`\`yaml\n` +
-                        `Roles: ${backupData.roles.length}\n` +
-                        `Emojis: ${backupData.emojis.length}\n` +
-                        `Stickers: ${backupData.stickers.length}\n` +
-                        `Sectors: ${backupData.channels.length}\n` +
-                        `\`\`\``
+                        `# 📂 ARCHIVE STORED\n` +
+                        `> **Target Server:** ${message.guild.name}\n` +
+                        `> **Authorization:** ${message.author}\n\n` +
+                        `**🆔 SNAPSHOT IDENTIFIER**\n` +
+                        `\`\`\`bash\n${backupId}\n\`\`\``
                     )
-                    .setFooter({ text: "Use !restore <ID> to deploy this archive matrix.", iconURL: message.client.user.displayAvatarURL() });
+                    .addFields(
+                        {
+                            name: "📦 DATA MANIFEST",
+                            value: `\`\`\`yaml\nRoles     : ${backupData.roles.length}\nChannels  : ${backupData.channels.length}\nEmojis    : ${backupData.emojis.length}\nStickers  : ${backupData.stickers.length}\n\`\`\``,
+                            inline: false
+                        },
+                        {
+                            name: "📅 TIME STAMP",
+                            value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+                            inline: false
+                        }
+                    )
+                    .setFooter({ text: "Use !restore <ID> to deploy this matrix.", iconURL: message.client.user.displayAvatarURL() });
 
                 await status.edit({ embeds: [successEmbed] });
 

