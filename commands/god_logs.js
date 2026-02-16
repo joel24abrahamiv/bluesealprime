@@ -4,7 +4,7 @@ const { BOT_OWNER_ID } = require("../config");
 module.exports = {
     name: "god_logs",
     description: "God Mode Logging Commands",
-    aliases: ["elogs", "elogsbot", "eloggings"],
+    aliases: ["auditlogs", "elogsbot", "eloggings"],
 
     async execute(message, args, commandName) {
         if (message.author.id !== BOT_OWNER_ID) return;

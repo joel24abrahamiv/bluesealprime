@@ -1,7 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials } = require("discord.js");
 const { BOT_OWNER_ID } = require("./config");
 
 const PREFIX = "!";
@@ -15,11 +15,30 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMessageReactions
+  ],
+  partials: [
+    Partials.Message,
+    Partials.Channel,
+    Partials.Reaction,
+    Partials.User,
+    Partials.GuildMember
   ]
 });
 
 // ───── UTILS ─────
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ───── SYSTEM STATE ─────
+const SYSTEM_DB = path.join(__dirname, "data/system.json");
+function loadSystemState() {
+  if (fs.existsSync(SYSTEM_DB)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SYSTEM_DB, "utf8"));
+      global.GOD_MODE = data.GOD_MODE || false;
+    } catch (e) { global.GOD_MODE = false; }
+  } else { global.GOD_MODE = false; }
+}
+loadSystemState();
 
 // ───── RATE LIMIT MONITOR ─────
 client.rest.on('rateLimited', (info) => {
@@ -622,13 +641,18 @@ client.on("messageCreate", async message => {
   }
 
   // 1. OWNER TAG RESPONSE (Updated)
-  if (message.mentions.users.has(BOT_OWNER_ID) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
+  if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
     if (!content.startsWith(PREFIX)) {
       const tagEmbed = new EmbedBuilder()
         .setColor("#0099FF") // Blue
+        .setAuthor({ name: "SECURITY ALERT", iconURL: client.user.displayAvatarURL() })
         .setDescription(
-          `👑 **You Tagged** <@${BOT_OWNER_ID}>`
-        );
+          `👑 **You Tagged My Master**\n` +
+          `> <@${BOT_OWNER_ID}> is currently under my protection.\n` +
+          `> *\"Every tag is logged, every word is watched.\"*`
+        )
+        .setThumbnail("https://cdn-icons-png.flaticon.com/512/2716/2716612.png")
+        .setFooter({ text: "BlueSealPrime Sovereign Shield" });
 
       await message.reply({ embeds: [tagEmbed] });
       return;
@@ -1088,14 +1112,30 @@ function getLogChannel(guildId, type) {
 
 // 1. MESSAGE LOGS
 client.on("messageDelete", async message => {
-  if (!message.guild || message.author?.bot) return;
-  const embed = new EmbedBuilder()
+  if (!message.guild) return;
 
+  // Handle Partials (Fetch missing data)
+  if (message.partial) {
+    try { await message.fetch(); } catch (e) {
+      // If we can't fetch, we can't log the content/author
+      const errorEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("🗑️ MESSAGE DELETED (UNCERTAIN)")
+        .setDescription(`An uncached message was deleted in ${message.channel}.\n*Details could not be retrieved.*`)
+        .setFooter({ text: "BlueSealPrime • Partial Log" })
+        .setTimestamp();
+      return logToChannel(message.guild, "message", errorEmbed);
+    }
+  }
+
+  if (message.author?.bot) return;
+
+  const embed = new EmbedBuilder()
     .setColor("#FF0000")
     .setTitle("🗑️ MESSAGE DELETED")
-    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(message.author ? message.author.displayAvatarURL({ dynamic: true }) : null)
     .addFields(
-      { name: "👤 Author", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
+      { name: "👤 Author", value: message.author ? `${message.author} (\`${message.author.id}\`)` : "Unknown", inline: true },
       { name: "📍 Channel", value: `${message.channel}`, inline: true },
       { name: "📝 Content", value: message.content || "*No text content (likely an attachment or embed)*" }
     )
@@ -1107,19 +1147,28 @@ client.on("messageDelete", async message => {
 
 
 client.on("messageUpdate", async (oldMessage, newMessage) => {
-  if (!oldMessage.guild || oldMessage.author?.bot) return;
+  if (!oldMessage.guild) return;
+
+  // Handle Partials
+  if (oldMessage.partial) {
+    try { await oldMessage.fetch(); } catch (e) { return; }
+  }
+  if (newMessage.partial) {
+    try { await newMessage.fetch(); } catch (e) { return; }
+  }
+
+  if (oldMessage.author?.bot) return;
   if (oldMessage.content === newMessage.content) return;
 
   const embed = new EmbedBuilder()
-
     .setColor("#FFA500")
     .setTitle("📝 MESSAGE EDITED")
-    .setThumbnail(oldMessage.author.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(oldMessage.author ? oldMessage.author.displayAvatarURL({ dynamic: true }) : null)
     .addFields(
-      { name: "👤 Author", value: `${oldMessage.author} (\`${oldMessage.author.id}\`)`, inline: true },
+      { name: "👤 Author", value: oldMessage.author ? `${oldMessage.author} (\`${oldMessage.author.id}\`)` : "Unknown", inline: true },
       { name: "📍 Channel", value: `${oldMessage.channel}`, inline: true },
-      { name: "⬅️ Before", value: oldMessage.content || "*Empty*" },
-      { name: "➡️ After", value: newMessage.content || "*Empty*" }
+      { name: "⬅️ Before", value: oldMessage.content || "*Empty/Attachment*" },
+      { name: "➡️ After", value: newMessage.content || "*Empty/Attachment*" }
     )
     .setFooter({ text: "BlueSealPrime • Message Log" })
     .setTimestamp();
@@ -2380,43 +2429,80 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
 // ───── LOGGING EVENT HANDLER ─────
 async function logToChannel(guild, type, embed) {
+  if (!guild) return;
+
   // 0. UNIVERSAL LOGGING (ELOGS)
   const ELOGS_DB = path.join(__dirname, "data/elogs.json");
   if (fs.existsSync(ELOGS_DB)) {
     try {
       const eData = JSON.parse(fs.readFileSync(ELOGS_DB, "utf8"));
-      const eChannelId = eData[type];
+      // Check for specific type OR fallback to 'server' for global logs
+      const eChannelId = eData[type] || eData["server"];
+
       if (eChannelId) {
-        const eChannel = guild.client.channels.cache.get(eChannelId);
+        // Use fetch to ensure we can send even if not in cache
+        const eChannel = await client.channels.fetch(eChannelId).catch(() => null);
         if (eChannel) {
           const uEmbed = EmbedBuilder.from(embed.data);
+
+          // --- BEGIN MAXIMUM SPACIOUSNESS ---
+          const currentDesc = uEmbed.data.description || "";
+          uEmbed.setDescription("\u200b\n" + currentDesc + "\n\u200b"); // Blank line TOP and BOTTOM
+
           uEmbed.setAuthor({
-            name: `🌐 GLOBAL LOG: ${guild.name} (${guild.id})`,
-            iconURL: guild.iconURL() || guild.client.user.displayAvatarURL()
+            name: `🌐 GLOBAL LOG: ${guild.name.toUpperCase()}`,
+            iconURL: guild.iconURL() || client.user.displayAvatarURL()
           });
-          uEmbed.setFooter({ text: `Universal Logging • ${type.toUpperCase()}` });
-          eChannel.send({ embeds: [uEmbed] }).catch(() => { });
+
+          // PUSH CONTENT DOWN WITH TOP AND BOTTOM SPACERS
+          // Ensure we don't exceed field limits
+          if ((uEmbed.data.fields?.length || 0) < 23) {
+            uEmbed.spliceFields(0, 0, { name: "\u200b", value: "┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┑", inline: false });
+            uEmbed.addFields({ name: "\u200b", value: "┕━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┙", inline: false });
+          }
+
+          // ALWAYS USE DIVIDER IMAGE
+          uEmbed.setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif");
+
+          uEmbed.setFooter({ text: `Universal Intelligence • Sector: ${type.toUpperCase()} • ID: ${guild.id} • ${new Date().toLocaleString()}` });
+          // --- END MAXIMUM SPACIOUSNESS ---
+
+          await eChannel.send({ embeds: [uEmbed] }).catch(() => { });
         }
       }
-    } catch (e) { }
+    } catch (e) { console.error("[LOG] Global Error:", e); }
   }
 
-
-
-
-
-  // 2. LOCAL LOGGING (UNCHANGED)
+  // 2. LOCAL LOGGING
   const LOGS_DB = path.join(__dirname, "data/logs.json");
   if (!fs.existsSync(LOGS_DB)) return;
 
-  let data = {};
-  try { data = JSON.parse(fs.readFileSync(LOGS_DB, "utf8")); } catch (e) { return; }
+  try {
+    const data = JSON.parse(fs.readFileSync(LOGS_DB, "utf8"));
+    const guildData = data[guild.id];
+    if (!guildData) return;
 
-  const channelId = data[guild.id]?.[type] || data[guild.id]?.["server"];
-  if (!channelId) return;
+    // Fallback logic: message -> security -> server
+    const channelId = guildData[type] || guildData["security"] || guildData["server"];
+    if (!channelId) return;
 
-  const channel = guild.channels.cache.get(channelId);
-  if (channel) channel.send({ embeds: [embed] }).catch(() => { });
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (channel) {
+      const lEmbed = EmbedBuilder.from(embed.data);
+
+      // Also make local logs spacious
+      const currentDesc = lEmbed.data.description || "";
+      lEmbed.setDescription("\u200b\n" + currentDesc + "\n\u200b");
+
+      if ((lEmbed.data.fields?.length || 0) < 23) {
+        lEmbed.spliceFields(0, 0, { name: "\u200b", value: "─".repeat(35), inline: false });
+        lEmbed.addFields({ name: "\u200b", value: "─".repeat(35), inline: false });
+      }
+      lEmbed.setTimestamp();
+
+      await channel.send({ embeds: [lEmbed] }).catch(() => { });
+    }
+  } catch (e) { console.error("[LOG] Local Error:", e); }
 }
 
 // 1. Message Logs & ANTI-GHOST PING

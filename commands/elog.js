@@ -14,9 +14,11 @@ module.exports = {
         }
 
         // CHECK IF GOD MODE IS ENABLED
+        /*
         if (!global.GOD_MODE) {
             return message.reply("⚠️ **GOD MODE REQUIRED:** Execute `!eval` to toggle system override.");
         }
+        */
 
         const DB_PATH = path.join(__dirname, "../data/elogs.json");
 
@@ -38,7 +40,7 @@ module.exports = {
         const validTypes = [
             "message", "mod", "verify", "whitelist", "security", "server",
             "role", "file", "voice", "member", "action", "channel",
-            "invite", "ticket", "admin", "quark", "raid", "misuse"
+            "invite", "ticket", "admin", "quark", "raid", "misuse", "antinuke"
         ];
 
         if (!type || !validTypes.includes(type) || (subCommand !== "set" && subCommand !== "off")) {
@@ -64,8 +66,10 @@ module.exports = {
                     { name: "✅ Verification", value: "`!elog verify set #chan`", inline: true },
                     { name: "📜 Whitelist", value: "`!elog whitelist set #chan`", inline: true },
                     { name: "🛡️ Security", value: "`!elog security set #chan`", inline: true },
-                    { name: "🚫 Misuse", value: "`!elog misuse set #chan`", inline: true }
+                    { name: "🚫 Misuse", value: "`!elog misuse set #chan`", inline: true },
+                    { name: "🛡️ Anti-Nuke", value: "`!elog antinuke set #chan`", inline: true }
                 )
+                .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
                 .setFooter({ text: "BlueSealPrime • Global Intelligence", iconURL: message.client.user.displayAvatarURL() });
 
             return message.reply({ embeds: [helpEmbed] });

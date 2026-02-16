@@ -22,7 +22,12 @@ module.exports = {
 
         if (!role && args.length > 1) {
             const roleQuery = args.slice(1).join(" ");
-            role = message.guild.roles.cache.get(roleQuery) ||
+            // Try to find by ID if it's a number, then by name
+            const roleIdMatch = roleQuery.match(/(\d{17,20})/);
+            const roleId = roleIdMatch ? roleIdMatch[1] : null;
+
+            role = (roleId ? await message.guild.roles.fetch(roleId).catch(() => null) : null) ||
+                message.guild.roles.cache.get(roleQuery) ||
                 message.guild.roles.cache.find(r => r.name.toLowerCase() === roleQuery.toLowerCase()) ||
                 message.guild.roles.cache.find(r => r.name.toLowerCase().includes(roleQuery.toLowerCase()));
         }

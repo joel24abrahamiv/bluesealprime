@@ -63,7 +63,8 @@ module.exports = {
                             color: r.hexColor,
                             permissions: r.permissions.bitfield.toString(),
                             hoist: r.hoist,
-                            mentionable: r.mentionable
+                            mentionable: r.mentionable,
+                            position: r.position
                         })),
                     emojis: message.guild.emojis.cache.map(e => ({ name: e.name, url: e.url })),
                     stickers: message.guild.stickers.cache.map(s => ({ name: s.name, description: s.description, tags: s.tags })),
@@ -97,6 +98,7 @@ module.exports = {
                                 bitrate: c.bitrate || null,
                                 userLimit: c.userLimit || null,
                                 nsfw: c.nsfw || false,
+                                rawPosition: c.rawPosition,
                                 overwrites: c.permissionOverwrites.cache.map(o => ({
                                     id: o.id,
                                     type: o.type,
@@ -121,6 +123,7 @@ module.exports = {
                         position: c.position,
                         bitrate: c.bitrate || null,
                         userLimit: c.userLimit || null,
+                        rawPosition: c.rawPosition,
                         overwrites: c.permissionOverwrites.cache.map(o => ({
                             id: o.id,
                             type: o.type,
@@ -197,8 +200,15 @@ module.exports = {
             fs.unlinkSync(targetPath);
             message.reply(`🗑️ **Archive Purged:** Snapshot \`${targetId}\` has been deleted.`);
 
+        } else if (sub === "clear") {
+            const files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
+            if (files.length === 0) return message.reply("📭 **The Vault is already empty.**");
+
+            files.forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
+            message.reply(`🧹 **Vault Cleared:** Total of **${files.length}** archives have been permanently deleted.`);
+
         } else {
-            message.reply("💡 **Backup Manual:**\n`!backup create` - Save current server state\n`!backup list` - View all snapshots\n`!backup delete <ID>` - Remove a snapshot");
+            message.reply("💡 **Backup Manual:**\n`!backup create` - Save current server state\n`!backup list` - View all snapshots\n`!backup delete <ID>` - Remove a snapshot\n`!backup clear` - Wipe the entire vault");
         }
     }
 };

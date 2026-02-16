@@ -57,7 +57,8 @@ module.exports = {
                         `> • **eusers** - Global user correlation\n` +
                         `> • **devinfo** - Internal developer data\n\n` +
                         `### 📝 **[ LOGGING_INTERCEPT ]**\n` +
-                        `> • **elogs** / **elogsbot** - server & global audit\n` +
+                        `> • **elog** / **elogs** - Global audit setup\n` +
+                        `> • **auditlogs** - Recent server audit logs\n` +
                         `> • **flagged** - High-risk entity tracking\n\n` +
                         `### ⚙️ **[ SESSION_CONTROL ]**\n` +
                         `> • **eval** - Execute kernel logic\n` +
@@ -140,7 +141,7 @@ module.exports = {
                         `### ☢️ **[ NUCLEAR_OPTIONS ]**\n` +
                         `> • **antinuke autorestore <on/off>** - Toggle channel auto-recovery\n` +
                         `> • **enuke** - High-yield channel deletion\n` +
-                        `> • **edeleteserver** - ⚠️ **FULL WIPEOUT**\n\n` +
+                        `> • **edelserv** - ⚠️ **FULL WIPEOUT**\n\n` +
                         `### 💾 **[ ARCHIVAL ]**\n` +
                         `> • **backup** / **restore** - DNA state preservation\n` +
                         `> • **backuplist** - View system snapshots`

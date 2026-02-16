@@ -18,6 +18,14 @@ module.exports = {
             const status = global.GOD_MODE ? "ENABLED" : "DISABLED";
             const color = global.GOD_MODE ? "#00FF00" : "#FF0000";
 
+            // PERSISTENCE
+            const fs = require("fs");
+            const path = require("path");
+            const SYSTEM_DB = path.join(__dirname, "../data/system.json");
+            try {
+                fs.writeFileSync(SYSTEM_DB, JSON.stringify({ GOD_MODE: global.GOD_MODE }, null, 2));
+            } catch (e) { console.error("Failed to save system state:", e); }
+
             const godModeEmbed = new EmbedBuilder()
                 .setColor(color)
                 .setTitle(`🚨 GOD MODE ${status}`)
@@ -31,6 +39,7 @@ module.exports = {
                     `System Level Controls have been **${status}**.\n\n` +
                     `**Unlocked Protocols:**\n` +
                     `> • **!elog** - Universal Logging Config\n` +
+                    `> • **!auditlogs** - Dump Server Audit Logs\n` +
                     `> • **!ehelp** - Full God Mode Command List\n` +
                     `\n**Current Status:** ${global.GOD_MODE ? "✅ Active" : "⛔ Inactive"}`
                 )

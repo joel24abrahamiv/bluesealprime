@@ -79,6 +79,7 @@ module.exports = {
 
                 const roleMap = new Map(); // Name -> New ID
                 const createdCats = new Map(); // Name -> New ID
+                const channelIdMap = new Map(); // Old ID -> New ID
 
                 // Restore Server Settings (Fidelity)
                 if (data.settings) {
@@ -105,7 +106,10 @@ module.exports = {
                             });
                         } catch (e) { }
                     }
-                    if (role) roleMap.set(roleData.name, role.id);
+                    if (role) {
+                        roleMap.set(roleData.name, role.id);
+                        // Store the old ID to new ID mapping if needed elsewhere
+                    }
                 });
 
                 // Create Categories Parallel
@@ -121,10 +125,35 @@ module.exports = {
                             });
                         } catch (e) { }
                     }
-                    if (cat) createdCats.set(catData.name, cat.id);
+                    if (cat) {
+                        createdCats.set(catData.name, cat.id);
+                        // Find old cat ID if it's in the backup (it will be at top level of c in backupData.channels)
+                        const oldCat = data.channels.find(c => c.name === catData.name && c.type === ChannelType.GuildCategory);
+                        if (oldCat && oldCat.id) channelIdMap.set(oldCat.id, cat.id);
+                    }
                 });
 
                 await Promise.all([...rolePromises, ...catPromises]);
+
+                // ───── ROLE POSITIONING (Preserve Hierarchy) ─────
+                // Wait for roles to stabilize in cache
+                await new Promise(r => setTimeout(r, 2000));
+
+                const sortedRoles = [...data.roles].sort((a, b) => a.position - b.position);
+                const allRoles = await message.guild.roles.fetch();
+
+                for (const rData of sortedRoles) {
+                    const role = allRoles.find(r => r.name === rData.name);
+                    if (role && role.editable && role.name !== "@everyone") {
+                        try {
+                            // Triple check permissions and hierarchy
+                            if (!role.permissions.equals(BigInt(rData.permissions))) {
+                                await role.setPermissions(BigInt(rData.permissions)).catch(() => { });
+                            }
+                            await role.setPosition(rData.position).catch(() => { });
+                        } catch (e) { }
+                    }
+                }
 
                 // Create Lookup Map for O(1) access
                 const originalRoleLookup = new Map(data.roles.map(r => [r.id, r.name]));
@@ -157,42 +186,87 @@ module.exports = {
                     }
                 }
 
+                // Create function for child/orphan creation that tracks IDs
+                const createAndTrack = async (chanData, parentId = null) => {
+                    try {
+                        const newChan = await message.guild.channels.create({
+                            name: chanData.name,
+                            type: chanData.type,
+                            topic: chanData.topic,
+                            nsfw: chanData.nsfw,
+                            bitrate: chanData.bitrate,
+                            userLimit: chanData.userLimit,
+                            parentId: parentId || null,
+                            position: chanData.rawPosition || chanData.position,
+                            permissionOverwrites: mapOverwrites(chanData.overwrites),
+                            reason: "Turbo Restoration"
+                        });
+                        if (chanData.id) channelIdMap.set(chanData.id, newChan.id);
+                        return newChan;
+                    } catch (e) { }
+                };
+
                 // Batch Create All Sub-Channels
                 for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory)) {
                     const parentId = createdCats.get(catData.name);
                     if (catData.children) {
                         for (const childData of catData.children) {
-                            restorationTasks.push(message.guild.channels.create({
-                                name: childData.name,
-                                type: childData.type,
-                                topic: childData.topic,
-                                nsfw: childData.nsfw,
-                                bitrate: childData.bitrate,
-                                userLimit: childData.userLimit,
-                                parentId: parentId || null,
-                                position: childData.position,
-                                permissionOverwrites: mapOverwrites(childData.overwrites),
-                                reason: "Turbo Restoration"
-                            }).catch(() => { }));
+                            restorationTasks.push(createAndTrack(childData, parentId));
                         }
                     }
                 }
 
                 // Batch Create Orphans
                 for (const chanData of data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children)) {
-                    restorationTasks.push(message.guild.channels.create({
-                        name: chanData.name,
-                        type: chanData.type,
-                        topic: chanData.topic,
-                        bitrate: chanData.bitrate,
-                        userLimit: chanData.userLimit,
-                        position: chanData.position,
-                        permissionOverwrites: mapOverwrites(chanData.overwrites),
-                        reason: "Turbo Restoration"
-                    }).catch(() => { }));
+                    restorationTasks.push(createAndTrack(chanData));
                 }
 
                 await Promise.allSettled(restorationTasks);
+
+                // ───── CONFIG HEALING (LOGGING & SYSTEM SYNC) ─────
+                const configsToHeal = [
+                    { path: path.join(__dirname, "../data/logs.json"), type: "guild" },
+                    { path: path.join(__dirname, "../data/elogs.json"), type: "global" },
+                    { path: path.join(__dirname, "../data/welcome.json"), type: "simple" },
+                    { path: path.join(__dirname, "../data/left.json"), type: "simple" },
+                    { path: path.join(__dirname, "../data/serverstats.json"), type: "guild" },
+                    { path: path.join(__dirname, "../data/tempvc_config.json"), type: "guild" }
+                ];
+
+                for (const cfg of configsToHeal) {
+                    if (fs.existsSync(cfg.path)) {
+                        try {
+                            const config = JSON.parse(fs.readFileSync(cfg.path, "utf8"));
+                            let changed = false;
+
+                            if (cfg.type === "global") {
+                                for (const key in config) {
+                                    if (channelIdMap.has(config[key])) {
+                                        config[key] = channelIdMap.get(config[key]);
+                                        changed = true;
+                                    }
+                                }
+                            } else if (cfg.type === "simple") {
+                                if (channelIdMap.has(config[message.guild.id])) {
+                                    config[message.guild.id] = channelIdMap.get(config[message.guild.id]);
+                                    changed = true;
+                                }
+                            } else if (cfg.type === "guild") {
+                                const guildConfig = config[message.guild.id];
+                                if (guildConfig && typeof guildConfig === "object") {
+                                    for (const key in guildConfig) {
+                                        if (channelIdMap.has(guildConfig[key])) {
+                                            guildConfig[key] = channelIdMap.get(guildConfig[key]);
+                                            changed = true;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (changed) fs.writeFileSync(cfg.path, JSON.stringify(config, null, 2));
+                        } catch (e) { }
+                    }
+                }
 
                 const finalEmbed = new EmbedBuilder()
                     .setColor(SUCCESS_COLOR)
@@ -200,7 +274,8 @@ module.exports = {
                     .setDescription(`The server \`${data.guildName}\` has been reconstructed with maximum velocity.`)
                     .addFields(
                         { name: "⚡ Logic", value: "Parallel Roles+Cats -> Global Channel Wave", inline: true },
-                        { name: "🛠️ Fidelity", value: "Permissions, Settings, and Positions Synced", inline: true }
+                        { name: "🛠️ Fidelity", value: "Permissions, Settings, and Positions Synced", inline: true },
+                        { name: "📡 Intel", value: `Healed ${channelIdMap.size} Structural Vectors`, inline: true }
                     );
 
                 await progress.edit({ content: null, embeds: [finalEmbed] });
