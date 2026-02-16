@@ -61,7 +61,8 @@ module.exports = {
         `· 🎭 **Role Management**\n` +
         `· 🎙️ **Voice Management**\n` +
         `· 🎫 **Ticket System**\n` +
-        `· 👑 **Developer Info**`
+        `· 🛡️ **General Info** (Ping, User, Stats)\n` +
+        `· 👑 **Developer Info** (Credits)`
       )
       .setFooter({ text: `Requested by ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
       .setTimestamp();
@@ -245,21 +246,25 @@ module.exports = {
         emoji: "👑",
         description: "View Bot Credits & Developer Data",
         embed: new EmbedBuilder()
-          .setColor("#FFD700") // Gold
-          .setTitle("👑 DEVELOPER INFORMATION")
+          .setColor("#00EEFF") // Cyan
+          .setTitle("🛡️ BLUESEALPRIME: THE ARCHITECTS")
           .setThumbnail(clientUser.displayAvatarURL())
           .setDescription(
             `### **[ CORE_DEVELOPER ]**\n` +
             `> 👤 **Lead Developer:** <@${require("../config").BOT_OWNER_ID}>\n` +
-            `> 🛠️ **Language:** \`Node.js / Discord.js @Latest\`\n` +
-            `> 🧩 **Framework:** \`BlueSeal Architecture v2.0\`\n\n` +
-            `### **[ SYSTEM_STATUS ]**\n` +
-            `> 🚀 **Host:** \`Hyper-Performance Cloud\`\n` +
-            `> 🛡️ **Encryption:** \`AES-256 Global Standard\`\n` +
-            `> ⚡ **Latency:** \`${message.client.ws.ping}ms\`\n` +
-            `> **Developed to ensure your server remains safe, organized, and superior.**`
+            `> 🛠️ **System:** Node.js / Discord.js v14\n` +
+            `> 🧩 **Architecture:** BlueSeal Sovereign v2.1\n\n` +
+            `### **[ THE_ARCHITECT_GUIDE ]**\n` +
+            `> 🧠 **Architect's Guide:** <@1327564898460242015>\n` +
+            `> *"The visionary who taught me the foundations of BlueSealPrime. Respect to the mentor."*\n\n` +
+            `### **[ OPERATIONAL_STRENGTH ]**\n` +
+            `> 🚀 **Environment:** Quantum-Ready Cloud Node\n` +
+            `> 🛡️ **Anti-Nuke:** Military-Grade Interrogation Protocols\n` +
+            `> ⚡ **Heartbeat:** ${message.client.ws.ping}ms\n`
           )
-          .setFooter({ text: "BlueSealPrime • Priority Alpha Origin" })
+          .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
+          .setFooter({ text: "BlueSealPrime • Priority Alpha • Infinite Support", iconURL: clientUser.displayAvatarURL() })
+          .setTimestamp()
       }
     ];
 

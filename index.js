@@ -54,26 +54,39 @@ const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require("@disco
 // ───── 24/7 VC FUNCTION ─────
 async function joinVC247(guild) {
   const DB_PATH = path.join(__dirname, "data/247.json");
-  if (!fs.existsSync(DB_PATH)) return;
+  let channelId = null;
+
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+      channelId = db[guild.id];
+    } catch (e) { }
+  }
 
   try {
-    const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-    const channelId = db[guild.id];
-    if (!channelId) return;
+    let channel;
+    if (channelId) {
+      channel = await guild.channels.fetch(channelId).catch(() => null);
+    }
 
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
-    if (!channel || channel.type !== 2) return; // Voice = 2
+    // FALLBACK: Join first available voice channel if no 24/7 or HomeVC set
+    if (!channel || channel.type !== 2) {
+      channel = guild.channels.cache.find(c => c.type === 2 && c.viewable && c.joinable);
+    }
+
+    if (!channel) return;
 
     const { joinVoiceChannel } = require("@discordjs/voice");
     joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
       adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: true
+      selfDeaf: false, // NO DEAFEN SYMBOL
+      selfMute: true
     });
-    console.log(`🔊 [24/7] Joined ${channel.name} in ${guild.name}`);
+    console.log(`🔊 [StickyVoice] Joined ${channel.name} in ${guild.name}`);
   } catch (e) {
-    console.error(`[24/7] Join Error in ${guild.name}:`, e);
+    console.error(`[StickyVoice] Join Error in ${guild.name}:`, e);
   }
 }
 
@@ -506,6 +519,9 @@ client.on("guildCreate", (guild) => {
     antiMassMentions: true,
     whitelist: []
   });
+
+  // 🔊 INSTANT VOICE JOIN ON ENTRY
+  joinVC247(guild);
 });
 client.on("guildDelete", async (guild) => {
   if (!MONITOR_CHANNEL_ID) return;
@@ -521,36 +537,32 @@ client.on("guildDelete", async (guild) => {
   }
 });
 
-// ───── VOICE STATE UPDATE: HOME VC ENFORCEMENT ─────
+// ───── VOICE STATE UPDATE: STICKY VOICE ENFORCEMENT ─────
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (newState.id !== client.user.id) return; // Only track our own bot
 
-  const DB_PATH = path.join(__dirname, "data/247.json");
-  if (!fs.existsSync(DB_PATH)) return;
-
   try {
-    const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-    const homeChannelId = db[newState.guild.id];
-    if (!homeChannelId) return;
-
-    // 1. Bot was disconnected
+    // 1. Bot was disconnected or kicked from VC
     if (!newState.channelId) {
-      console.log(`📡 [HomeVC] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
+      console.log(`📡 [StickyVoice] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
       await wait(5000);
       joinVC247(newState.guild);
       return;
     }
 
-    // 2. Bot was moved to a different channel
-    if (newState.channelId !== homeChannelId) {
-      console.log(`📡 [HomeVC] Bot moved to unauthorized channel in ${newState.guild.name}. Returning home...`);
-      await wait(3000);
-      joinVC247(newState.guild);
-      return;
+    // 2. HomeVC Enforcement (Only if a specific channel is set)
+    const DB_PATH = path.join(__dirname, "data/247.json");
+    if (fs.existsSync(DB_PATH)) {
+      const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+      const homeChannelId = db[newState.guild.id];
+      if (homeChannelId && newState.channelId !== homeChannelId) {
+        console.log(`📡 [HomeVC] Bot moved in ${newState.guild.name}. Returning home...`);
+        await wait(3000);
+        joinVC247(newState.guild);
+      }
     }
-
   } catch (e) {
-    console.error(`[HomeVC] State Update Error in ${newState.guild.name}:`, e);
+    console.error(`[StickyVoice] State Update Error:`, e);
   }
 });
 
@@ -640,19 +652,25 @@ client.on("messageCreate", async message => {
     console.error("AutoMod Error:", e);
   }
 
-  // 1. OWNER TAG RESPONSE (Updated)
-  if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
+  // 1. OWNER TAG RESPONSE (Universal)
+  if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone || message.mentions.here) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
     if (!content.startsWith(PREFIX)) {
       const tagEmbed = new EmbedBuilder()
-        .setColor("#0099FF") // Blue
-        .setAuthor({ name: "SECURITY ALERT", iconURL: client.user.displayAvatarURL() })
+        .setColor("#00EEFF") // BlueSeal Cyan
+        .setAuthor({ name: "🛡️ SECURITY ALERT: MASTER DETECTED", iconURL: client.user.displayAvatarURL() })
+        .setThumbnail("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
         .setDescription(
-          `👑 **You Tagged My Master**\n` +
-          `> <@${BOT_OWNER_ID}> is currently under my protection.\n` +
-          `> *\"Every tag is logged, every word is watched.\"*`
+          `### **[ PROTECTION_PROTOCOL ]**\n` +
+          `> 👑 **Subject:** <@${BOT_OWNER_ID}>\n` +
+          `> 🛡️ **Status:** Currently under Sovereign Protection.\n\n` +
+          `### **[ INTERROGATION_LOG ]**\n` +
+          `> 👤 **Tagged by:** ${message.author} (\`${message.author.id}\`)\n` +
+          `> 📂 **Location:** ${message.channel}\n\n` +
+          `*\"Every mention is logged in the Audit Kernel. The Architect is watching through my eyes.\"*`
         )
-        .setThumbnail("https://cdn-icons-png.flaticon.com/512/2716/2716612.png")
-        .setFooter({ text: "BlueSealPrime Sovereign Shield" });
+        .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
+        .setFooter({ text: "BlueSealPrime Sovereign Shield • Master Defense Matrix", iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
 
       await message.reply({ embeds: [tagEmbed] });
       return;

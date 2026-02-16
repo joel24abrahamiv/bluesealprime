@@ -28,7 +28,8 @@ module.exports = {
                 `• 📡 **Broadcasting** (Neural Comms, Say, Announce)\n` +
                 `• ⚡ **Elite Operations** (Mass Ops, Meta Control)\n` +
                 `• 🔒 **Security & Locks** (God-Locks, Baseline, Panic)\n` +
-                `• 👑 **Authority & Trust** (Owners, Nukes, Backups)`
+                `• 👑 **Authority & Trust** (Owners, Nukes, Backups)\n` +
+                `• 🛰️ **Diagnostic Protocols** (Ping, Audit, Previews)`
             )
             .setThumbnail(clientUser.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: "BlueSealPrime • Root Access Granted" })
@@ -142,11 +143,32 @@ module.exports = {
                         `> • **antinuke autorestore <on/off>** - Toggle channel auto-recovery\n` +
                         `> • **enuke** - High-yield channel deletion\n` +
                         `> • **edelserv** - ⚠️ **FULL WIPEOUT**\n\n` +
-                        `### 💾 **[ ARCHIVAL ]**\n` +
-                        `> • **backup** / **restore** - DNA state preservation\n` +
-                        `> • **backuplist** - View system snapshots`
+                        `### 💾 **[ ARCHIVAL_PROTOCOLS ]**\n` +
+                        `> • **backup** / **restore** - Standard DNA conservation\n` +
+                        `> • **safetybackup** - Extract structural DNA template\n` +
+                        `> • **rstsafbackup** - Deploy structural blueprint\n` +
+                        `> • **backuplist** - Catalog system snapshots`
                     )
                     .setFooter({ text: "BlueSealPrime • Omega Protocol" })
+            },
+            {
+                label: "Diagnostic Protocols",
+                value: "diagnostics",
+                emoji: "🛰️",
+                description: "Latency, Module Audit, Previews",
+                embed: new EmbedBuilder()
+                    .setColor("#FFFFFF")
+                    .setTitle("🛰️ DIAGNOSTIC PROTOCOLS MODULE")
+                    .setDescription(
+                        `### 📡 **[ SYSTEM_VERIFICATION ]**\n` +
+                        `> • **ping** - Latency & Core status\n` +
+                        `> • **ediagnose** - Deep Module Integrity Scan\n\n` +
+                        `### 👁️ **[ VISUAL_PREVIEWS ]**\n` +
+                        `> • **tmpdisplay** - Owner Security Tag Preview\n\n` +
+                        `### 🛡️ **[ DEFENSE_TESTS ]**\n` +
+                        `> • **vdefend** / **vundefend** - Test VC Sticky presence`
+                    )
+                    .setFooter({ text: "BlueSealPrime • Kernel Audit" })
             }
         ];
 

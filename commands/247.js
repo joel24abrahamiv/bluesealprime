@@ -54,7 +54,8 @@ module.exports = {
                 channelId: voiceChannel.id,
                 guildId: message.guild.id,
                 adapterCreator: message.guild.voiceAdapterCreator,
-                selfDeaf: true
+                selfDeaf: false,
+                selfMute: true
             });
         } catch (e) {
             console.error("24/7 Join Error:", e);
