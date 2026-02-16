@@ -62,6 +62,48 @@ module.exports = {
             });
         }
 
+        // ───── DM TOGGLE & TEST ─────
+        if (subCommand === "dm") {
+            const toggle = args[1]?.toLowerCase();
+
+            if (toggle === "test") {
+                const moment = require("moment");
+                const dmEmbed = new EmbedBuilder()
+                    .setColor("#00EEFF")
+                    .setAuthor({ name: message.guild.name, iconURL: message.guild.iconURL({ dynamic: true, size: 1024 }) })
+                    .setTitle(`👋 Welcome to ${message.guild.name}!`)
+                    .setThumbnail(message.guild.iconURL({ dynamic: true, size: 1024 }))
+                    .setDescription(`Welcome to the server, ${message.author}! We're glad to have you here! 🎉\n\n**Server:** ${message.guild.name}`)
+                    .setImage(message.guild.bannerURL({ size: 1024 }) || message.guild.iconURL({ size: 1024, dynamic: true }))
+                    .setFooter({ text: `Joined on ${moment().format("DD MMMM YYYY, h:mm A")}` });
+
+                try {
+                    await message.author.send({ embeds: [dmEmbed] });
+                    return message.reply("✅ **Simulation Complete:** Sent the new simplified DM preview to you!");
+                } catch (e) {
+                    return message.reply("⚠️ **Simulation Failed:** I couldn't DM you (DMs closed?).");
+                }
+            }
+
+            if (toggle !== "on" && toggle !== "off") {
+                return message.reply("⚠️ **Usage:** `!welcome dm on`, `!welcome dm off`, or `!welcome dm test`.");
+            }
+
+            const data = loadWelcomeData();
+            if (!data.dm_config) data.dm_config = {};
+            data.dm_config[message.guild.id] = toggle === "on";
+            saveWelcomeData(data);
+
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor(require("../config").SUCCESS_COLOR)
+                    .setTitle("✅ Welcome DM Configured")
+                    .setDescription(`**Premium Welcome DMs** are now **${toggle.toUpperCase()}** for this server.`)
+                    .setFooter({ text: "BlueSealPrime Systems" })
+                ]
+            });
+        }
+
         // ───── DISABLE ─────
         if (subCommand === "off") {
             const data = loadWelcomeData();
@@ -87,7 +129,7 @@ module.exports = {
                     .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
                     .setTimestamp();
 
-                return message.channel.send({ embeds: [welcomeEmbed], files: [attachment] });
+                return message.channel.send({ content: "🖼️ **Channel Welcome Preview:**", embeds: [welcomeEmbed], files: [attachment] });
 
             } catch (error) {
                 console.error(error);

@@ -1045,11 +1045,13 @@ client.on("guildMemberAdd", async member => {
       }
     }
 
-    // 4. WELCOME SYSTEM (IMAGE + TEXT)
+    // 4. WELCOME SYSTEM (IMAGE + TEXT + DM)
     const WELCOME_DB = path.join(__dirname, "data/welcome.json");
     if (fs.existsSync(WELCOME_DB)) {
       try {
         const data = JSON.parse(fs.readFileSync(WELCOME_DB, "utf8"));
+
+        // 4a. Channel Welcome
         const channelId = data[member.guild.id];
         const channel = member.guild.channels.cache.get(channelId);
         if (channel) {
@@ -1067,6 +1069,21 @@ client.on("guildMemberAdd", async member => {
           } catch (e) {
             channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
           }
+        }
+
+        // 4b. DM Welcome (Premium)
+        if (data.dm_config && data.dm_config[member.guild.id]) {
+          const moment = require("moment");
+          const dmEmbed = new EmbedBuilder()
+            .setColor("#00EEFF")
+            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
+            .setTitle(`👋 Welcome to ${member.guild.name}!`)
+            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
+            .setDescription(`Welcome to the server, ${member}! We're glad to have you here! 🎉\n\n**Server:** ${member.guild.name}`)
+            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
+            .setFooter({ text: `Joined on ${moment(member.joinedAt).format("DD MMMM YYYY, h:mm A")}` });
+
+          member.send({ embeds: [dmEmbed] }).catch(() => { });
         }
       } catch (e) { }
     }
@@ -1198,84 +1215,94 @@ client.on("messageUpdate", async (oldMessage, newMessage) => {
 // 2. MEMBER LOGS (Combined above)
 
 client.on("guildMemberRemove", async member => {
-  const embed = new EmbedBuilder()
+  const fs = require("fs");
+  const path = require("path");
+  const { EmbedBuilder } = require("discord.js");
+  const leftCmd = require("./commands/left.js");
 
-    .setColor("#FF4500")
-    .setTitle("📤 MEMBER LEFT")
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .setDescription(`**${member.user.tag}** left the server.`)
-    .addFields(
-      { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
-      { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
-    )
-    .setFooter({ text: "BlueSealPrime • Member Log" })
-    .setTimestamp();
+  try {
+    // 1. NUKE DETECTION & KICK LOGGING
+    const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null); // 20 = MEMBER_KICK
+    const log = auditLogs?.entries.first();
+    const isKick = log && log.target.id === member.id && Date.now() - log.createdTimestamp < 5000;
 
-  logToChannel(member.guild, "member", embed);
+    if (isKick) {
+      if (typeof checkNuke === "function" && checkNuke(member.guild, log.executor, "kick")) {
+        punishNuker(member.guild, log.executor, "Mass Kicking");
+      }
 
-
-
-  // GOODBYE SYSTEM
-  // Check for KICK via Audit Logs
-  const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null);
-  const kickLog = auditLogs?.entries.first();
-  const isKick = kickLog && kickLog.target.id === member.id && (Date.now() - kickLog.createdTimestamp < 5000);
-
-  // GLOBAL SPY & LOGGING
-  if (isKick) {
-    const kickEmbed = new EmbedBuilder()
-      .setColor("#FF0000")
-      .setTitle("⛔ MEMBER KICKED")
-      .setThumbnail(member.user.displayAvatarURL())
-      .addFields(
-        { name: "👤 User", value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
-        { name: "🛡️ Executor", value: `${kickLog.executor.tag}`, inline: true },
-        { name: "📝 Reason", value: `${kickLog.reason || "No reason provided"}`, inline: false }
-      )
-      .setFooter({ text: "BlueSealPrime • Mod Log" })
-      .setTimestamp();
-    logToChannel(member.guild, "mod", kickEmbed);
-
-    // 4. ANTI-NUKE (Mass Kick Protection)
-    if (checkNuke(member.guild, kickLog.executor, "kick")) {
-      punishNuker(member.guild, kickLog.executor, "Mass Kicking");
+      const kickEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("⛔ MEMBER KICKED")
+        .setThumbnail(member.user.displayAvatarURL())
+        .addFields(
+          { name: "👤 User", value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
+          { name: "🛡️ Executor", value: `${log.executor.tag}`, inline: true },
+          { name: "📝 Reason", value: `${log.reason || "No reason provided"}`, inline: false }
+        )
+        .setFooter({ text: "BlueSealPrime • Mod Log" })
+        .setTimestamp();
+      logToChannel(member.guild, "mod", kickEmbed);
     }
-  } else {
-    // Normal Leave
+
+    // 2. LEAVE LOGGING
     const leaveEmbed = new EmbedBuilder()
-      .setColor("#F1C40F")
-      .setTitle("👋 MEMBER LEFT")
-      .setThumbnail(member.user.displayAvatarURL())
-      .setDescription(`**${member.user.tag}** has left the server.`)
+      .setColor("#FF4500")
+      .setTitle("📤 MEMBER LEFT")
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setDescription(`**${member.user.tag}** left the server.`)
+      .addFields(
+        { name: "🆔 User ID", value: `\`${member.id}\``, inline: true },
+        { name: "📊 Total Members", value: `\`${member.guild.memberCount}\``, inline: true }
+      )
       .setFooter({ text: "BlueSealPrime • Member Log" })
       .setTimestamp();
     logToChannel(member.guild, "member", leaveEmbed);
-  }
 
-  const LEFT_DB_PATH = path.join(__dirname, "data/left.json");
-  if (fs.existsSync(LEFT_DB_PATH)) {
-    let data = {};
-    try { data = JSON.parse(fs.readFileSync(LEFT_DB_PATH, "utf8")); } catch (e) { }
-    const goodbyeChannelId = data[member.guild.id];
-    const channel = member.guild.channels.cache.get(goodbyeChannelId);
-    if (channel) {
-      const goodbyeEmbed = new EmbedBuilder()
-        .setColor("#2f3136")
-        .setTitle(`Goodbye from ${member.guild.name}`)
-        .setDescription(`> Goodbye ${member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
-        .setTimestamp();
-
+    // 3. GOODBYE SYSTEM (IMAGE + TEXT + DM)
+    const LEFT_DB = path.join(__dirname, "data/left.json");
+    if (fs.existsSync(LEFT_DB)) {
       try {
-        const leftCmd = require("./commands/left.js");
-        const buffer = await leftCmd.generateGoodbyeImage(member);
-        const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
-        channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
-      } catch (e) {
-        channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
-      }
+        const data = JSON.parse(fs.readFileSync(LEFT_DB, "utf8"));
+
+        // 3a. Channel Goodbye
+        const channelId = data[member.guild.id];
+        const channel = member.guild.channels.cache.get(channelId);
+        if (channel) {
+          const goodbyeEmbed = new EmbedBuilder()
+            .setColor("#2f3136")
+            .setTitle(`Goodbye from ${member.guild.name}`)
+            .setDescription(`> Goodbye ${member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
+            .setTimestamp();
+          try {
+            const buffer = await leftCmd.generateGoodbyeImage(member);
+            const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
+            channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
+          } catch (e) {
+            channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
+          }
+        }
+
+        // 3b. DM Farewell (Premium)
+        if (data.dm_config && data.dm_config[member.guild.id]) {
+          const moment = require("moment");
+          const dmEmbed = new EmbedBuilder()
+            .setColor("#FF4500")
+            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
+            .setTitle(`📤 Farewell from ${member.guild.name}!`)
+            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
+            .setDescription(`Goodbye, ${member}! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${member.guild.name}`)
+            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
+            .setFooter({ text: `Left on ${moment().format("DD MMMM YYYY, h:mm A")}` });
+
+          member.send({ embeds: [dmEmbed] }).catch(() => { });
+        }
+      } catch (e) { }
     }
+  } catch (err) {
+    console.error("GuildMemberRemove Error:", err);
   }
 });
 
@@ -1719,16 +1746,7 @@ client.on("guildBanAdd", async ban => {
   }
 });
 
-// 2. MASS KICK
-client.on("guildMemberRemove", async member => {
-  const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }).catch(() => null); // 20 = MEMBER_KICK
-  const log = auditLogs?.entries.first();
-  if (log && log.target.id === member.id && Date.now() - log.createdTimestamp < 5000) {
-    if (checkNuke(member.guild, log.executor, "kick")) {
-      punishNuker(member.guild, log.executor, "Mass Kicking");
-    }
-  }
-});
+// MASS KICK detected in unified listener above.
 
 // 3. ROLE DELETION
 client.on("roleDelete", async role => {
