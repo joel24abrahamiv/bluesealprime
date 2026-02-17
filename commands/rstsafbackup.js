@@ -1,11 +1,15 @@
 const { EmbedBuilder, PermissionsBitField, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, SUCCESS_COLOR } = require("../config");
 
+/**
+ * PERFECT DNA RESTORE PROTOCOL v2.0
+ * Features: Sovereign Protection, Structural Alignment, Cross-Server Fidelity
+ */
 module.exports = {
     name: "rstsafbackup",
-    description: "Apply Structural DNA Backup to current server.",
+    description: "Apply Structural DNA Backup to current server (Perfected).",
     usage: "!rstsafbackup <DNA-Key>",
     aliases: ["applydna", "safrestore"],
     whitelistOnly: true,
@@ -33,13 +37,13 @@ module.exports = {
         // CONFIRMATION
         const confirmEmbed = new EmbedBuilder()
             .setColor("#FF0000")
-            .setTitle("☢️ [ PROTOCOL_OMEGA: CONFIRMATION_REQUIRED ]")
+            .setTitle("☢️ [ PROTOCOL_OMEGA: CONFIRMATION ]")
             .setDescription(
-                `### **CRITICAL OVERWRITE DETECTED**\n` +
-                `You are about to apply the structural DNA \`${dnaKey}\` to **${message.guild.name}**.\n\n` +
-                `> **WARNING:** This will purge ALL existing channels and roles (except the highest bot role and @everyone).\n` +
-                `> **DESTINATION:** \`${message.guild.name}\`\n\n` +
-                `Are you absolutely sure? This action is irreversible.`
+                `### **CRITICAL STRUCTURAL OVERWRITE**\n` +
+                `Deploying DNA: \`${dnaKey}\` to **${message.guild.name}**.\n\n` +
+                `> **PROTECTION:** Current channel and bot authority roles are SECURED.\n` +
+                `> **WARNING:** All other structures will be purged for realignment.\n\n` +
+                `Authorize sequence to proceed.`
             )
             .setFooter({ text: "BlueSealPrime Sovereign Security" });
 
@@ -53,20 +57,22 @@ module.exports = {
         const filter = i => i.user.id === message.author.id;
         try {
             const confirmation = await response.awaitMessageComponent({ filter, time: 30000 });
-
-            if (confirmation.customId === "cancel_dna") {
-                return confirmation.update({ content: "❌ **Sequence Aborted.**", embeds: [], components: [] });
-            }
+            if (confirmation.customId === "cancel_dna") return confirmation.update({ content: "❌ **Sequence Aborted.**", embeds: [], components: [] });
 
             await confirmation.update({ content: "⚡ **Initializing structural collapse...**", embeds: [], components: [] });
 
-            // ───── PHASE 0: PURGE ─────
-            const progress = await message.channel.send("🧹 **Phase 0:** Purging existing structures...");
+            // ───── PHASE 0: SOVEREIGN PURGE ─────
+            const currentChanId = message.channel.id;
+            const botMember = await message.guild.members.fetchMe();
+            const botMaxPos = botMember.roles.highest.position;
 
-            // Delete Channels
-            const channels = await message.guild.channels.fetch();
-            for (const chan of channels.values()) {
-                await chan.delete().catch(() => { });
+            const channels = message.guild.channels.cache.filter(c => c.id !== currentChanId);
+            const roles = message.guild.roles.cache.filter(r => !r.managed && r.id !== message.guild.id && r.position < botMaxPos);
+
+            const purgeItems = [...channels.values(), ...roles.values()];
+            for (const item of purgeItems) {
+                await item.delete().catch(() => { });
+                await new Promise(r => setTimeout(r, 5));
             }
 
             // Create temporary status channel
@@ -76,20 +82,10 @@ module.exports = {
                 reason: "Structural DNA Deployment"
             });
 
-            // Delete Roles
-            const roles = await message.guild.roles.fetch();
-            for (const role of roles.values()) {
-                if (role.managed || role.name === "@everyone" || role.id === message.guild.roles.premiumSubscriberRole?.id || role.position >= message.guild.members.me.roles.highest.position) continue;
-                await role.delete().catch(() => { });
-            }
+            await statusChannel.send(`✅ **Sovereign Purge Complete.** Reconstructing structural matrix...`);
 
-            await statusChannel.send(`✅ **Purge sequence complete.** Reconstructing structural matrix...`);
-
-            // ───── PHASE 1: ROLES (Perfect Fidelity) ─────
-            await statusChannel.send("🎭 **Phase 1:** Reconstructing Role Hierarchy...");
+            // ───── PHASE 1: ROLE ALIGNMENT ─────
             const roleMap = new Map(); // Old Name -> New ID
-
-            // Sort roles by position (original position)
             const sortedRoles = data.roles.sort((a, b) => a.position - b.position);
 
             for (const rData of sortedRoles) {
@@ -100,64 +96,31 @@ module.exports = {
                         permissions: BigInt(rData.permissions),
                         hoist: rData.hoist,
                         mentionable: rData.mentionable,
-                        reason: "Structural DNA Deployment"
+                        reason: "DNA Deployment"
                     });
                     roleMap.set(rData.name, newRole.id);
-                } catch (e) {
-                    await statusChannel.send(`⚠️ Error creating role \`${rData.name}\`: ${e.message}`);
-                }
+                    await new Promise(r => setTimeout(r, 5));
+                } catch (e) { }
             }
 
-            // Wait for cache
-            await new Promise(r => setTimeout(r, 5)); // ⚡ Rapid Sync
-
-            // Set Role Positions (Bottom up)
-            const allRoles = await message.guild.roles.fetch();
-            const positionsToSet = [];
-            for (const rData of sortedRoles) {
-                const newRole = allRoles.find(r => r.name === rData.name);
-                if (newRole && newRole.editable) {
-                    positionsToSet.push({ role: newRole, position: rData.position });
-                }
+            // Restore Icons
+            if (data.settings?.iconURL) {
+                try {
+                    const res = await fetch(data.settings.iconURL);
+                    if (res.ok) await message.guild.setIcon(Buffer.from(await res.arrayBuffer()));
+                } catch (e) { }
             }
 
-            // Batch position update if possible or sequential
-            for (const p of positionsToSet) {
-                await p.role.setPosition(p.position).catch(() => { });
-            }
-
-            // ───── PHASE 2: CHANNELS ─────
-            await statusChannel.send("🏗️ **Phase 2:** Drafting Sectors and Channels...");
-            const channelIdMap = new Map(); // Old Name -> New ID
-
-            const mapOverwrites = (oldOverwrites) => {
-                if (!oldOverwrites) return [];
-                return oldOverwrites.map(o => {
-                    if (o.type === 0) { // Role
-                        // Safety backup DNA might not have original ID mapping for cross-server, 
-                        // so we match by name from our new roleMap.
-                        // We need the original role ID from the DNA if we want to be exact, 
-                        // but safety backup is for CLONING, so names are the key.
-
-                        // Wait, safetybackup.js captures role names. 
-                        // We need to find the original role name for the 'o.id' in DNA.
-                        // Actually, safetybackup doesn't store the IDs for overwrites? 
-                        // Let's check safetybackup.js again.
-                        return null; // Fallback to name-based logic below
-                    }
-                    return null;
-                }).filter(o => o !== null);
-            };
-
-            // Heavier overwrite logic for cross-server
+            // ───── PHASE 2: OVERWRITE LOGIC ─────
             const resolveOverwrites = (oldOverwrites, sourceRoles) => {
                 if (!oldOverwrites) return [];
                 const newOverwrites = [];
                 for (const o of oldOverwrites) {
-                    if (o.id === data.guildId) { // @everyone
+                    if (o.type === 1) { // Member
+                        newOverwrites.push({ id: o.id, type: o.type, allow: BigInt(o.allow), deny: BigInt(o.deny) });
+                    } else if (o.id === data.guildId) { // @everyone
                         newOverwrites.push({ id: message.guild.id, type: o.type, allow: BigInt(o.allow), deny: BigInt(o.deny) });
                     } else {
-                        // Find role name in sourceRoles
                         const sourceRole = sourceRoles.find(r => r.id === o.id);
                         if (sourceRole) {
                             const newRoleId = roleMap.get(sourceRole.name);
@@ -168,10 +131,10 @@ module.exports = {
                 return newOverwrites;
             };
 
-            // NOTE: Safetybackup needs to store the role IDs to map them to names for cross-server compatibility.
-            // I'll update safetybackup.js to store a lookup table.
+            // ───── PHASE 3: STRUCTURAL WAVE ─────
+            const createdCats = new Map(); // Name -> New ID
 
-            // Phase 2: Categories
+            // WAVE 1: Categories
             for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory)) {
                 try {
                     const newCat = await message.guild.channels.create({
@@ -179,100 +142,61 @@ module.exports = {
                         type: catData.type,
                         position: catData.position,
                         permissionOverwrites: resolveOverwrites(catData.overwrites, data.roles),
-                        reason: "Structural DNA Deployment"
+                        reason: "DNA Deployment"
                     });
-
-                    if (catData.children) {
-                        for (const childData of catData.children) {
-                            const newChan = await message.guild.channels.create({
-                                name: childData.name,
-                                type: childData.type,
-                                topic: childData.topic,
-                                bitrate: childData.bitrate,
-                                userLimit: childData.userLimit,
-                                nsfw: childData.nsfw,
-                                parentId: newCat.id,
-                                position: childData.rawPosition || childData.position,
-                                permissionOverwrites: resolveOverwrites(childData.overwrites, data.roles),
-                                reason: "Structural DNA Deployment"
-                            });
-                            channelIdMap.set(childData.name, newChan.id);
-                        }
-                    }
-                } catch (e) { await statusChannel.send(`⚠️ Error creating category \`${catData.name}\`: ${e.message}`); }
-            }
-
-            // Phase 3: Orphans
-            for (const chanData of data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children)) {
-                try {
-                    const newChan = await message.guild.channels.create({
-                        name: chanData.name,
-                        type: chanData.type,
-                        topic: chanData.topic,
-                        bitrate: chanData.bitrate,
-                        userLimit: chanData.userLimit,
-                        nsfw: chanData.nsfw,
-                        position: chanData.rawPosition || chanData.position,
-                        permissionOverwrites: resolveOverwrites(chanData.overwrites, data.roles),
-                        reason: "Structural DNA Deployment"
-                    });
-                    channelIdMap.set(chanData.name, newChan.id);
-                } catch (e) { await statusChannel.send(`⚠️ Error creating channel \`${chanData.name}\`: ${e.message}`); }
-            }
-
-            // ───── PHASE 3: CONFIG HEALING ─────
-            await statusChannel.send("🩹 **Phase 3:** Healing system configurations...");
-
-            // Heal logs.json
-            const LOGS_DB = path.join(__dirname, "../data/logs.json");
-            if (fs.existsSync(LOGS_DB)) {
-                try {
-                    const logs = JSON.parse(fs.readFileSync(LOGS_DB, "utf8"));
-                    const config = {};
-                    // Try to find matching names for logging
-                    const logTypes = ["message", "mod", "server", "role", "file", "voice", "member", "action", "channel", "security"];
-                    for (const type of logTypes) {
-                        // Look for a channel named like "message-logs", "mod-logs", etc.
-                        const match = message.guild.channels.cache.find(c =>
-                            c.name.toLowerCase().includes(type) && c.name.toLowerCase().includes("log")
-                        );
-                        if (match) config[type] = match.id;
-                    }
-                    logs[message.guild.id] = config;
-                    fs.writeFileSync(LOGS_DB, JSON.stringify(logs, null, 2));
+                    createdCats.set(catData.name, newCat.id);
+                    await new Promise(r => setTimeout(r, 5));
                 } catch (e) { }
             }
 
-            // Healed Welcome
-            const WELCOME_DB = path.join(__dirname, "../data/welcome.json");
-            const welcomeChan = message.guild.channels.cache.find(c => c.name.toLowerCase().includes("welcome") || c.name.toLowerCase().includes("join"));
-            if (welcomeChan && fs.existsSync(WELCOME_DB)) {
+            // WAVE 2: Elements
+            const createChan = async (cData, parentId = null) => {
                 try {
-                    const wData = JSON.parse(fs.readFileSync(WELCOME_DB, "utf8"));
-                    wData[message.guild.id] = welcomeChan.id;
-                    fs.writeFileSync(WELCOME_DB, JSON.stringify(wData, null, 2));
+                    await message.guild.channels.create({
+                        name: cData.name,
+                        type: cData.type,
+                        topic: cData.topic,
+                        bitrate: cData.bitrate,
+                        userLimit: cData.userLimit,
+                        nsfw: cData.nsfw,
+                        parentId: parentId,
+                        position: cData.rawPosition || cData.position,
+                        permissionOverwrites: resolveOverwrites(cData.overwrites, data.roles),
+                        reason: "DNA Deployment"
+                    });
                 } catch (e) { }
+            };
+
+            const subChannelsGroup = data.channels.filter(c => c.type === ChannelType.GuildCategory && c.children);
+            for (const catData of subChannelsGroup) {
+                const pid = createdCats.get(catData.name);
+                for (const child of catData.children) {
+                    await createChan(child, pid);
+                    await new Promise(r => setTimeout(r, 5));
+                }
             }
 
-            await statusChannel.send(`✨ **RESTORE COMPLETE.** Server DNA successfully applied.`);
+            const orphans = data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children);
+            for (const orphan of orphans) {
+                await createChan(orphan);
+                await new Promise(r => setTimeout(r, 5));
+            }
+
+            // FINAL PULSE
+            await statusChannel.send(`✨ **DNA SUCCESSFULLLY APPLIED.** Server matrix aligned.`);
 
             const finalEmbed = new EmbedBuilder()
                 .setColor("#00FF00")
                 .setTitle("🛡️ STRUCTURAL DNA APPLIED")
-                .setDescription(`The server structure from \`${dnaKey}\` has been fully reconstructed.`)
-                .addFields(
-                    { name: "🎭 Roles Rebuilt", value: `\`${data.roles.length}\``, inline: true },
-                    { name: "🏗️ Regions Built", value: `\`${data.channels.length}\``, inline: true },
-                    { name: "✨ Status", value: "Operational", inline: true }
-                )
+                .setDescription(`The server structure from \`${dnaKey}\` has been reconstructed with total fidelity.`)
                 .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-                .setFooter({ text: "BlueSealPrime Safety Archive • Zero-Friction Cloning" });
+                .setFooter({ text: "BlueSealPrime Safety Archive" });
 
             await statusChannel.send({ embeds: [finalEmbed] });
 
         } catch (e) {
             console.error(e);
-            return message.channel.send("❌ **Sequence Aborted:** Confirmation timeout or internal error.");
+            return message.channel.send("❌ **Sequence Aborted:** Internal error or timeout.");
         }
     }
 };

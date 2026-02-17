@@ -52,7 +52,9 @@ module.exports = {
                         rulesChannelId: message.guild.rulesChannelId,
                         publicUpdatesChannelId: message.guild.publicUpdatesChannelId,
                         preferredLocale: message.guild.preferredLocale,
-                        features: message.guild.features
+                        features: message.guild.features,
+                        iconURL: message.guild.iconURL({ extension: 'png', size: 1024 }),
+                        bannerURL: message.guild.bannerURL({ size: 1024 })
                     },
                     roles: message.guild.roles.cache
                         .filter(r => !r.managed && r.name !== "@everyone")
@@ -184,13 +186,26 @@ module.exports = {
 
             files.slice(0, 10).forEach(file => {
                 try {
-                    const data = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, file), "utf8"));
-                    const date = new Date(data.createdAt).toLocaleDateString();
+                    const filePath = path.join(BACKUP_DIR, file);
+                    const stats = fs.statSync(filePath);
+                    const fileSize = (stats.size / 1024).toFixed(2); // KB
+
+                    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+                    const createdTimestamp = Math.floor(new Date(data.createdAt).getTime() / 1000);
+
                     listEmbed.addFields({
-                        name: `📦 ${data.id}`,
-                        value: `**Source:** ${data.guildName}\n**Date:** ${date} | **Roles:** ${data.roles.length} | **Channels:** ${data.channels.length}`,
+                        name: `📦 SNAPSHOT: \`${data.id}\``,
+                        value:
+                            `> **🏷️ Name:** ${data.guildName}\n` +
+                            `> **📅 Date:** <t:${createdTimestamp}:F> (<t:${createdTimestamp}:R>)\n` +
+                            `> **📊 Stats:** ${data.roles.length} Roles • ${data.channels.length} Channels • ${data.emojis.length} Emojis\n` +
+                            `> **💾 Size:** ${fileSize} KB`,
                         inline: false
                     });
+
+                    // Add visual separator
+                    listEmbed.addFields({ name: "\u200b", value: "\u200b", inline: false });
+
                 } catch (e) { }
             });
 

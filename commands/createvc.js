@@ -3,7 +3,7 @@ const { ChannelType, PermissionsBitField, EmbedBuilder } = require("discord.js")
 module.exports = {
     name: "createvc",
     description: "Creates a new voice channel",
-    aliases: ["vc", "mkvc"],
+    aliases: ["mkvc"],
     permissions: PermissionsBitField.Flags.ManageChannels,
 
     async execute(message, args) {

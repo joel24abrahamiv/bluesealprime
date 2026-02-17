@@ -28,18 +28,22 @@ module.exports = {
 
         const sub = args[0]?.toLowerCase();
         let db = loadDB();
-        db[message.guild.id] = {
-            enabled: false,
-            whitelisted: [], // Array of User IDs
-            autorestore: true, // Default to enabled
-            limits: {
-                channelDelete: 2, // 2 deletions per...
-                roleDelete: 2,
-                ban: 3,
-                kick: 3,
-                interval: 10000 // 10 seconds
-            }
-        };
+
+        // Initialize if not exists
+        if (!db[message.guild.id]) {
+            db[message.guild.id] = {
+                enabled: false,
+                whitelisted: [], // Array of User IDs
+                autorestore: true, // Default to enabled
+                limits: {
+                    channelDelete: 2, // 2 deletions per...
+                    roleDelete: 2,
+                    ban: 3,
+                    kick: 3,
+                    interval: 10000 // 10 seconds
+                }
+            };
+        }
 
         const config = db[message.guild.id];
 

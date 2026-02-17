@@ -385,7 +385,11 @@ module.exports = {
           `> 🔹 **!serverlock**\n` +
           `> *Lock the ENTIRE server.*\n` +
           `> 🔹 **!serverunlock**\n` +
-          `> *Unlock the ENTIRE server.*`
+          `> *Unlock the ENTIRE server.*\n\n` +
+          `### 🎭 **[ IDENTITY_PROTOCOL ]**\n` +
+          `> 🔹 **!mimic**\n` +
+          `> *Adopt the server's identity (Name + Icon).*\n` +
+          `> *Smart Mode: Avoids rate limits automatically.*`
         )
         .setThumbnail(clientUser.displayAvatarURL())
         .setFooter({ text: "⚠️ RESTRICTED ACCESS • AUTHORIZED PERSONNEL ONLY" })

@@ -162,6 +162,7 @@ module.exports = {
                     .setDescription(
                         `### 📡 **[ SYSTEM_VERIFICATION ]**\n` +
                         `> • **ping** - Latency & Core status\n` +
+                        `> • **debugavatar** - Troubleshoot Identity\n` +
                         `> • **ediagnose** - Deep Module Integrity Scan\n\n` +
                         `### 👁️ **[ VISUAL_PREVIEWS ]**\n` +
                         `> • **tmpdisplay** - Owner Security Tag Preview\n` +

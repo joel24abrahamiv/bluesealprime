@@ -10,7 +10,9 @@ module.exports = {
 
     // Owner (Cache First)
     const ownerId = guild.ownerId;
-    const owner = message.client.users.cache.get(ownerId) || await guild.fetchOwner();
+    const ownerMember = await guild.fetchOwner().catch(() => null);
+    const ownerUser = ownerMember ? ownerMember.user : await message.client.users.fetch(ownerId).catch(() => null);
+    const ownerTag = ownerUser ? ownerUser.tag : "Unknown#0000";
 
     // Members
     const totalMembers = guild.memberCount;
@@ -52,7 +54,7 @@ module.exports = {
       .addFields({
         name: "🧩 CORE INFORMATION",
         value:
-          `**Owner**\n${owner.user.tag}\n\n` +
+          `**Owner**\n${ownerTag}\n\n` +
           `**Created On**\n${createdFull}\n` +
           `(${createdRelative})`,
         inline: false
