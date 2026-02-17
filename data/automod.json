@@ -17,5 +17,19 @@
     "antiBadWords": true,
     "antiMassMentions": true,
     "whitelist": []
+  },
+  "1473220550737531024": {
+    "antiLinks": true,
+    "antiSpam": true,
+    "antiBadWords": true,
+    "antiMassMentions": true,
+    "whitelist": []
+  },
+  "1473224241187917824": {
+    "antiLinks": true,
+    "antiSpam": true,
+    "antiBadWords": true,
+    "antiMassMentions": true,
+    "whitelist": []
   }
 }
