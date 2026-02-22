@@ -1,4 +1,5 @@
 process.env.NODE_NO_WARNINGS = "1";
+process.removeAllListeners('warning'); // Surgical strike against red deprecation logs
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -10,17 +11,12 @@ const V2 = require("./utils/v2Utils");
 const http = require("http");
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200);
-    res.end("Health Check Passed");
-    return;
-  }
   res.writeHead(200);
-  res.end("BlueSealPrime v2.0 Online");
+  res.end("Sovereign OS Online");
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 [Railway] Heartbeat active on port ${PORT}`);
+  console.log(`🌐 [Railway] Global Heartbeat active on port ${PORT}`);
 });
 server.on('error', (err) => console.error('🌐 [HttpError]', err.message));
 
@@ -559,12 +555,11 @@ async function updateDashboard(bot) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
   // ───── STAGGERED INITIALIZATION (Railway Health-Check Protection) ─────
-  // We wait 10 seconds before starting heavy background tasks to let Railway confirm startup
   setTimeout(async () => {
     if (global.isShuttingDown) return;
 
@@ -578,7 +573,7 @@ client.once("ready", () => {
       for (const guild of client.guilds.cache.values()) {
         if (global.isShuttingDown) break;
         await joinVC247(guild);
-        await wait(2000); // 2s gap for stability
+        await wait(2000);
       }
     })();
 
