@@ -2855,10 +2855,36 @@ client.on("interactionCreate", async interaction => {
 
     try {
       await interaction.member.roles.add(role);
-      const vEmbed = new EmbedBuilder().setColor("#00FF00").setTitle("✅ MEMBER VERIFIED").setDescription(`**User:** ${user.tag}\n**Role:** ${role.name}`).setTimestamp();
+
+      const vEmbed = new EmbedBuilder()
+        .setColor("#00FF00")
+        .setTitle("✅ MEMBER VERIFIED")
+        .setDescription(`**User:** ${user.tag}\n**Role:** ${role.name}`)
+        .setTimestamp();
       logToChannel(guild, "verify", vEmbed);
-      return interaction.reply({ content: "✅ **Verified successfully!**", ephemeral: true });
-    } catch (e) { return interaction.reply({ content: "❌ Error.", ephemeral: true }); }
+
+      const { V2_BLUE } = require("./config");
+      const successPanel = V2.container([
+        V2.section([
+          V2.heading("✨ IDENTITY VERIFIED", 2),
+          V2.text(`Welcome to the sanctuary, ${user.username}.`)
+        ], V2.botAvatar(interaction)),
+        V2.separator(),
+        V2.text(`The registry role **${role.name}** has been permanently bound to your profile. All sectors are now accessible.`)
+      ], V2_BLUE);
+
+      return interaction.reply({
+        flags: V2.flag,
+        components: [successPanel],
+        ephemeral: true
+      });
+    } catch (e) {
+      return interaction.reply({
+        flags: V2.flag,
+        components: [V2.container([V2.text("❌ **Registry Error:** Failed to apply roles. Consult the High Comand.")], "#FF0000")],
+        ephemeral: true
+      });
+    }
   }
 });
 
