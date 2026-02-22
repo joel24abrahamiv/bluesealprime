@@ -6,15 +6,23 @@ const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder
 const { BOT_OWNER_ID } = require("./config");
 const V2 = require("./utils/v2Utils");
 
-// 👇 KEEP RAILWAY ALIVE (THIS IS REQUIRED)
+// 👇 KEEP RAILWAY ALIVE (STABILIZED)
 const http = require("http");
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200);
+    res.end("Health Check Passed");
+    return;
+  }
   res.writeHead(200);
-  res.end("BlueSealPrime alive");
-}).listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 HTTP server listening on ${PORT}`);
+  res.end("BlueSealPrime v2.0 Online");
 });
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 [Railway] Heartbeat active on port ${PORT}`);
+});
+server.on('error', (err) => console.error('🌐 [HttpError]', err.message));
 
 const PREFIX = "!";
 
@@ -551,41 +559,52 @@ async function updateDashboard(bot) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("clientReady", () => {
-  console.log(`✅ ${client.user.tag} online and stable`);
-  console.log(`📊 Connected to ${client.guilds.cache.size} guilds.`);
-  // ───── UPDATE DASHBOARD ─────
-  updateDashboard(client);
+client.once("ready", () => {
+  console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
+  console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
-  // ───── PREMIUM STATUS ROTATION ─────
+  // ───── STAGGERED INITIALIZATION (Railway Health-Check Protection) ─────
+  // We wait 10 seconds before starting heavy background tasks to let Railway confirm startup
+  setTimeout(async () => {
+    if (global.isShuttingDown) return;
+
+    console.log("🚀 [System] Executing secondary startup sequence...");
+
+    // 1. Dashboard
+    updateDashboard(client).catch(() => { });
+
+    // 2. 24/7 Voice Joins
+    (async () => {
+      for (const guild of client.guilds.cache.values()) {
+        if (global.isShuttingDown) break;
+        await joinVC247(guild);
+        await wait(2000); // 2s gap for stability
+      }
+    })();
+
+    // 3. Command Init
+    client.nukingGuilds = new Set();
+    client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
+
+  }, 10000);
+
+  // ───── IMMEDIATE TASKS ─────
   const activities = [
-    { name: "Server Security | 🛡️ Active", type: 3 }, // Watching
+    { name: "Server Security | 🛡️ Active", type: 3 },
     { name: "Packet Traffic | 🟢 Stable", type: 3 },
     { name: "for Intruders | 👁️ Scanning", type: 3 },
-    { name: "BlueSealPrime v2.0 | 👑 Online", type: 0 } // Playing
+    { name: "BlueSealPrime v2.0 | 👑 Online", type: 0 }
   ];
 
   let i = 0;
   setInterval(() => {
+    if (global.isShuttingDown) return;
     client.user.setPresence({
       activities: [activities[i]],
       status: 'dnd',
     });
     i = (i + 1) % activities.length;
   }, 10000);
-
-  // ───── 24/7 VC INITIAL JOIN (STAGGERED TO PREVENT CRASH) ─────
-  (async () => {
-    for (const guild of client.guilds.cache.values()) {
-      if (global.isShuttingDown) break;
-      await joinVC247(guild);
-      await new Promise(r => setTimeout(r, 1000)); // 1s gap between joins to let the socket finish discovery
-    }
-  })();
-
-  // ───── INIT COMMANDS ─────
-  client.nukingGuilds = new Set(); // Global Set for active nukes
-  client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 });
 
 client.on("guildCreate", async (guild) => {
@@ -772,14 +791,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   }
 });
 
-// ───── CRASH PREVENTION ─────
-process.on("unhandledRejection", error => {
-  console.error("❌ Unhandled Promise Rejection:", error);
-});
-
-process.on("uncaughtException", error => {
-  console.error("❌ Uncaught Exception:", error);
-});
+// Primary crash handlers are at the top of the file
 
 // ───── MESSAGE HANDLER ─────
 // ─── 🤖 CROSS-BOT NUKE COMMAND INTERCEPTOR ───
