@@ -1,3 +1,4 @@
+process.env.NODE_NO_WARNINGS = "1";
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -85,6 +86,10 @@ process.on('unhandledRejection', (reason) => {
 process.on('SIGTERM', () => {
   console.log('🛑 [System] SIGTERM received. Shutting down gracefully...');
   client.destroy();
+  setTimeout(() => process.exit(0), 500); // Allow logs to flush
+});
+process.on('SIGINT', () => {
+  client.destroy();
   process.exit(0);
 });
 
@@ -149,8 +154,9 @@ async function joinVC247(guild) {
 
     console.log(`🔊 [StickyVoice] Joined ${channel.name} in ${guild.name}`);
   } catch (e) {
-    if (!e.message.includes("IP discovery")) {
-      console.error(`[StickyVoice] Join Error in ${guild.name}:`, e.message);
+    if (!e.message.includes("IP discovery") && !e.message.includes("Voice connection already exists")) {
+      // Log as standard info since this is a background auto-retry
+      console.log(`[StickyVoice] Background Re-entry in ${guild.name}: ${e.message}`);
     }
   }
 }
@@ -532,7 +538,7 @@ async function updateDashboard(bot) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} online and stable`);
   console.log(`📊 Connected to ${client.guilds.cache.size} guilds.`);
   // ───── UPDATE DASHBOARD ─────
