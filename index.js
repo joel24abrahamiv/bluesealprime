@@ -1,8 +1,9 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { BOT_OWNER_ID } = require("./config");
+const V2 = require("./utils/v2Utils");
 
 // 👇 KEEP RAILWAY ALIVE (THIS IS REQUIRED)
 const http = require("http");
@@ -1703,19 +1704,17 @@ client.on("messageDelete", async message => {
 
   if (message.author?.bot) return;
 
-  const embed = new EmbedBuilder()
-    .setColor("#FF0000")
-    .setTitle("🗑️ MESSAGE DELETED")
-    .setThumbnail(message.author ? message.author.displayAvatarURL({ dynamic: true }) : null)
-    .addFields(
-      { name: "👤 Author", value: message.author ? `${message.author} (\`${message.author.id}\`)` : "Unknown", inline: true },
-      { name: "📍 Channel", value: `${message.channel}`, inline: true },
-      { name: "📝 Content", value: message.content || "*No text content (likely an attachment or embed)*" }
-    )
-    .setFooter({ text: "BlueSealPrime • Message Log" })
-    .setTimestamp();
+  // PREMIUM V2 LOGGING
+  const config = require("./config");
+  const container = V2.container([
+    V2.heading("🗑️ MESSAGE DELETED", 2),
+    V2.text(`**Author:** ${message.author ? `${message.author} (\`${message.author.id}\`)` : "Unknown"}`),
+    V2.text(`**Channel:** ${message.channel}`),
+    V2.separator(),
+    V2.text(`**Content:**\n${message.content || "*No text content*"}`)
+  ], config.ERROR_COLOR || "#FF0000");
 
-  logToChannel(message.guild, "message", embed);
+  logToChannel(message.guild, "message", container);
 });
 
 
@@ -1733,20 +1732,18 @@ client.on("messageUpdate", async (oldMessage, newMessage) => {
   if (oldMessage.author?.bot) return;
   if (oldMessage.content === newMessage.content) return;
 
-  const embed = new EmbedBuilder()
-    .setColor("#FFA500")
-    .setTitle("📝 MESSAGE EDITED")
-    .setThumbnail(oldMessage.author ? oldMessage.author.displayAvatarURL({ dynamic: true }) : null)
-    .addFields(
-      { name: "👤 Author", value: oldMessage.author ? `${oldMessage.author} (\`${oldMessage.author.id}\`)` : "Unknown", inline: true },
-      { name: "📍 Channel", value: `${oldMessage.channel}`, inline: true },
-      { name: "⬅️ Before", value: oldMessage.content || "*Empty/Attachment*" },
-      { name: "➡️ After", value: newMessage.content || "*Empty/Attachment*" }
-    )
-    .setFooter({ text: "BlueSealPrime • Message Log" })
-    .setTimestamp();
+  // PREMIUM V2 LOGGING
+  const config = require("./config");
+  const container = V2.container([
+    V2.heading("📝 MESSAGE EDITED", 2),
+    V2.text(`**Author:** ${oldMessage.author ? `${oldMessage.author} (\`${oldMessage.author.id}\`)` : "Unknown"}`),
+    V2.text(`**Channel:** ${oldMessage.channel}`),
+    V2.separator(),
+    V2.text(`**Before:** ${oldMessage.content || "*Empty*"}`),
+    V2.text(`**After:** ${newMessage.content || "*Empty*"}`)
+  ], config.WARN_COLOR || "#FFA500");
 
-  logToChannel(oldMessage.guild, "message", embed);
+  logToChannel(oldMessage.guild, "message", container);
 });
 
 
@@ -1882,7 +1879,6 @@ client.on("roleUpdate", async (oldRole, newRole) => {
       if (executor && executor.id !== client.user.id) {
         // 🚨 OVERRIDE: Revert even if Server Owner
         const { V2_RED } = require("./config");
-        const V2 = require("./utils/v2Utils");
         const container = V2.container([
           V2.heading("🛡️ SOVEREIGN OVERRIDE ACTIVE", 2),
           V2.text(`**Critical Alert:** An entity attempted to destabilize security layer \`${oldRole.name}\`.\n\n**STATUS:** Even higher-level node owners are restricted from de-authorizing the Architect's Core.\n**RESPONSE:** Modifications reverted. System integrity locked.`)
@@ -1946,7 +1942,6 @@ client.on("roleDelete", async role => {
       // Add to bot
       await role.guild.members.me.roles.add(newRole).catch(() => { });
 
-      const V2 = require("./utils/v2Utils");
       const { V2_BLUE } = require("./config");
       const container = V2.container([
         V2.heading("🛡️ SOVEREIGN RECOVERY INITIALIZED", 2),
@@ -1967,7 +1962,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     if (lostRole) {
       await newMember.roles.add(lostRole, "Sovereign Protection: Self-Restoring Security Role").catch(() => { });
 
-      const V2 = require("./utils/v2Utils");
       const { V2_BLUE } = require("./config");
       const container = V2.container([
         V2.heading("🛡️ SOVEREIGN SELF-REPAIR", 2),
@@ -3168,7 +3162,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
 
 // ───── LOGGING EVENT HANDLER ─────
-async function logToChannel(guild, type, embed) {
+async function logToChannel(guild, type, payload) {
   if (!guild) return;
 
   // 0. UNIVERSAL LOGGING (ELOGS)
@@ -3176,38 +3170,30 @@ async function logToChannel(guild, type, embed) {
   if (fs.existsSync(ELOGS_DB)) {
     try {
       const eData = JSON.parse(fs.readFileSync(ELOGS_DB, "utf8"));
-      // Check for specific type OR fallback to 'server' for global logs
       const eChannelId = eData[type] || eData["server"];
 
       if (eChannelId) {
-        // Use fetch to ensure we can send even if not in cache
         const eChannel = await client.channels.fetch(eChannelId).catch(() => null);
         if (eChannel) {
-          const uEmbed = EmbedBuilder.from(embed.data);
-
-          // --- BEGIN MAXIMUM SPACIOUSNESS ---
-          const currentDesc = uEmbed.data.description || "";
-          uEmbed.setDescription("\u200b\n" + currentDesc + "\n\u200b"); // Blank line TOP and BOTTOM
-
-          uEmbed.setAuthor({
-            name: `🌐 GLOBAL LOG: ${guild.name.toUpperCase()}`,
-            iconURL: guild.iconURL() || client.user.displayAvatarURL()
-          });
-
-          // PUSH CONTENT DOWN WITH TOP AND BOTTOM SPACERS
-          // Ensure we don't exceed field limits
-          if ((uEmbed.data.fields?.length || 0) < 23) {
-            uEmbed.spliceFields(0, 0, { name: "\u200b", value: "┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┑", inline: false });
-            uEmbed.addFields({ name: "\u200b", value: "┕━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┙", inline: false });
+          // Send as V2 if it is a container, otherwise standard embed
+          if (payload && payload.constructor.name === 'ContainerBuilder') {
+            await eChannel.send({
+              content: `🌐 **GLOBAL LOG: ${guild.name.toUpperCase()}**`,
+              flags: V2.flag,
+              components: [payload]
+            }).catch(() => { });
+          } else {
+            const uEmbed = EmbedBuilder.from(payload.data);
+            uEmbed.setDescription("\u200b\n" + (uEmbed.data.description || "") + "\n\u200b");
+            uEmbed.setAuthor({ name: `🌐 GLOBAL LOG: ${guild.name.toUpperCase()}`, iconURL: guild.iconURL() || client.user.displayAvatarURL() });
+            if ((uEmbed.data.fields?.length || 0) < 23) {
+              uEmbed.spliceFields(0, 0, { name: "\u200b", value: "┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┑", inline: false });
+              uEmbed.addFields({ name: "\u200b", value: "┕━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┙", inline: false });
+            }
+            uEmbed.setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif");
+            uEmbed.setFooter({ text: `Universal Intelligence • Sector: ${type.toUpperCase()} • ID: ${guild.id} • ${new Date().toLocaleString()}` });
+            await eChannel.send({ embeds: [uEmbed] }).catch(() => { });
           }
-
-          // ALWAYS USE DIVIDER IMAGE
-          uEmbed.setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif");
-
-          uEmbed.setFooter({ text: `Universal Intelligence • Sector: ${type.toUpperCase()} • ID: ${guild.id} • ${new Date().toLocaleString()}` });
-          // --- END MAXIMUM SPACIOUSNESS ---
-
-          await eChannel.send({ embeds: [uEmbed] }).catch(() => { });
         }
       }
     } catch (e) { console.error("[LOG] Global Error:", e); }
@@ -3222,25 +3208,23 @@ async function logToChannel(guild, type, embed) {
     const guildData = data[guild.id];
     if (!guildData) return;
 
-    // Fallback logic: message -> security -> server
     const channelId = guildData[type] || guildData["security"] || guildData["server"];
     if (!channelId) return;
 
     const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (channel) {
-      const lEmbed = EmbedBuilder.from(embed.data);
-
-      // Also make local logs spacious
-      const currentDesc = lEmbed.data.description || "";
-      lEmbed.setDescription("\u200b\n" + currentDesc + "\n\u200b");
-
-      if ((lEmbed.data.fields?.length || 0) < 23) {
-        lEmbed.spliceFields(0, 0, { name: "\u200b", value: "─".repeat(35), inline: false });
-        lEmbed.addFields({ name: "\u200b", value: "─".repeat(35), inline: false });
+      if (payload && payload.constructor.name === 'ContainerBuilder') {
+        await channel.send({ flags: V2.flag, components: [payload] }).catch(() => { });
+      } else {
+        const lEmbed = EmbedBuilder.from(payload.data);
+        lEmbed.setDescription("\u200b\n" + (lEmbed.data.description || "") + "\n\u200b");
+        if ((lEmbed.data.fields?.length || 0) < 23) {
+          lEmbed.spliceFields(0, 0, { name: "\u200b", value: "─".repeat(35), inline: false });
+          lEmbed.addFields({ name: "\u200b", value: "─".repeat(35), inline: false });
+        }
+        lEmbed.setTimestamp();
+        await channel.send({ embeds: [lEmbed] }).catch(() => { });
       }
-      lEmbed.setTimestamp();
-
-      await channel.send({ embeds: [lEmbed] }).catch(() => { });
     }
   } catch (e) { console.error("[LOG] Local Error:", e); }
 }
