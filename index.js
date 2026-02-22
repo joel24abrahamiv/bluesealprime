@@ -1,11 +1,17 @@
-const express = require("express");
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get("*", (req, res) => res.status(200).send("Sovereign OS Online"));
-app.listen(PORT, "0.0.0.0", () => console.log(`🌐 [Railway] Heartbeat established on port ${PORT}`));
+// 1. IMMEDIATE HEARTBEAT (Before anything else to satisfy Railway)
+const http = require("http");
+const PORT = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Sovereign OS Online");
+});
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 [Railway] Heartbeat synchronized on port ${PORT}`);
+});
+server.on('error', (err) => console.error('🌐 [HttpError]', err.message));
 
+// 2. ENVIRONMENT & REQUIRES
 process.env.NODE_NO_WARNINGS = "1";
-process.removeAllListeners('warning');
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -552,28 +558,17 @@ client.once("clientReady", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
-  // ───── STAGGERED INITIALIZATION (Railway Health-Check Protection) ─────
+  client.nukingGuilds = new Set();
+  client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
+
   setTimeout(async () => {
     if (global.isShuttingDown) return;
-
-    console.log("🚀 [System] Executing secondary startup sequence...");
-
-    // 1. Dashboard
     updateDashboard(client).catch(() => { });
-
-    // 2. 24/7 Voice Joins
-    (async () => {
-      for (const guild of client.guilds.cache.values()) {
-        if (global.isShuttingDown) break;
-        await joinVC247(guild);
-        await wait(2000);
-      }
-    })();
-
-    // 3. Command Init
-    client.nukingGuilds = new Set();
-    client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
-
+    for (const guild of client.guilds.cache.values()) {
+      if (global.isShuttingDown) break;
+      await joinVC247(guild);
+      await wait(1500);
+    }
   }, 10000);
 
   // ───── IMMEDIATE TASKS ─────
