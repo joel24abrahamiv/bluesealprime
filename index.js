@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("BlueSealPrime alive");
-}).listen(PORT, () => {
+}).listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 HTTP server listening on ${PORT}`);
 });
 
@@ -82,6 +82,11 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('💥 [CrashRecovery] Unhandled Rejection — bot continuing:', reason?.message || reason);
 });
+process.on('SIGTERM', () => {
+  console.log('🛑 [System] SIGTERM received. Shutting down gracefully...');
+  client.destroy();
+  process.exit(0);
+});
 
 // ─── PER-USER COMMAND COOLDOWN (Anti-Spam Bomb) ───
 // Prevents someone from hammering commands to generate API spam
@@ -95,7 +100,7 @@ function isCommandRateLimited(userId) {
   return false;
 }
 
-const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require("@discordjs/voice");
+const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus, entersState } = require("@discordjs/voice");
 
 // ───── 24/7 VC FUNCTION ─────
 async function joinVC247(guild) {
@@ -121,8 +126,6 @@ async function joinVC247(guild) {
     }
 
     if (!channel) return;
-
-    const { joinVoiceChannel, getVoiceConnection } = require("@discordjs/voice");
 
     // Check if already connected to the correct channel to avoid socket spam
     const existingConnection = getVoiceConnection(guild.id);
@@ -470,21 +473,25 @@ async function updateDashboard(bot) {
       }
     }
 
-    // 2. Refactored Guild Loop: Sequential with Delay (Rate Limit Safe)
+    // 2. Optimized Guild Loop: Sequential with Delay (Rate Limit Safe)
     const logChannel = dashGuild.channels.cache.find(c => c.name === "📂-bot-system");
     if (!logChannel) return;
+
+    // Fetch messages ONCE for the whole loop
+    const dashboardMessages = await logChannel.messages.fetch({ limit: 50 }).catch(() => null);
 
     for (const guild of bot.guilds.cache.values()) {
       if (guild.id === dashGuild.id) continue;
 
       // Use Cache for Owner (Fast)
       const ownerId = guild.ownerId;
-      const owner = bot.users.cache.get(ownerId); // May be null if not cached
+      const owner = bot.users.cache.get(ownerId);
 
       const features = guild.features.map(f => `\`${f}\``).join(", ") || "None";
       const embed = new EmbedBuilder()
         .setColor("#2B2D31")
         .setTitle(`📊 **SERVER INTELLIGENCE:** ${guild.name.toUpperCase()}`)
+        // ... (rest of embed build remains same)
         .setDescription(
           `> **ID:** \`${guild.id}\`\n` +
           `> **Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}:D> (<t:${Math.floor(guild.createdTimestamp / 1000)}:R>)\n` +
@@ -493,53 +500,21 @@ async function updateDashboard(bot) {
         .setThumbnail(guild.iconURL({ dynamic: true, size: 512 }))
         .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
         .addFields(
-          {
-            name: "👑 **Top Authority**",
-            value: `> **Tag:** ${owner ? owner.tag : "Fetched via ID"}\n> **ID:** \`${ownerId}\``,
-            inline: true
-          },
-          {
-            name: "👥 **Population**",
-            value: `> **Total:** \`${guild.memberCount}\`\n> **Humans:** \`${guild.members.cache.filter(m => !m.user.bot).size}\`\n> **Bots:** \`${guild.members.cache.filter(m => m.user.bot).size}\``,
-            inline: true
-          },
+          { name: "👑 **Top Authority**", value: `> **Tag:** ${owner ? owner.tag : "Fetched via ID"}\n> **ID:** \`${ownerId}\``, inline: true },
+          { name: "👥 **Population**", value: `> **Total:** \`${guild.memberCount}\`\n> **Humans:** \`${guild.members.cache.filter(m => !m.user.bot).size}\`\n> **Bots:** \`${guild.members.cache.filter(m => m.user.bot).size}\``, inline: true },
           { name: "\u200b", value: "\u200b", inline: true },
-          {
-            name: "💬 **Infrastructure**",
-            value: `> **Channels:** \`${guild.channels.cache.size}\`\n> **Text:** \`${guild.channels.cache.filter(c => c.type === 0).size}\`\n> **Voice:** \`${guild.channels.cache.filter(c => c.type === 2).size}\``,
-            inline: true
-          },
-          {
-            name: "🎭 **Assets & Roles**",
-            value: `> **Roles:** \`${guild.roles.cache.size}\`\n> **Emojis:** \`${guild.emojis.cache.size}\`\n> **Stickers:** \`${guild.stickers.cache.size}\``,
-            inline: true
-          },
+          { name: "💬 **Infrastructure**", value: `> **Channels:** \`${guild.channels.cache.size}\`\n> **Text:** \`${guild.channels.cache.filter(c => c.type === 0).size}\`\n> **Voice:** \`${guild.channels.cache.filter(c => c.type === 2).size}\``, inline: true },
+          { name: "🎭 **Assets & Roles**", value: `> **Roles:** \`${guild.roles.cache.size}\`\n> **Emojis:** \`${guild.emojis.cache.size}\`\n> **Stickers:** \`${guild.stickers.cache.size}\``, inline: true },
           { name: "\u200b", value: "\u200b", inline: true },
-          {
-            name: "🛡️ **Security Levels**",
-            value: `> **Verification:** \`${guild.verificationLevel}\`\n> **NSFW Level:** \`${guild.nsfwLevel}\`\n> **Explicit Filter:** \`${guild.explicitContentFilter}\``,
-            inline: true
-          },
-          {
-            name: "🚀 **Boost Status**",
-            value: `> **Level:** \`${guild.premiumTier}\`\n> **Count:** \`${guild.premiumSubscriptionCount || 0}\``,
-            inline: true
-          },
-          {
-            name: "✨ **Features**",
-            value: features.length > 1000 ? features.substring(0, 1000) + "..." : features,
-            inline: false
-          }
+          { name: "🛡️ **Security Levels**", value: `> **Verification:** \`${guild.verificationLevel}\`\n> **NSFW Level:** \`${guild.nsfwLevel}\`\n> **Explicit Filter:** \`${guild.explicitContentFilter}\``, inline: true },
+          { name: "🚀 **Boost Status**", value: `> **Level:** \`${guild.premiumTier}\`\n> **Count:** \`${guild.premiumSubscriptionCount || 0}\``, inline: true },
+          { name: "✨ **Features**", value: features.length > 1000 ? features.substring(0, 1000) + "..." : features, inline: false }
         )
-        .setFooter({
-          text: `BlueSealPrime • Global Monitoring • Node: ${process.version}`,
-          iconURL: bot.user.displayAvatarURL()
-        })
+        .setFooter({ text: `BlueSealPrime • Global Monitoring • Node: ${process.version}`, iconURL: bot.user.displayAvatarURL() })
         .setTimestamp();
 
-      // 3. Optimized Edit/Send (Uses Cache first)
-      const messages = await logChannel.messages.fetch({ limit: 10 }).catch(() => null);
-      let existingMsg = messages?.find(m =>
+      // 3. Use the fetched messages map
+      let existingMsg = dashboardMessages?.find(m =>
         m.author.id === bot.user.id &&
         m.embeds[0]?.title === embed.data.title
       );
@@ -550,15 +525,16 @@ async function updateDashboard(bot) {
         await logChannel.send({ embeds: [embed] }).catch(() => { });
       }
 
-      // 4. Rate Limit Protection: 2-second delay per guild update
-      await new Promise(r => setTimeout(r, 2000));
+      // 4. Rate Limit Protection: 1-second delay is enough if we don't fetch every time
+      await new Promise(r => setTimeout(r, 1000));
     }
 
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} online and stable`);
+  console.log(`📊 Connected to ${client.guilds.cache.size} guilds.`);
   // ───── UPDATE DASHBOARD ─────
   updateDashboard(client);
 
