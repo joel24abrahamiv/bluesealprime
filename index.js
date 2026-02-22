@@ -88,9 +88,9 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('SIGTERM', () => {
   global.isShuttingDown = true;
-  console.log('🛑 [System] SIGTERM received. Shutting down gracefully...');
+  console.log('🛑 [System] SIGTERM received. Preparing for transition...');
   try { client.destroy(); } catch (e) { }
-  process.exit(0);
+  // Removed process.exit to let Railway finish the lifecycle
 });
 process.on('SIGINT', () => {
   client.destroy();
@@ -425,11 +425,12 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 // ... (Rest of Index Code) ...
 
 
-// ───── COMMAND COLLECTION ─────
+// ───── ASYNC COMMAND LOADER (Event Loop Protection) ─────
 client.commands = new Collection();
-
-function loadCommandsAsync() {
+(async () => {
   const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+  console.log(`📦 Initializing load sequence for ${commandFiles.length} modules...`);
+
   for (const file of commandFiles) {
     try {
       const command = require(`./commands/${file}`);
@@ -439,12 +440,13 @@ function loadCommandsAsync() {
           command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
         }
       }
-    } catch (e) {
-      console.error(`❌ Failed to load command ${file}:`, e);
-    }
+    } catch (e) { console.error(`❌ Load Error [${file}]:`, e.message); }
+
+    // Give the Heartbeat server a 5ms window to breathe between every command load
+    await new Promise(r => setTimeout(r, 5));
   }
-  console.log(`📦 Registry: ${client.commands.size} commands / aliases authorized.`);
-}
+  console.log(`✅ Binary sequence complete. ${client.commands.size} commands indexed.`);
+})();
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
@@ -556,20 +558,16 @@ client.once("clientReady", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
-  // ───── DEFERRED REGISTRY LOAD (Non-Blocking Startup) ─────
-  loadCommandsAsync();
   client.nukingGuilds = new Set();
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 
-  // ───── STAGGERED BACKGROUND TASKS ─────
   setTimeout(async () => {
     if (global.isShuttingDown) return;
     updateDashboard(client).catch(() => { });
-
     for (const guild of client.guilds.cache.values()) {
       if (global.isShuttingDown) break;
       await joinVC247(guild);
-      await wait(3000); // 3s gap for ultimate stability
+      await wait(1500);
     }
   }, 10000);
 
