@@ -1,5 +1,5 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE } = require("../config");
 
 module.exports = {
     name: "vunmuteall",
@@ -20,7 +20,15 @@ module.exports = {
 
         if (members.size === 0) return message.reply("⚠️ No one to unmute.");
 
-        message.reply(`🔊 Unmuting **${members.size}** members in **${channel.name}**...`);
+        const V2 = require("../utils/v2Utils");
+        const statusMsg = await message.reply({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🔊 MASS VOICE UNMUTE", 3),
+                V2.text(`Processing **${members.size}** members in **${channel.name}**...`)
+            ], V2_BLUE)]
+        });
 
         // TURBO MASS UNMUTE (PARALLEL)
         const unmuteTasks = members.map(member =>
@@ -29,6 +37,23 @@ module.exports = {
 
         await Promise.allSettled(Array.from(unmuteTasks.values()));
 
-        message.channel.send("✅ **Mass unmute complete.**");
+        const { AttachmentBuilder } = require("discord.js");
+        const unmuteIcon = new AttachmentBuilder("./assets/vunmute.png", { name: "vunmute.png" });
+
+        await statusMsg.edit({
+            content: null,
+            flags: V2.flag,
+            files: [unmuteIcon],
+            components: [V2.container([
+                V2.section([
+                    V2.heading("✅ MASS UNMUTE COMPLETE", 2),
+                    V2.text(`**Channel:** ${channel.name}\n**Total Unmuted:** \`${members.size}\` members`)
+                ], "attachment://vunmute.png"), // Premium Blue Unmute
+                V2.separator(),
+                V2.text(`> **Actioned By:** ${message.author}`),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Sovereign Voice Control*")
+            ], V2_BLUE)]
+        });
     }
 };

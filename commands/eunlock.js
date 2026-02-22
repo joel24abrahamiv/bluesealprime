@@ -1,5 +1,6 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR, ERROR_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, ChannelType } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const fs = require("fs");
 const path = require("path");
 
@@ -13,7 +14,9 @@ module.exports = {
 
         if (!args[0]) {
             return message.reply({
-                embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ **Usage:** `!eunlock <type> [args]`\nTypes: `role`, `media`, `threads`, `embeds`, `links`, `botcmds`")]
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Usage:** `!eunlock <type> [args]`\nTypes: `role`, `media`, `threads`, `embeds`, `links`, `botcmds`")], V2_RED)]
             });
         }
 
@@ -25,10 +28,16 @@ module.exports = {
             // 1. ROLE UNLOCK
             if (type === "role") {
                 const role = message.mentions.roles.first() || guild.roles.cache.get(args[1]);
-                if (!role) return message.reply("⚠️ **Error:** Role not found.");
+                if (!role) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ **Error:** Target role not found.")], V2_RED)] });
 
                 await channel.permissionOverwrites.delete(role, "God Unlock: Role Unmuted");
-                return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 CHANNEL UNLOCKED").setDescription(`**Role Protocol Disengaged.**\nTarget: ${role}\nStatus: **MUTED LIFTED**`)] });
+                const roleUnlock = V2.container([
+                    V2.section([
+                        V2.heading("🔓 CHANNEL UNLOCKED", 2),
+                        V2.text(`**Protocol:** Role Restored\n**Target:** ${role}\n**Status:** \`CLEAR\``)
+                    ], "https://cdn-icons-png.flaticon.com/512/3064/3064197.png")
+                ], V2_BLUE);
+                return message.channel.send({ content: null, components: [roleUnlock] });
             }
 
             // 2. MEDIA UNLOCK
@@ -37,7 +46,13 @@ module.exports = {
                     AttachFiles: null,
                     EmbedLinks: null
                 }, { reason: "God Unlock: Media Restored" });
-                return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 MEDIA PROTOCOL").setDescription(`**Content Filter Disengaged.**\nFiles & Links are now **ALLOWED**.`)] });
+                const mediaUnlock = V2.container([
+                    V2.section([
+                        V2.heading("🔓 MEDIA PROTOCOL", 2),
+                        V2.text(`**System:** Content Restoration\n**Scope:** @everyone\n**Status:** \`ALLOW\``)
+                    ], "https://cdn-icons-png.flaticon.com/512/3342/3342137.png")
+                ], V2_BLUE);
+                return message.channel.send({ content: null, components: [mediaUnlock] });
             }
 
             // 3. THREADS UNLOCK
@@ -47,7 +62,13 @@ module.exports = {
                     CreatePrivateThreads: null,
                     SendMessagesInThreads: null
                 }, { reason: "God Unlock: Threads Restored" });
-                return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 THREAD PROTOCOL").setDescription(`**Thread System Restored.**\nThreads can be created.`)] });
+                const threadUnlock = V2.container([
+                    V2.section([
+                        V2.heading("🔓 THREAD PROTOCOL", 2),
+                        V2.text(`**System:** Thread Restoration\n**Scope:** @everyone\n**Status:** \`ALLOW\``)
+                    ], "https://cdn-icons-png.flaticon.com/512/5968/5968853.png")
+                ], V2_BLUE);
+                return message.channel.send({ content: null, components: [threadUnlock] });
             }
 
             // 4. EMBEDS UNLOCK
@@ -55,13 +76,25 @@ module.exports = {
                 await channel.permissionOverwrites.edit(guild.roles.everyone, {
                     EmbedLinks: null
                 }, { reason: "God Unlock: Embeds Restored" });
-                return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 EMBED PROTOCOL").setDescription(`**Visual Filter Disengaged.**\nEmbeds are now **ALLOWED**.`)] });
+                const embedUnlock = V2.container([
+                    V2.section([
+                        V2.heading("🔓 EMBED PROTOCOL", 2),
+                        V2.text(`**System:** Visual Restoration\n**Scope:** @everyone\n**Status:** \`ALLOW\``)
+                    ], "https://cdn-icons-png.flaticon.com/512/2164/2164327.png")
+                ], V2_BLUE);
+                return message.channel.send({ content: null, components: [embedUnlock] });
             }
 
             // 5. LINKS UNLOCK
             if (type === "links") {
                 updateRestricted(guild.id, channel.id, "links", false);
-                return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 LINK PROTOCOL").setDescription(`**Anti-Link Field Disengaged.**\nLinks are now **ALLOWED**.`)] });
+                const linkUnlock = V2.container([
+                    V2.section([
+                        V2.heading("🔓 LINK PROTOCOL", 2),
+                        V2.text(`**Defense:** Anti-Link Pulse Disengaged\n**Zone:** ${channel}\n**Status:** \`CLEAR\``)
+                    ], "https://cdn-icons-png.flaticon.com/512/2088/2088617.png")
+                ], V2_BLUE);
+                return message.channel.send({ content: null, components: [linkUnlock] });
             }
 
             // 6. BOT CMDS UNLOCK
@@ -70,17 +103,27 @@ module.exports = {
 
                 if (targetRole) {
                     updateRestricted(guild.id, targetRole.id, "botcmds_role", false);
-                    return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 BOT PROTOCOL").setDescription(`**Command Override Lifted.**\nTarget: ${targetRole}\nStatus: **ALLOWED** to use bot commands.`)] });
+                    const botRoleUnlock = V2.container([
+                        V2.section([
+                            V2.heading("🔓 BOT PROTOCOL", 2),
+                            V2.text(`**Clearance:** Command Restoration\n**Target:** ${targetRole}\n**Status:** \`AUTHORIZED\``)
+                        ], "https://cdn-icons-png.flaticon.com/512/2593/2593627.png")
+                    ], V2_BLUE);
+                    return message.channel.send({ content: null, components: [botRoleUnlock] });
                 } else {
                     updateRestricted(guild.id, channel.id, "botcmds_channel", false);
-                    return message.channel.send({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🔓 BOT PROTOCOL").setDescription(`**Zone Lock Lifted.**\nBot commands are **ALLOWED** in this channel.`)] });
+                    const botChanUnlock = V2.container([
+                        V2.section([
+                            V2.heading("🔓 BOT PROTOCOL", 2),
+                            V2.text(`**Zone Clear:** Command Vacuum Repaired\n**Channel:** ${channel}\n**Status:** \`AUTHORIZED\``)
+                        ], "https://cdn-icons-png.flaticon.com/512/2593/2593627.png")
+                    ], V2_BLUE);
+                    return message.channel.send({ content: null, components: [botChanUnlock] });
                 }
             }
-
-
         } catch (e) {
             console.error(e);
-            message.reply("❌ **Error:** Failed to execute unlock command.");
+            return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text(`❌ **Fault:** Failed to execute unlock. \`${e.message}\``)], V2_RED)] });
         }
     }
 };

@@ -15,6 +15,7 @@
     "@discordjs/rest": "^2.6.0",
     "@discordjs/voice": "^0.19.0",
     "@snazzah/davey": "^0.1.9",
+    "axios": "^1.13.5",
     "canvas": "^3.2.1",
     "discord-api-types": "^0.38.38",
     "discord.js": "^14.25.1",

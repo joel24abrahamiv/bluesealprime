@@ -1,5 +1,6 @@
-const { EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, V2_RED } = require("../config");
+const { PermissionsBitField } = require("discord.js");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "nuke",
@@ -14,7 +15,11 @@ module.exports = {
 
         // Permission Check (Owner Bypass)
         if (!isBotOwner && !isServerOwner && !message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 I do not have permission to manage channels.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.section([V2.heading("🚫 MISSING PERMISSIONS", 2), V2.text("I do not have permission to manage channels.")])], V2_RED)]
+            });
         }
 
         const channel = message.channel;
@@ -68,13 +73,18 @@ module.exports = {
             }
 
 
+
         } catch (err) {
             console.error("Nuke Command Error:", err);
             // If the old channel still exists, try to reply
             try {
                 const ch = await message.guild.channels.fetch(message.channel.id).catch(() => null);
                 if (ch) {
-                    await ch.send({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription(`❌ **Nuke Failed:** ${err.message}`)] });
+                    await ch.send({
+                        content: null,
+                        flags: V2.flag,
+                        components: [V2.container([V2.section([V2.heading("❌ NUKE FAILED", 2), V2.text(err.message)])], V2_RED)]
+                    });
                 }
             } catch (e) { }
         }

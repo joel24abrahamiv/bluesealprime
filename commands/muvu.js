@@ -1,36 +1,29 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "muvu",
-    description: "Move user back to previous channel (or disconnect if unknown)",
+    description: "Retrieve a user from quarantine (move to your VC)",
     usage: "!muvu @user",
     permissions: [PermissionsBitField.Flags.MoveMembers],
 
     async execute(message, args) {
-        // Logic: Actually, we don't track "previous". 
-        // muvu usually means "Move User ... Up?" or "Un-Move"?
-        // In the image it said "Restore from quarantine".
-        // Use "General" or Author's channel?
-        // Let's tries to move to author's channel.
-
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
-        if (!isBotOwner && !message.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
-            return message.reply("🚫 Permission Denied.");
-        }
+        if (message.author.id !== BOT_OWNER_ID && !message.member.permissions.has(PermissionsBitField.Flags.MoveMembers))
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **Permission Denied.**")], V2_RED)] });
 
         const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-        if (!target) return message.reply("⚠️ User not found.");
-        if (!target.voice.channel) return message.reply("⚠️ User not in VC.");
+        if (!target) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ User not found.")], V2_RED)] });
+        if (!target.voice.channel) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ User is not in a voice channel.")], V2_RED)] });
 
         const destChannel = message.member.voice.channel;
-        if (!destChannel) return message.reply("⚠️ You are not in a VC to pull them to. Join a channel first.");
+        if (!destChannel) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **You must be in a voice channel** to pull them to you.")], V2_RED)] });
 
         try {
             await target.voice.setChannel(destChannel);
-            message.reply(`🚚 **${target.user.tag}** retrieved to ${destChannel.name}.`);
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text(`🚚 **${target.user.tag}** retrieved to **${destChannel.name}**.`)], V2_BLUE)] });
         } catch (e) {
-            message.reply("❌ Failed to move user.");
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Failed to move user.")], V2_RED)] });
         }
     }
 };

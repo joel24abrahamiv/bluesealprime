@@ -1,9 +1,10 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR, EMBED_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, ChannelType } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "rebuild",
-    description: "High-speed custom channel reconstruction.",
+    description: "Hyper-speed mass channel creation",
     usage: "!rebuild <name> <count>",
     aliases: ["rb", "masscreate"],
     permissions: [PermissionsBitField.Flags.Administrator],
@@ -13,57 +14,46 @@ module.exports = {
         const isOwner = message.author.id === BOT_OWNER_ID || message.guild.ownerId === message.author.id;
         if (!isOwner) return;
 
-        let channelName = args[0];
-        let count = parseInt(args[1]);
+        const channelName = args[0];
+        const count = parseInt(args[1]);
 
-        // Interactive fallback if args are missing
         if (!channelName || isNaN(count)) {
-            const promptEmbed = new EmbedBuilder()
-                .setColor(EMBED_COLOR)
-                .setTitle("🏗️ REBUILD PROTOCOL")
-                .setDescription("Please provide parameters for the reconstruction wave.\n\n**Format:** `!rebuild <name> <count>`\n*Example: `!rebuild nizz-wizz 50`*")
-                .setFooter({ text: "Max recommended: 50 per wave for API stability." });
-
-            return message.reply({ embeds: [promptEmbed] });
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.heading("🏗️ REBUILD PROTOCOL", 2),
+                    V2.text("Provide parameters for the reconstruction wave.\n\n**Format:** `!rebuild <name> <count>`\n*Example: `!rebuild nizz-wizz 50`*"),
+                    V2.separator(),
+                    V2.text("*Max recommended: 50 per wave for API stability.*")
+                ], V2_BLUE)]
+            });
         }
 
-        if (count > 100) return message.reply("⚠️ **Safety Limit:** Maximum 100 channels per wave to prevent global rate-limits.");
+        if (count > 100) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Safety Limit:** Maximum **100 channels** per wave.")], V2_RED)] });
 
-        const statusMsg = await message.channel.send(`🚀 **Initializing Reconstruction Wave...** Creating \`${count}\` channels named \`${channelName}\`.`);
+        const statusMsg = await message.channel.send({
+            flags: V2.flag,
+            components: [V2.container([V2.text(`🚀 **Initializing Reconstruction Wave...**\nCreating \`${count}\` channels named \`${channelName}\`.`)], V2_BLUE)]
+        });
 
         try {
             const startTime = Date.now();
-            // FULL PARALLELISM - FIRE EVERYTHING
-            const allPromises = [];
-            for (let i = 0; i < count; i++) {
-                allPromises.push(
-                    message.guild.channels.create({
-                        name: channelName,
-                        type: ChannelType.GuildText,
-                        reason: "Turbo Rebuild"
-                    }).catch(() => { })
-                );
-            }
-            await Promise.all(allPromises);
-
-            const endTime = Date.now();
-            const duration = ((endTime - startTime) / 1000).toFixed(2);
-
-            const successEmbed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("✅ RECONSTRUCTION COMPLETE")
-                .setDescription(`Successfully deployed \`${count}\` sectors.`)
-                .addFields(
-                    { name: "🏷️ Identifier", value: `\`${channelName}\``, inline: true },
-                    { name: "⚡ Velocity", value: `\`${duration}s\``, inline: true }
+            await Promise.all(
+                Array.from({ length: count }, () =>
+                    message.guild.channels.create({ name: channelName, type: ChannelType.GuildText, reason: "Turbo Rebuild" }).catch(() => { })
                 )
-                .setTimestamp();
+            );
+            const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-            await statusMsg.edit({ content: null, embeds: [successEmbed] });
-
+            await statusMsg.edit({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.heading("✅ RECONSTRUCTION COMPLETE", 2),
+                    V2.text(`Successfully deployed \`${count}\` sectors.\n\n> 🏷️ **Name:** \`${channelName}\`\n> ⚡ **Time:** \`${duration}s\``)
+                ], V2_BLUE)]
+            });
         } catch (err) {
-            console.error(err);
-            statusMsg.edit("❌ **Critical Failure during reconstruction wave.**");
+            statusMsg.edit({ flags: V2.flag, components: [V2.container([V2.text("❌ **Critical Failure** during reconstruction wave.")], V2_RED)] });
         }
-    },
+    }
 };

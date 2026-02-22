@@ -1,35 +1,18 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "locksound",
     description: "Lock the soundboard in the current channel",
     usage: "!locksound",
     permissions: [PermissionsBitField.Flags.ManageChannels],
-    async execute(message, args) {
-        const channel = message.channel;
-
+    async execute(message) {
         try {
-            await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                UseSoundboard: false,
-                UseExternalSounds: false
-            });
-
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("🔊 Soundboard Locked")
-                .setDescription(`The soundboard has been **LOCKED** for this channel.\nMembers can no longer play sounds.`)
-                .setFooter({ text: "BlueSealPrime • Security" })
-                .setTimestamp();
-
-            await message.reply({ embeds: [embed] });
-
+            await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { UseSoundboard: false, UseExternalSounds: false });
+            await message.reply({ flags: V2.flag, components: [V2.container([V2.text(`🔇 **Soundboard Locked** in ${message.channel}.\nMembers can no longer play sounds in this channel.`)], V2_RED)] });
         } catch (err) {
-            console.error(err);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(ERROR_COLOR)
-                .setDescription("❌ Failed to lock soundboard. I may check my permissions.");
-            message.reply({ embeds: [errorEmbed] });
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Failed to lock soundboard. Check my permissions.")], V2_RED)] });
         }
     }
 };

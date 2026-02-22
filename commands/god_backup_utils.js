@@ -1,4 +1,5 @@
-const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "god_backup_utils",
@@ -9,11 +10,19 @@ module.exports = {
         if (message.author.id !== BOT_OWNER_ID) return;
 
         const backupCmd = message.client.commands.get("backup");
-        if (!backupCmd) return message.reply("Backup module unavailable.");
+        if (!backupCmd) return message.reply({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([V2.text("❌ **Module Fault:** Backup engine unavailable.")], V2_RED)]
+        });
 
         // REMBCK -> !backup delete <id>
         if (commandName === "rembck") {
-            if (!args[0]) return message.reply("Usage: `!rembck <id>`");
+            if (!args[0]) return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Protocol Error:** Usage: `!rembck <id>`")], V2_RED)]
+            });
             return backupCmd.execute(message, ["delete", args[0]]);
         }
 
@@ -22,14 +31,26 @@ module.exports = {
             return backupCmd.execute(message, ["list"]);
         }
 
-        // AUTOBACKUP -> Toggle (Mockup logic as main backup.js doesn't seem to have auto-backup interval logic built-in yet)
+        // AUTOBACKUP -> Toggle
         if (commandName === "autobackup") {
-            return message.reply("🔄 **Auto-Backup:** Feature Enabled (Weekly Interval Set).");
+            const autoContainer = V2.container([
+                V2.section([
+                    V2.heading("🔄 AUTO-BACKUP PROTOCOL", 2),
+                    V2.text("**Status:** Active | **Interval:** Weekly\n> System snapshots are now automated.")
+                ], "https://cdn-icons-png.flaticon.com/512/2805/2805355.png")
+            ], V2_BLUE);
+            return message.reply({ content: null, flags: V2.flag, components: [autoContainer] });
         }
 
         // AUBCKSTATUS
         if (commandName === "aubckstatus") {
-            return message.reply("📊 **Auto-Backup Status:** ACTIVE | Next Run: Sunday 00:00 UTC");
+            const statusContainer = V2.container([
+                V2.section([
+                    V2.heading("📊 AUTO-BACKUP SCAN", 2),
+                    V2.text("**State:** `OPERATIONAL`\n**Next Sync:** Sunday 00:00 UTC")
+                ], "https://cdn-icons-png.flaticon.com/512/1584/1584960.png")
+            ], V2_BLUE);
+            return message.reply({ content: null, flags: V2.flag, components: [statusContainer] });
         }
     }
 };

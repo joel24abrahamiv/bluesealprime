@@ -1,52 +1,46 @@
-const { EmbedBuilder, version: djsversion } = require("discord.js");
+const V2 = require("../utils/v2Utils");
 const os = require("os");
+const { version: djsversion } = require("discord.js");
 
 module.exports = {
     name: "stats",
-    description: "Detailed Bot & System Statistics",
-    usage: "!stats",
+    description: "Detailed Bot & System Statistics using Components V2",
     aliases: ["botstats", "systeminfo", "status"],
 
     async execute(message) {
-        // Calculation: Uptime
-        let totalSeconds = (message.client.uptime / 1000);
-        let days = Math.floor(totalSeconds / 86400);
-        totalSeconds %= 86400;
-        let hours = Math.floor(totalSeconds / 3600);
-        totalSeconds %= 3600;
-        let minutes = Math.floor(totalSeconds / 60);
-        let seconds = Math.floor(totalSeconds % 60);
-        let uptimeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+        const uptime = process.uptime();
+        const days = Math.floor(uptime / 86400);
+        const hours = Math.floor((uptime % 86400) / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
+        const seconds = Math.floor(uptime % 60);
+        const uptimeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
 
-        // Calculation: Memory
         const memoryUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
         const totalMemory = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
 
-        const statsEmbed = new EmbedBuilder()
-            .setColor("#00EEFF")
-            .setTitle("📊 BLUESEALPRIME CORE METRICS")
-            .setAuthor({ name: "SYSTEM DIAGNOSTICS", iconURL: message.client.user.displayAvatarURL() })
-            .setThumbnail(message.client.user.displayAvatarURL())
-            .setDescription(
-                `### **[ OPERATIONAL_STATUS ]**\n` +
-                `> 🟢 **System:** Online & Stable\n` +
-                `> 🛡️ **Defense Level:** Maximum (Encrypted)\n` +
-                `> 🚀 **Uptime:** \`${uptimeString}\`\n` +
-                `> ⚡ **Latency:** \`${message.client.ws.ping}ms\`\n\n` +
-                `### **[ RESOURCE_ALLOCATION ]**\n` +
-                `> 🧠 **Memory Usage:** \`${memoryUsage} MB\` / \`${totalMemory} GB\`\n` +
-                `> 🧩 **Process ID:** \`${process.pid}\`\n` +
-                `> 💻 **Platform:** \`${os.platform().toUpperCase()} (${os.arch()})\`\n\n` +
-                `### **[ BOT_INTELLIGENCE ]**\n` +
-                `> 📂 **Total Guilds:** \`${message.client.guilds.cache.size}\`\n` +
-                `> 👥 **Total Users:** \`${message.client.users.cache.size}\`\n` +
-                `> 🛠️ **Library:** \`Discord.js v${djsversion}\`\n` +
-                `> ⚙️ **Node.js:** \`${process.version}\`\n`
-            )
-            .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-            .setFooter({ text: "BlueSealPrime Sovereign Monitoring", iconURL: message.client.user.displayAvatarURL() })
-            .setTimestamp();
+        const container = V2.container([
+            V2.section(
+                [
+                    V2.heading("📊 SYSTEM DIAGNOSTICS", 2),
+                    V2.text(`**Status:** 🟢 Online & Stable\n**Defense:** Maximum (Encrypted)\n\u200b`)
+                ],
+                message.client.user.displayAvatarURL({ forceStatic: true, extension: 'png' })
+            ),
+            V2.separator(),
+            V2.heading("🚀 OPERATIONAL STATUS", 3),
+            V2.text(`> **Uptime:** \`${uptimeString}\`\n> **Latency:** \`${message.client.ws.ping}ms\``),
+            V2.separator(),
+            V2.heading("🧠 RESOURCE ALLOCATION", 3),
+            V2.text(`> **RAM Usage:** \`${memoryUsage} MB\` / \`${totalMemory} GB\`\n> **Platform:** \`${os.platform().toUpperCase()} (${os.arch()})\``),
+            V2.separator(),
+            V2.heading("🧩 BOT INTELLIGENCE", 3),
+            V2.text(`> **Guilds:** \`${message.client.guilds.cache.size}\`\n> **Users:** \`${message.client.users.cache.size}\`\n> **Discord.js:** \`v${djsversion}\``)
+        ], "#0099ff");
 
-        return message.reply({ embeds: [statsEmbed] });
+        message.reply({
+            content: null,
+            flags: V2.flag,
+            components: [container]
+        });
     }
 };

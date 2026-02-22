@@ -1,5 +1,6 @@
+const V2 = require("../utils/v2Utils");
 const { PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "slowmode",
@@ -8,17 +9,19 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.ManageChannels],
 
     async execute(message, args) {
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
-        if (!isBotOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
+        if (message.author.id !== BOT_OWNER_ID && !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
 
         const time = parseInt(args[0]);
-        if (isNaN(time)) return message.reply("⚠️ Specify seconds (0 to disable).");
+        if (isNaN(time)) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ Please specify a time in seconds. Use `0` to disable.")], V2_RED)] });
 
         try {
             await message.channel.setRateLimitPerUser(time);
-            message.reply(`⏱️ Slowmode set to **${time}s**.`);
+            const msg = time === 0
+                ? "✅ **Slowmode disabled** for this channel."
+                : `⏱️ **Slowmode set to ${time}s** — members must wait between messages.`;
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text(msg)], V2_BLUE)] });
         } catch (e) {
-            message.reply("❌ Error setting slowmode.");
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Error setting slowmode. Check permissions.")], V2_RED)] });
         }
     }
 };

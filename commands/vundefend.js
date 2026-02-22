@@ -1,7 +1,7 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, V2_RED } = require("../config");
 
 const DB_PATH = path.join(__dirname, "../data/vdefend.json");
 
@@ -37,6 +37,16 @@ module.exports = {
         data[message.guild.id] = data[message.guild.id].filter(id => id !== target.id);
         saveDB(data);
 
-        message.reply(`🛡️❌ **${target.user.tag}** is no longer defended.`);
+        const V2 = require("../utils/v2Utils");
+        message.channel.send({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🛡️ DEFENSE PROTOCOL DISENGAGED", 2),
+                V2.text(`**Target:** ${target}\n**Status:** \`Vulnerable\`\n\n> *User protection barrier dissolved.*`),
+                V2.separator(),
+                V2.text(`*BlueSealPrime • Anti-Move System*`)
+            ], V2_RED)]
+        });
     }
 };

@@ -1,4 +1,6 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "createrole",
@@ -7,16 +9,16 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.ManageRoles],
 
     async execute(message, args) {
-        const { BOT_OWNER_ID } = require("../config");
         const isBotOwner = message.author.id === BOT_OWNER_ID;
         const isServerOwner = message.guild.ownerId === message.author.id;
+        const botAvatar = V2.botAvatar(message);
 
         if (!isBotOwner && !isServerOwner && !message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 I do not have permission to manage roles.")] });
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **I do not have permission to manage roles.**")], V2_RED)] });
         }
 
         if (!args[0]) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Missing Name.** Usage: `!createrole <name> [color]`")] });
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!createrole <name> [color]`")], V2_RED)] });
         }
 
         let roleName = args.join(" ");
@@ -32,31 +34,22 @@ module.exports = {
         }
 
         try {
-            const role = await message.guild.roles.create({
-                name: roleName,
-                color: roleColor,
-                reason: `Created by ${message.author.tag}`
+            const role = await message.guild.roles.create({ name: roleName, color: roleColor, reason: `Created by ${message.author.tag}` });
+
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.section([
+                        V2.heading("✨ ROLE CONSTRUCTED", 2),
+                        V2.text(`**${role.name}** has been added to the registry.`)
+                    ], botAvatar),
+                    V2.separator(),
+                    V2.text(`> **Name:** \`${role.name}\`\n> **Color:** \`${role.hexColor}\`\n> **ID:** \`${role.id}\`\n> **Created by:** ${message.author}`)
+                ], role.hexColor !== "#000000" ? role.hexColor : V2_BLUE)]
             });
-
-            const embed = new EmbedBuilder()
-                .setColor(role.hexColor)
-                .setTitle("✨ NEW ROLE CONSTRUCTED")
-                .setDescription(`**A new power level has been established.**\nThe role **${role.name}** is now available in the registry.`)
-                .addFields(
-                    { name: "🏷️ Role Name", value: `**${role.name}**`, inline: true },
-                    { name: "🎨 Color Code", value: `\`${role.hexColor}\``, inline: true },
-                    { name: "🆔 Role Identity", value: `\`${role.id}\``, inline: false }
-                )
-                .setThumbnail("https://cdn-icons-png.flaticon.com/512/3616/3616929.png") // Paint/Role Icon
-                .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-                .setFooter({ text: `BlueSealPrime Role Manager • ${new Date().toLocaleTimeString()}`, iconURL: message.author.displayAvatarURL() })
-                .setTimestamp();
-
-            return message.channel.send({ embeds: [embed] });
-
         } catch (err) {
             console.error(err);
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("❌ Failed to create role. Check my hierarchy or permissions.")] });
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ **Failed to create role.** Check hierarchy or permissions.")], V2_RED)] });
         }
     }
 };

@@ -1,5 +1,6 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "massrole",
@@ -8,37 +9,42 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
-        // 1. Permission Check
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
-        const isServerOwner = message.guild.ownerId === message.author.id;
-
-        if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 **ACCESS DENIED** | Level 5 Security Clearance Required.")] });
+        if (message.author.id !== BOT_OWNER_ID) {
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **ACCESS DENIED** | Level 5 Security Restricted to Bot Owner.")], V2_RED)]
+            });
         }
 
-        // 2. Argument Parsing
         const action = args[0]?.toLowerCase();
         const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
 
         if (!["add", "remove"].includes(action) || !role) {
-            return message.reply("⚠️ **Invalid Syntax**\nUsage: `!massrole <add|remove> <@role>`");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Invalid Syntax**\nUsage: `!massrole <add|remove> <@role>`")], V2_RED)]
+            });
         }
 
-        // 3. Hierarchy Check
         if (role.position >= message.guild.members.me.roles.highest.position) {
-            return message.reply("⚠️ **Hierarchy Error**: I cannot manage a role that is higher than or equal to my highest role.");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Hierarchy Error**: I cannot manage a role that is higher than or equal to my highest role.")], V2_RED)]
+            });
         }
 
-        // 4. Initial Feedback
-        await message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor("#FFFF00")
-                .setTitle(`🔄 MASS ${action.toUpperCase()} INITIATED`)
-                .setDescription(`Processing **${message.guild.memberCount}** members...\nTarget Role: ${role}\nThis may take a moment.`)
-            ]
-        });
+        const initContainer = V2.container([
+            V2.section([
+                V2.heading(`🔄 MASS ${action.toUpperCase()} INITIATED`, 2),
+                V2.text(`Processing **${message.guild.memberCount}** members...\n**Target Role:** ${role}\n> Operation in progress...`)
+            ], "https://cdn-icons-png.flaticon.com/512/3064/3064155.png")
+        ], "#FFFF00");
 
-        // 5. STAGGERED PROCESSING (Anti-Rate Limit)
+        await message.reply({ content: null, components: [initContainer] });
+
         let successCount = 0;
         let failCount = 0;
         const members = (await message.guild.members.fetch()).filter(m => !m.user.bot);
@@ -57,18 +63,20 @@ module.exports = {
             }
         }));
 
-        // 6. Final Report
-        const embed = new EmbedBuilder()
-            .setColor(SUCCESS_COLOR)
-            .setTitle(`✅ MASS ${action.toUpperCase()} COMPLETE`)
-            .setDescription(
-                `**Operation Successful**\n` +
-                `> Target Role: ${role}\n` +
-                `> Processed: \`${successCount}\` members\n` +
-                `> Failed: \`${failCount}\` (Hierarchy/Permissions)`
-            )
-            .setTimestamp();
+        const finalContainer = V2.container([
+            V2.section([
+                V2.heading(`✅ MASS ${action.toUpperCase()} COMPLETE`, 2),
+                V2.text(
+                    `### **[ ROLE_UPDATE_SUCCESS ]**\n\n` +
+                    `> **Target Role:** ${role}\n` +
+                    `> **Processed:** \`${successCount}\` members\n` +
+                    `> **Failed Linked:** \`${failCount}\` (Hierarchy/Permissions)`
+                )
+            ], "https://cdn-icons-png.flaticon.com/512/190/190411.png"),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Global Hierarchy Synced*")
+        ], V2_BLUE);
 
-        return message.channel.send({ embeds: [embed] });
+        return message.channel.send({ content: null, components: [finalContainer] });
     }
 };

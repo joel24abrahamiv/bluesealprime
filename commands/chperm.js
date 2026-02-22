@@ -52,17 +52,25 @@ module.exports = {
         try {
             await message.channel.permissionOverwrites.edit(target.id, overwriteObj);
 
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("🔒 Permissions Updated")
-                .setDescription(`Successfully updated permissions for **${target.name || target.user.tag}** in ${message.channel}.`)
-                .addFields(
-                    { name: "Action", value: action.toUpperCase(), inline: true },
-                    { name: "Permission", value: permType.toUpperCase(), inline: true }
-                )
-                .setTimestamp();
+            const { AttachmentBuilder } = require("discord.js");
+            const lockIcon = new AttachmentBuilder("./assets/lock.png", { name: "lock.png" });
 
-            message.channel.send({ embeds: [embed] });
+            const V2 = require("../utils/v2Utils");
+            const container = V2.container([
+                V2.section([
+                    V2.heading("🔒 PERMISSIONS UPDATED", 2),
+                    V2.text(`Successfully modified access protocols for **${target.name || target.user.tag}** in ${message.channel}.`)
+                ], "attachment://lock.png"), // Premium Blue Lock
+                V2.separator(),
+                V2.heading("⚖️ CONFIGURATION", 3),
+                V2.text(`> **Action:** ${action.toUpperCase()}\n> **Permission:** ${permType.toUpperCase()}`),
+                V2.separator(),
+                V2.text(`> **Authorized By:** ${message.author}\n> **Timestamp:** <t:${Math.floor(Date.now() / 1000)}:f>`),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Security Architecture*")
+            ], "#0099ff");
+
+            message.channel.send({ content: null, flags: V2.flag, files: [lockIcon], components: [container] });
 
         } catch (err) {
             console.error(err);

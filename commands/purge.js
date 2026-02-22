@@ -1,108 +1,85 @@
-const {
-  PermissionsBitField,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require("discord.js");
-
-const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { V2_RED, V2_BLUE } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
   name: "purge",
-  description: "Deletes messages with optional confirmation",
+  description: "Bulk delete messages with a premium V2 interface",
   permissions: [PermissionsBitField.Flags.ManageMessages],
+  aliases: ["clear", "cls"],
 
   async execute(message, args) {
-    // Permission check handled globally
-    // We still keep the logic clean
+    const botAvatar = V2.botAvatar(message);
+    const dangerIcon = "https://cdn-icons-png.flaticon.com/512/564/564619.png";
 
-    // ───── CASE 1: NO ARGUMENT → CONFIRMATION EMBED ─────
+    // ───── CASE 1: NO ARGUMENT → CONFIRMATION V2 ─────
     if (args.length === 0) {
-      const confirmEmbed = new EmbedBuilder()
-        .setColor(EMBED_COLOR)
-        .setTitle("⚠️ Confirm Purge")
-        .setDescription(
-          "**No number was provided.**\n\n" +
-          "This will delete **ALL recent messages** in this channel (up to Discord limits).\n\n" +
-          "**Do you want to continue?**"
-        )
-        .setFooter({
-          text: `Requested by ${message.author.tag}`,
-          iconURL: message.author.displayAvatarURL({ dynamic: true })
-        })
-        .setTimestamp();
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("purge_yes")
-          .setLabel("Yes, delete")
-          .setStyle(ButtonStyle.Danger),
-
-        new ButtonBuilder()
-          .setCustomId("purge_no")
-          .setLabel("No, cancel")
-          .setStyle(ButtonStyle.Secondary)
+      const confirmRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("purge_yes").setLabel("Confirm Wipe").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("purge_no").setLabel("Cancel").setStyle(ButtonStyle.Secondary)
       );
 
+      const confirmContainer = V2.container([
+        V2.section(
+          [
+            V2.heading("🧨 CHANNEL WIPE PROTOCOL", 2),
+            V2.text("No quantity specified. Initiate full purge of all recent cached messages (up to 100)?\n\n**Warning:** This action is irreversible.")
+          ],
+          dangerIcon
+        ),
+        V2.separator(),
+        confirmRow
+      ], V2_RED);
+
       const confirmMsg = await message.reply({
-        embeds: [confirmEmbed],
-        components: [row]
+        content: null,
+        flags: V2.flag,
+        components: [confirmContainer]
       });
 
       const collector = confirmMsg.createMessageComponentCollector({
-        time: 20000
+        filter: (i) => i.user.id === message.author.id,
+        time: 20000,
+        max: 1
       });
 
       collector.on("collect", async interaction => {
-        // Only the command author can interact
-        if (interaction.user.id !== message.author.id) {
-          return interaction.reply({
-            content: "❌ You cannot interact with this confirmation.",
-            ephemeral: true
-          });
-        }
-
         await interaction.deferUpdate();
 
         if (interaction.customId === "purge_no") {
-          collector.stop();
-          return confirmMsg.edit({
-            content: "❌ **Purge cancelled.**",
-            embeds: [],
-            components: []
-          }).catch(() => { });
+          return confirmMsg.delete().catch(() => { });
         }
 
-        if (interaction.customId === "purge_yes") {
-          collector.stop();
+        try {
+          const messages = await message.channel.messages.fetch({ limit: 100 });
+          await message.channel.bulkDelete(messages, true);
 
-          try {
-            const messages = await message.channel.messages.fetch({ limit: 100 });
-            await message.channel.bulkDelete(messages, true);
+          const done = await message.channel.send({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+              V2.section([
+                V2.heading("🧹 PURGE COMPLETE", 2),
+                V2.text(`Successfully sanitized the channel core.`)
+              ], botAvatar)
+            ], V2_BLUE)]
+          });
+          setTimeout(() => done.delete().catch(() => { }), 3000);
 
-            await message.channel.send(
-              "🧹 **All recent messages deleted.**"
-            );
-          } catch (err) {
-            console.error(err);
-            await message.channel.send(
-              "❌ **Failed to delete messages.** Some messages may be older than 14 days."
-            );
-          }
-
-          confirmMsg.delete().catch(() => { });
+        } catch (err) {
+          console.error(err);
+          await message.channel.send({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([V2.section([V2.text("❌ **Cleanup Interrupted:** Some messages may be too old for bulk deletion.")], botAvatar)], V2_RED)]
+          });
         }
+
+        confirmMsg.delete().catch(() => { });
       });
 
       collector.on("end", (_, reason) => {
-        if (reason === "time") {
-          confirmMsg.edit({
-            content: "⌛ **Confirmation timed out.**",
-            embeds: [],
-            components: []
-          }).catch(() => { });
-        }
+        if (reason === "time") confirmMsg.delete().catch(() => { });
       });
 
       return;
@@ -111,33 +88,34 @@ module.exports = {
     // ───── CASE 2: NUMBER PROVIDED → IMMEDIATE DELETE ─────
     const amount = parseInt(args[0]);
 
-    if (isNaN(amount)) {
-      return message.reply(
-        "❌ **Invalid number.**\nUsage: `!purge 10`"
-      );
-    }
-
-    if (amount < 1 || amount > 100) {
-      return message.reply(
-        "❌ **You can delete between 1 and 100 messages only.**"
-      );
+    if (isNaN(amount) || amount < 1 || amount > 100) {
+      return message.reply({
+        content: null,
+        flags: V2.flag,
+        components: [V2.container([V2.section([V2.text("❌ **Invalid quantity.** Please specify a number between 1 and 100.")], botAvatar)], V2_RED)]
+      });
     }
 
     try {
       await message.channel.bulkDelete(amount, true);
-
-      const done = await message.channel.send(
-        `🧹 **Successfully deleted ${amount} messages.**`
-      );
-
-      setTimeout(() => {
-        done.delete().catch(() => { });
-      }, 5);
+      const done = await message.channel.send({
+        content: null,
+        flags: V2.flag,
+        components: [V2.container([
+          V2.section([
+            V2.heading("🧹 PURGE COMPLETE", 2),
+            V2.text(`Successfully cleared **${amount}** messages.`)
+          ], botAvatar)
+        ], V2_BLUE)]
+      });
+      setTimeout(() => done.delete().catch(() => { }), 3000);
     } catch (error) {
       console.error(error);
-      message.reply(
-        "❌ **Failed to delete messages.** Messages older than 14 days cannot be deleted."
-      );
+      message.reply({
+        content: null,
+        flags: V2.flag,
+        components: [V2.container([V2.section([V2.text("❌ **Cleanup failed.** Message age limit reached (14 days).")], botAvatar)], V2_RED)]
+      });
     }
   }
 };

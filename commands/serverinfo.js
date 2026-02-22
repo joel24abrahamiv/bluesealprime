@@ -1,5 +1,4 @@
-const { EmbedBuilder } = require("discord.js");
-const { EMBED_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
   name: "serverinfo",
@@ -20,12 +19,8 @@ module.exports = {
     const humans = totalMembers - bots;
 
     // Channels
-    const textChannels = guild.channels.cache.filter(
-      c => c.type === 0
-    ).size;
-    const voiceChannels = guild.channels.cache.filter(
-      c => c.type === 2
-    ).size;
+    const textChannels = guild.channels.cache.filter(c => c.type === 0).size;
+    const voiceChannels = guild.channels.cache.filter(c => c.type === 2).size;
 
     // Boosts
     const boostCount = guild.premiumSubscriptionCount || 0;
@@ -35,74 +30,35 @@ module.exports = {
     const createdFull = `<t:${Math.floor(guild.createdTimestamp / 1000)}:F>`;
     const createdRelative = `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`;
 
-    const embed = new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setAuthor({
-        name: `${guild.name} • Server Overview`,
-        iconURL: guild.iconURL({ dynamic: true })
-      })
-      .setThumbnail(guild.iconURL({ dynamic: true, size: 256 }))
-      .setDescription(
-        `**Server Name**\n${guild.name}\n\n` +
-        `**Server ID**\n\`${guild.id}\``
-      )
-
-      // Spacer
-      .addFields({ name: "\u200b", value: "\u200b" })
-
-      // Core Info
-      .addFields({
-        name: "🧩 CORE INFORMATION",
-        value:
-          `**Owner**\n${ownerTag}\n\n` +
-          `**Created On**\n${createdFull}\n` +
-          `(${createdRelative})`,
-        inline: false
-      })
-
-      // Spacer
-      .addFields({ name: "\u200b", value: "\u200b" })
-
-      // Members
-      .addFields({
-        name: "👥 MEMBERS",
-        value:
-          `**Total Members**\n${totalMembers}\n\n` +
-          `**Humans**\n${humans}\n\n` +
-          `**Bots**\n${bots}`,
-        inline: false
-      })
-
-      // Spacer
-      .addFields({ name: "\u200b", value: "\u200b" })
-
-      // Channels
-      .addFields({
-        name: "💬 CHANNELS",
-        value:
-          `**Text Channels**\n${textChannels}\n\n` +
-          `**Voice Channels**\n${voiceChannels}`,
-        inline: false
-      })
-
-      // Spacer
-      .addFields({ name: "\u200b", value: "\u200b" })
-
-      // Boosts
-      .addFields({
-        name: "🚀 SERVER BOOSTS",
-        value:
-          `**Boost Level**\nLevel ${boostLevel}\n\n` +
-          `**Boost Count**\n${boostCount}`,
-        inline: false
-      })
-
-      .setFooter({
-        text: `Requested by ${message.author.tag}`,
-        iconURL: message.author.displayAvatarURL({ dynamic: true })
-      })
-      .setTimestamp();
-
-    message.reply({ embeds: [embed] });
+    message.reply({
+      content: null,
+      flags: V2.flag,
+      components: [
+        V2.container([
+          V2.section(
+            [
+              V2.heading(`📊 ${guild.name.toUpperCase()}`, 2),
+              V2.text(`**ID:** \`${guild.id}\`\n**Created:** ${createdFull}`)
+            ],
+            guild.iconURL({ forceStatic: true, extension: 'png' }) || "https://cdn.discordapp.com/embed/avatars/0.png"
+          ),
+          V2.section([V2.text("🛡️ **System Protection:** Active")], V2.botAvatar(message)),
+          V2.separator(),
+          V2.heading("👑 TOP AUTHORITY", 3),
+          V2.text(`> **Owner:** ${ownerTag}\n> **ID:** \`${ownerId}\``),
+          V2.separator(),
+          V2.heading("👥 POPULATION", 3),
+          V2.text(`> **Total:** \`${totalMembers}\`\n> **Humans:** \`${humans}\`\n> **Bots:** \`${bots}\``),
+          V2.separator(),
+          V2.heading("💬 INFRASTRUCTURE", 3),
+          V2.text(`> **Text Channels:** \`${textChannels}\`\n> **Voice Channels:** \`${voiceChannels}\`\n> **Total:** \`${textChannels + voiceChannels}\``),
+          V2.separator(),
+          V2.heading("🚀 BOOST STATUS", 3),
+          V2.text(`> **Level:** \`${boostLevel}\`\n> **Count:** \`${boostCount}\``),
+          V2.separator(),
+          V2.text(`*Requested by ${message.author.tag}*`)
+        ], "#0099ff")
+      ]
+    });
   }
 };

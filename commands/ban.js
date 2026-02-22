@@ -1,184 +1,158 @@
+const V2 = require("../utils/v2Utils");
 const {
   PermissionsBitField,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } = require("discord.js");
 
-const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
   name: "ban",
-  description: "Ban a member from the server with confirmation",
+  description: "Ban a member with a premium V2 interface",
   permissions: [PermissionsBitField.Flags.BanMembers],
 
   async execute(message, args) {
     const isBotOwner = message.author.id === BOT_OWNER_ID;
     const isServerOwner = message.guild.ownerId === message.author.id;
 
-    // ───── TARGET CHECK ─────
-    const member =
-      message.mentions.members.first() ||
-      message.guild.members.cache.get(args[0]);
+    const member = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
 
     if (!member) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Missing User.** Usage: `!ban @user [reason]`")] });
+      return message.reply("⚠️ **Missing User.** Usage: `!ban @user [reason]`");
     }
 
-    if (member.id === BOT_OWNER_ID) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ The **bot owner** is invincible and cannot be banned.")] });
-    }
+    const V2 = require("../utils/v2Utils");
 
-    if (member.id === message.guild.ownerId) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ You cannot ban the **server owner**.")] });
+    if (member.id === BOT_OWNER_ID || member.id === message.guild.ownerId) {
+      return message.reply({
+        content: null, flags: V2.flag,
+        components: [
+          V2.container([
+            V2.section(
+              [
+                V2.heading("⚠️ PATHETIC ATTEMPT DETECTED", 2),
+                V2.text(`Did you seriously just try to ban ${member.id === BOT_OWNER_ID ? "the **Architect** of this system" : "the **Server Owner**"}?`)
+              ],
+              member.user.displayAvatarURL({ dynamic: true, size: 512 })
+            ),
+            V2.separator(),
+            V2.text(`> You have no power here, ${message.author}. Know your place and step back.`),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Sovereign Protection*")
+          ], "#FF0000")
+        ]
+      });
     }
 
     if (member.id === message.client.user.id) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ I cannot ban **myself**.")] });
+      return message.reply({
+        content: null, flags: V2.flag,
+        components: [V2.container([V2.heading("⚠️ SELF-TERMINATION DENIED", 3), V2.text("I cannot ban myself. I am the system.")], V2_RED)]
+      });
     }
 
-    // Role hierarchy checks (Owner bypasses user hierarchy check, but bot must still be higher)
     if (!isBotOwner && !isServerOwner && member.roles.highest.position >= message.member.roles.highest.position) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ You cannot ban a user with an **equal or higher role**.")] });
+      return message.reply("❌ You cannot ban a user with an **equal or higher role**.");
     }
 
     if (member.roles.highest.position >= message.guild.members.me.roles.highest.position) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ I cannot ban this user because their role is **higher than mine**.")] });
+      return message.reply("❌ I cannot ban this user (Hierarchy error).");
     }
 
-    const reason =
-      args.slice(1).join(" ") || "No reason provided";
+    const reason = args.slice(1).join(" ") || "No reason provided";
 
-    // ───── CONFIRMATION EMBED ─────
-    const confirmEmbed = new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("⚠️ Confirm Ban")
-      .setDescription(
-        `Are you sure you want to **ban** this user?\n\n` +
-        `👤 **User:** ${member.user.tag}\n` +
-        `📝 **Reason:** ${reason}`
-      )
-      .setFooter({
-        text: `Requested by ${message.author.tag}`,
-        iconURL: message.author.displayAvatarURL({ dynamic: true })
-      })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("ban_yes")
-        .setLabel("Yes, Ban")
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId("ban_no")
-        .setLabel("No, Cancel")
-        .setStyle(ButtonStyle.Secondary)
+    // ───── CONFIRMATION V2 ─────
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("ban_yes").setLabel("Confirm Ban").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("ban_no").setLabel("Cancel").setStyle(ButtonStyle.Secondary)
     );
 
+    const confirmContainer = V2.container([
+      V2.section(
+        [
+          V2.heading("⚖️ JUDICIAL REVIEW REQUIRED", 2),
+          V2.text(`Are you sure you want to permanently expel **${member.user.tag}**?\n**Reason:** ${reason}`)
+        ],
+        member.user.displayAvatarURL({ forceStatic: true, extension: 'png' })
+      ),
+      V2.separator(),
+      confirmRow
+    ], V2_RED); // Red for danger/ban confirmation
+
     const confirmMsg = await message.reply({
-      embeds: [confirmEmbed],
-      components: [row]
+      content: null,
+      flags: V2.flag,
+      components: [confirmContainer]
     });
 
     const collector = confirmMsg.createMessageComponentCollector({
-      time: 20000
+      filter: (i) => i.user.id === message.author.id,
+      time: 20000,
+      max: 1
     });
 
     collector.on("collect", async interaction => {
-      if (interaction.user.id !== message.author.id) {
-        return interaction.reply({
-          content: "❌ You cannot interact with this confirmation.",
-          ephemeral: true
-        });
-      }
-
       await interaction.deferUpdate();
 
       if (interaction.customId === "ban_no") {
-        collector.stop();
-        return confirmMsg.edit({
-          content: "❌ **Ban cancelled.**",
-          embeds: [],
-          components: []
+        return confirmMsg.delete().catch(() => { });
+      }
+
+      // ───── EXECUTION ─────
+      try {
+        const banNotice = V2.container([
+          V2.section(
+            [
+              V2.heading("⛔ OFFICIAL BAN NOTICE", 2),
+              V2.text(`You have been permanently banned from **${message.guild.name}**.`)
+            ],
+            message.client.user.displayAvatarURL({ forceStatic: true, extension: 'png' })
+          ),
+          V2.separator(),
+          V2.heading("📝 REASON FOR TERMINATION", 3),
+          V2.text(`> ${reason}`),
+          V2.separator(),
+          V2.text(`**Moderator:** ${message.author.tag}\n**Date:** ${new Date().toLocaleDateString()}`)
+        ], V2_BLUE); // Blue for Ban (User Request)
+
+        await member.send({
+          content: null,
+          flags: V2.flag,
+          components: [banNotice]
         }).catch(() => { });
+        await member.ban({ reason });
+
+        const verdictContainer = V2.container([
+          V2.section(
+            [
+              V2.heading("⚖️ VERDICT EXECUTED", 2),
+              V2.text(`🔹 **Offender:** ${member.user.tag}\n🔹 **Magistrate:** ${message.author}\n🔹 **Status:** Terminated`)
+            ],
+            "https://cdn-icons-png.flaticon.com/512/9240/9240331.png"
+          ),
+          V2.separator(),
+          V2.heading("📜 SYSTEM LOG", 3),
+          V2.text(`> **Reason:** ${reason}\n> **Time:** ${new Date().toLocaleTimeString()}`)
+        ], V2_RED);
+
+        await message.channel.send({
+          content: null,
+          flags: V2.flag,
+          components: [verdictContainer]
+        });
+
+      } catch (err) {
+        console.error(err);
+        await message.channel.send("❌ **Execution Failed:** Check bot permissions.");
       }
 
-      if (interaction.customId === "ban_yes") {
-        collector.stop();
-
-        // ───── DM USER BEFORE BAN ─────
-        try {
-          const owner = message.client.users.cache.get(message.guild.ownerId) || await message.guild.fetchOwner();
-
-          await member.send(
-            `👋 Hello,\n\n` +
-            `You have been **banned from the server** **${message.guild.name}**.\n\n` +
-            `📝 **Reason:** ${reason}\n\n` +
-            `If you believe this was a mistake, you may contact the **server owner**:\n` +
-            `👑 ${owner.user.tag}\n\n` +
-            `We wish you the best going forward.`
-          );
-        } catch (_) {
-          // DM closed – ignore safely
-        }
-
-        // ───── BAN USER ─────
-        try {
-          await member.ban({ reason });
-
-          const banEmbed = new EmbedBuilder()
-            .setColor("#990000") // Dark Crimson for Judgement
-            .setTitle("⚖️ JUDGMENT EXECUTED")
-            .setDescription(
-              `**The verdict has been delivered.**\nUser **${member.user.tag}** has been removed from the server.`
-            )
-            .addFields(
-              {
-                name: "👤 Offender",
-                value: `**${member.user.tag}**\n\`${member.user.id}\``,
-                inline: true
-              },
-              {
-                name: "⚖️ Magistrate",
-                value: `${message.author}\n\`${message.author.id}\``,
-                inline: true
-              },
-              {
-                name: "📜 Verdict Reason",
-                value: `\`${reason}\``,
-                inline: false
-              }
-            )
-            .setThumbnail("https://cdn-icons-png.flaticon.com/512/9240/9240331.png") // Gavel Icon
-            .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-            .setFooter({
-              text: `BlueSealPrime Justice System • ${new Date().toLocaleTimeString()}`,
-              iconURL: message.client.user.displayAvatarURL()
-            })
-            .setTimestamp();
-
-          await message.channel.send({ embeds: [banEmbed] });
-
-        } catch (err) {
-          console.error(err);
-          await message.channel.send(
-            "❌ **Failed to ban the user.**"
-          );
-        }
-
-        confirmMsg.delete().catch(() => { });
-      }
+      confirmMsg.delete().catch(() => { });
     });
 
     collector.on("end", (_, reason) => {
-      if (reason === "time") {
-        confirmMsg.edit({
-          content: "⌛ **Ban confirmation timed out.**",
-          embeds: [],
-          components: []
-        }).catch(() => { });
-      }
+      if (reason === "time") confirmMsg.delete().catch(() => { });
     });
   }
 };

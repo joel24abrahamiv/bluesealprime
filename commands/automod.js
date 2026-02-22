@@ -9,6 +9,7 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.ManageGuild],
 
     async execute(message, args) {
+        const V2 = require("../utils/v2Utils");
         const DB_PATH = path.join(__dirname, "../data/automod.json");
 
         // Load or Init Data
@@ -25,31 +26,46 @@ module.exports = {
 
         // ───── INTERACTIVE MENU ─────
         if (!args[0]) {
-            const getEmbed = () => new EmbedBuilder()
-                .setColor("#2B2D31")
-                .setTitle("🛡️ AUTO-MOD CONFIGURATION")
-                .setDescription("Toggle active security protocols below.")
-                .addFields(
-                    { name: "🔗 Anti-Links", value: settings.antiLinks ? "✅ **Active**" : "❌ **Disabled**", inline: true },
-                    { name: "⚡ Anti-Spam", value: settings.antiSpam ? "✅ **Active**" : "❌ **Disabled**", inline: true },
-                    { name: "🤬 Anti-BadWords", value: settings.antiBadWords ? "✅ **Active**" : "❌ **Disabled**", inline: true },
-                    { name: "📢 Anti-MassMentions", value: settings.antiMassMentions ? "✅ **Active**" : "❌ **Disabled**", inline: true }
-                )
-                .setFooter({ text: "BlueSealPrime • Security Core", iconURL: message.client.user.displayAvatarURL() });
-
-            const getRows = () => {
+            const getContainer = (currentSettings) => {
+                // Button Rows
                 const row1 = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("am_links").setLabel("Toggle Links").setStyle(settings.antiLinks ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("am_spam").setLabel("Toggle Spam").setStyle(settings.antiSpam ? ButtonStyle.Success : ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("am_links").setLabel("Toggle Links").setStyle(currentSettings.antiLinks ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId("am_spam").setLabel("Toggle Spam").setStyle(currentSettings.antiSpam ? ButtonStyle.Success : ButtonStyle.Secondary)
                 );
                 const row2 = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("am_words").setLabel("Toggle BadWords").setStyle(settings.antiBadWords ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("am_mentions").setLabel("Toggle Mentions").setStyle(settings.antiMassMentions ? ButtonStyle.Success : ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("am_words").setLabel("Toggle BadWords").setStyle(currentSettings.antiBadWords ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId("am_mentions").setLabel("Toggle Mentions").setStyle(currentSettings.antiMassMentions ? ButtonStyle.Success : ButtonStyle.Secondary)
                 );
-                return [row1, row2];
+
+                return V2.container([
+                    V2.section(
+                        [
+                            V2.heading("🛡️ AUTO-MOD CONFIGURATION", 2),
+                            V2.text("Active Security Protocols")
+                        ],
+                        "https://cdn-icons-png.flaticon.com/512/2092/2092663.png" // Shield Settings Icon
+                    ),
+                    V2.separator(),
+                    V2.heading("📊 MODULE STATUS", 3),
+                    V2.text(
+                        `> **🔗 Anti-Links:** ${currentSettings.antiLinks ? "✅ Active" : "❌ Disabled"}\n` +
+                        `> **⚡ Anti-Spam:** ${currentSettings.antiSpam ? "✅ Active" : "❌ Disabled"}\n` +
+                        `> **🤬 Anti-BadWords:** ${currentSettings.antiBadWords ? "✅ Active" : "❌ Disabled"}\n` +
+                        `> **📢 Anti-MassMentions:** ${currentSettings.antiMassMentions ? "✅ Active" : "❌ Disabled"}`
+                    ),
+                    V2.separator(),
+                    row1, // Embed buttons directly
+                    row2,
+                    V2.separator(),
+                    V2.text("*BlueSealPrime Security Core*")
+                ], "#0099ff");
             };
 
-            const msg = await message.reply({ embeds: [getEmbed()], components: getRows() });
+            const msg = await message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [getContainer(settings)]
+            });
 
             const collector = msg.createMessageComponentCollector({
                 filter: i => i.user.id === message.author.id,
@@ -66,20 +82,35 @@ module.exports = {
                 data[guildId] = settings;
                 fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 
-                await i.update({ embeds: [getEmbed()], components: getRows() });
+                await i.update({
+                    content: null,
+                    flags: V2.flag,
+                    components: [getContainer(settings)]
+                });
 
                 // Public Announcement
                 const updatedSetting = id.split("_")[1].toUpperCase();
                 const isEnabled = settings[id === "am_links" ? "antiLinks" : id === "am_spam" ? "antiSpam" : id === "am_words" ? "antiBadWords" : "antiMassMentions"];
 
+                const alertContainer = V2.container([
+                    V2.heading("🛡️ SECURITY UPDATE", 2),
+                    V2.text(`**AutoMod Protocol Changed.**\n> Module: **${updatedSetting}**\n> New Status: **${isEnabled ? "ONLINE" : "OFFLINE"}**`),
+                    V2.separator(),
+                    V2.text(`*Authorized by ${message.author.tag}*`)
+                ], isEnabled ? "#00FF00" : "#FF0000"); // Keep Red/Green for alerts as they are status updates, or Blue if user insists on 100% blue. User said "All V2 containers... set to Blue".
+                // I'll stick to Blue #0099ff for consistency with the user's strict request.
+
+                const unifiedAlert = V2.container([
+                    V2.heading("🛡️ SECURITY UPDATE", 2),
+                    V2.text(`**AutoMod Protocol Changed.**\n> Module: **${updatedSetting}**\n> New Status: **${isEnabled ? "ONLINE" : "OFFLINE"}**`),
+                    V2.separator(),
+                    V2.text(`*Authorized by ${message.author.tag}*`)
+                ], "#0099ff");
+
                 message.channel.send({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setColor(isEnabled ? "#00FF00" : "#FF0000")
-                            .setTitle("🛡️ SECURITY UPDATE")
-                            .setDescription(`**AutoMod Protocol Changed.**\nModule: **${updatedSetting}**\nNew Status: **${isEnabled ? "ONLINE" : "OFFLINE"}**`)
-                            .setFooter({ text: `Authorized by ${message.author.tag}` })
-                    ]
+                    content: null,
+                    flags: V2.flag,
+                    components: [unifiedAlert]
                 });
             });
 
@@ -98,9 +129,25 @@ module.exports = {
         if (changed) {
             data[guildId] = settings;
             fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-            message.reply(`✅ **Configuration Updated**`);
+
+            const container = V2.container([
+                V2.heading("✅ CONFIGURATION UPDATED", 2),
+                V2.text("Manual override accepted."),
+                V2.separator(),
+                V2.text("*BlueSealPrime Security Core*")
+            ], "#0099ff");
+
+            message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [container]
+            });
         } else {
-            message.reply("⚠️ **Invalid Option.** Use `!automod` for the menu.");
+            message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.heading("⚠️ INVALID OPTION", 3), V2.text("Use `!automod` for the interactive menu.")], require("../config").WARN_COLOR)]
+            });
         }
     }
 };

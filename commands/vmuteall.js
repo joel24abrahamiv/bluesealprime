@@ -1,5 +1,5 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE } = require("../config");
 
 module.exports = {
     name: "vmuteall",
@@ -20,7 +20,15 @@ module.exports = {
 
         if (members.size === 0) return message.reply("⚠️ No one to mute.");
 
-        message.reply(`🔇 Muting **${members.size}** members in **${channel.name}**...`);
+        const V2 = require("../utils/v2Utils");
+        const statusMsg = await message.reply({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🔇 MASS VOICE MUTE", 3),
+                V2.text(`Processing **${members.size}** members in **${channel.name}**...`)
+            ], V2_BLUE)]
+        });
 
         // TURBO MASS MUTE (PARALLEL)
         const muteTasks = members.map(member =>
@@ -29,6 +37,23 @@ module.exports = {
 
         await Promise.allSettled(Array.from(muteTasks.values()));
 
-        message.channel.send("✅ **Mass mute complete.**");
+        const { AttachmentBuilder } = require("discord.js");
+        const muteIcon = new AttachmentBuilder("./assets/vmute.png", { name: "vmute.png" });
+
+        await statusMsg.edit({
+            content: null,
+            flags: V2.flag,
+            files: [muteIcon],
+            components: [V2.container([
+                V2.section([
+                    V2.heading("✅ MASS MUTE COMPLETE", 2),
+                    V2.text(`**Channel:** ${channel.name}\n**Total Muted:** \`${members.size}\` members`)
+                ], "attachment://vmute.png"), // Premium Blue Mute
+                V2.separator(),
+                V2.text(`> **Actioned By:** ${message.author}`),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Sovereign Voice Control*")
+            ], V2_BLUE)]
+        });
     }
 };

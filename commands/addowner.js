@@ -1,23 +1,33 @@
-const { EmbedBuilder } = require("discord.js");
+const V2 = require("../utils/v2Utils");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID } = require("../config");
 
 module.exports = {
     name: "addowner",
-    description: "Add a user to the Extra Owners list (Acting Owner)",
+    description: "Add a user to the Extra Owners list (Server/Bot Owner only)",
     aliases: ["trust", "addtrust"],
 
     async execute(message, args) {
-        // SECURITY: Only BOT OWNER can use this (Server Owner cannot add Extra Owners)
-        if (message.author.id !== BOT_OWNER_ID) {
-            return message.reply("⛔ **ACCESS DENIED:** Only the Bot Owner (Global Architect) can appoint Extra Owners.");
+        const isBotOwner = message.author.id === BOT_OWNER_ID;
+        const isServerOwner = message.guild.ownerId === message.author.id;
+
+        if (!isBotOwner && !isServerOwner) {
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⛔ **ACCESS DENIED:** This protocol is restricted to the Lead Architect or Node Monarch.")], V2_RED)]
+            });
         }
 
         const target = message.mentions.users.first() || await message.client.users.fetch(args[0]).catch(() => null);
 
         if (!target) {
-            return message.reply("⚠️ PLease specify a valid user to add.");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Fault:** Please specify a valid entity to elevate.")], V2_RED)]
+            });
         }
 
         const DB_PATH = path.join(__dirname, "../data/owners.json");
@@ -27,10 +37,14 @@ module.exports = {
         }
 
         const guildOwners = db[message.guild.id] || [];
-
         const isAlreadyOwner = guildOwners.some(o => (typeof o === 'string' ? o : o.id) === target.id);
+
         if (isAlreadyOwner) {
-            return message.reply("⚠️ This user is already an Extra Owner.");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Redundancy:** This entity already possesses delegated sovereign authority.")], V2_BLUE)]
+            });
         }
 
         guildOwners.push({
@@ -42,20 +56,21 @@ module.exports = {
 
         fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 
-        const embed = new EmbedBuilder()
-            .setColor("#00FF00")
-            .setTitle("👑 EXTRA OWNER APPOINTED")
-            .setThumbnail(target.displayAvatarURL({ dynamic: true }))
-            .setDescription(
-                `### **[ AUTHORITY_GRANTED ]**\n` +
-                `> **Entity:** ${target} (\`${target.id}\`)\n` +
-                `> **Status:** ACTING OWNER\n` +
-                `> **Clearance:** Level 4 (Sovereign Bypass)\n\n` +
-                `*This user now bypasses all restrictions and possesses administrative parity with the Server Owner. Accountability for their actions rests with the Architect.*`
-            )
-            .setFooter({ text: "BlueSealPrime • Trust Chain Initiated" })
-            .setTimestamp();
+        const container = V2.container([
+            V2.section([
+                V2.heading("👑 EXTRA OWNER APPOINTED", 2),
+                V2.text(
+                    `### **[ AUTHORITY_GRANTED ]**\n` +
+                    `> **Entity:** ${target} (\`${target.id}\`)\n` +
+                    `> **Status:** \`ACTING OWNER\`\n` +
+                    `> **Promoter:** ${message.author}\n\n` +
+                    `*This user now bypasses all restrictions and possesses administrative parity with the Server Owner within this node.*`
+                )
+            ], target.displayAvatarURL({ dynamic: true })),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Trust Chain Initiated*")
+        ], V2_BLUE);
 
-        return message.channel.send({ embeds: [embed] });
+        return message.channel.send({ content: null, flags: V2.flag, components: [container] });
     }
 };

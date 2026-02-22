@@ -1,5 +1,6 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "ehelp",
@@ -9,174 +10,130 @@ module.exports = {
     async execute(message, args) {
         if (message.author.id !== BOT_OWNER_ID) return;
 
-        // CHECK IF GOD MODE IS ENABLED
         if (!global.GOD_MODE) {
-            return message.reply("⚠️ **GOD MODE REQUIRED:** Execute `!eval` to toggle system override.");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **GOD MODE REQUIRED:** Execute `!eval` to toggle system override.")], V2_RED)]
+            });
         }
 
         const clientUser = message.client.user;
 
-        // 1. HOME EMBED
-        const homeEmbed = new EmbedBuilder()
-            .setColor("#000000")
-            .setTitle("🔒 GOD MODE INTELLIGENCE PANEL")
-            .setDescription(
-                `**System Override Active.**\n` +
-                `Access to restricted kernel commands.\n\n` +
-                `**Select a module below:**\n` +
-                `• 🛡️ **System & Utils** (Stats, Session, Diagnostic)\n` +
-                `• 📡 **Broadcasting** (Neural Comms, Say, Announce)\n` +
-                `• ⚡ **Elite Operations** (Mass Ops, Meta Control)\n` +
-                `• 🔒 **Security & Locks** (God-Locks, Baseline, Panic)\n` +
-                `• 👑 **Authority & Trust** (Owners, Nukes, Backups)\n` +
-                `• 🛰️ **Diagnostic Protocols** (Ping, Audit, Previews)`
-            )
-            .setThumbnail(clientUser.displayAvatarURL({ dynamic: true }))
-            .setFooter({ text: "BlueSealPrime • Root Access Granted" })
-            .setTimestamp();
-
-        // 2. CATEGORIES
         const categories = [
             {
                 label: "Root Home",
                 value: "home",
                 emoji: "🏠",
                 description: "Return to Main Menu",
-                embed: homeEmbed
+                content: [
+                    V2.heading("🔒 GOD MODE INTELLIGENCE PANEL", 2),
+                    V2.text(
+                        `**System Override Active.**\n` +
+                        `Access to restricted kernel commands.\n\n` +
+                        `**Select a module below:**\n` +
+                        `• 🛡️ **System & Core** (Stats, Evaluation, Control)\n` +
+                        `• 📡 **Broadcasting** (ANNOC, Identity, Avatar)\n` +
+                        `• ⚡ **Elite Operations** (Mass Ops, Nuke, Purge)\n` +
+                        `• 🔒 **Security & Locks** (God-Locks, Audit, Auth)\n` +
+                        `• 👑 **Authority & Trust** (Owners, Registry, Global)\n` +
+                        `• 💾 **Archival Protocols** (Backups, Restoration)\n` +
+                        `• 🛰️ **Diagnostic Protocols** (Ping, Trace, Integrities)`
+                    )
+                ]
             },
             {
-                label: "System & Utils",
+                label: "System & Core",
                 value: "system",
                 emoji: "🛡️",
-                description: "Stats, Logs, Diagnostics",
-                embed: new EmbedBuilder()
-                    .setColor("#000000")
-                    .setTitle("🛡️ SYSTEM & UTILS MODULE")
-                    .setDescription(
-                        `### 📊 **[ SYSTEM_METRICS ]**\n` +
-                        `> • **eram** / **estats** - Resource & Latency check\n` +
-                        `> • **eusers** - Global user correlation\n` +
-                        `> • **devinfo** - Internal developer data\n\n` +
-                        `### 📝 **[ LOGGING_INTERCEPT ]**\n` +
-                        `> • **elog** / **elogs** - Global audit setup\n` +
-                        `> • **auditlogs** - Recent server audit logs\n` +
-                        `> • **flagged** - High-risk entity tracking\n\n` +
-                        `### ⚙️ **[ SESSION_CONTROL ]**\n` +
-                        `> • **eval** - Execute kernel logic\n` +
-                        `> • **sethomevc** - Maintain Home VC (Permanent stay)\n` +
-                        `> • **estop** / **eexit** - Terminate process`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Diagnostic Core" })
+                description: "Stats, Diagnostics, Control",
+                content: [
+                    V2.heading("🛡️ SYSTEM & CORE MODULE", 2),
+                    V2.heading("📊 [ METRICS_LOAD ]", 3),
+                    V2.text("> • **eram** / **estats** - Check resources\n> • **eusers** - Global population trace\n> • **ping** - Latency heartbeat"),
+                    V2.heading("⚙️ [ KERNEL_CONTROL ]", 3),
+                    V2.text("> • **eval** - Direct logic execution\n> • **exec** - Shell terminal access\n> • **ediagnose** - Integrity scan\n> • **estop** / **eexit** - Process kill")
+                ]
             },
             {
                 label: "Broadcasting",
                 value: "broadcasting",
                 emoji: "📡",
-                description: "Global Comms & Announcements",
-                embed: new EmbedBuilder()
-                    .setColor("#00FFFF")
-                    .setTitle("📡 BROADCASTING MODULE")
-                    .setDescription(
-                        `### 📢 **[ NEURAL_COMMUNICATION ]**\n` +
-                        `> • **eannoc <msg>** - Global Neural Broadcast\n` +
-                        `> • **announce <#ch> <msg>** - Standard Announcement\n` +
-                        `> • **say <msg>** - Force bot speech in channel\n\n` +
-                        `### 📡 **[ SIGNAL_CONTROL ]**\n` +
-                        `> • **createticket** - Trigger ticket system\n` +
-                        `> • **scanserver** - Run Deep Scan Protocol`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Comms Hub" })
+                description: "Announcement & Identity",
+                content: [
+                    V2.heading("📡 BROADCASTING MODULE", 2),
+                    V2.heading("📢 [ NEURAL_COMMS ]", 3),
+                    V2.text("> • **eannoc <msg>** - Global Neural Broadcast\n> • **announce <#ch> <msg>** - Node Announcement\n> • **say <msg>** - Forced speech"),
+                    V2.heading("👁️ [ IDENTITY_SHAPING ]", 3),
+                    V2.text("> • **setguildavatar** - Change node avatar\n> • **setguildbanner** - Change node banner\n> • **debugavatar** - Troubleshoot Identity")
+                ]
             },
             {
                 label: "Elite Operations",
                 value: "elite",
                 emoji: "⚡",
-                description: "Mass Ops & Control",
-                embed: new EmbedBuilder()
-                    .setColor("#FF00FF")
-                    .setTitle("⚡ ELITE OPERATIONS MODULE")
-                    .setDescription(
-                        `### 🌊 **[ MASS_OPERATIONS ]**\n` +
-                        `> • **massban <ids>** - Rapid multi-target deletion\n` +
-                        `> • **massrole <r> <ids>** - Bulk role assignment\n\n` +
-                        `### ⚙️ **[ META_CONTROL ]**\n` +
-                        `> • **renamech <name>** - Stealth channel renaming\n` +
-                        `> • **rolecopy <r1> <r2>** - Inherit role DNA/perms\n` +
-                        `> • **hide** / **show** - Invisibility protocol`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Alpha Operations" })
+                description: "Mass Destruction & Ops",
+                content: [
+                    V2.heading("⚡ ELITE OPERATIONS MODULE", 2),
+                    V2.heading("🌊 [ MASS_DELETION ]", 3),
+                    V2.text("> • **massban <ids>** - Target deletion\n> • **massrole <r> <ids>** - Bulk assignment\n> • **purgebots** - Cleanse unauthorized entities"),
+                    V2.heading("☢️ [ NUCLEAR_PROTOCOL ]", 3),
+                    V2.text("> • **enuke** - High-yield shard destruction\n> • **edeleteserver** - ⚠️ **NODE EXTINCTION**")
+                ]
             },
             {
                 label: "Security & Locks",
                 value: "security",
                 emoji: "🔒",
-                description: "God-Locks & Baselines",
-                embed: new EmbedBuilder()
-                    .setColor("#2E8B57")
-                    .setTitle("🔒 SECURITY & LOCKS MODULE")
-                    .setDescription(
-                        `### ⛓️ **[ GOD_LOCKS ]**\n` +
-                        `> • **elock <type>** - Restrict Media/Links/Cmds\n` +
-                        `> • **eunlock <type>** - Revoke God-Lock\n` +
-                        `> • **emassch lock** - Global channel freeze\n\n` +
-                        `### 🛡️ **[ DEFENSE_VECTORS ]**\n` +
-                        `> • **serverlock** / **unlock** - Instant server closure\n` +
-                        `> • **setupvtc** - Initialize Temp VC system\n` +
-                        `> • **panic** - Immediate lockdown / Shutdown\n` +
-                        `> • **createbaseline** - Establish security snapshot`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Defense Kernel" })
+                description: "Locks, Audits, Panic",
+                content: [
+                    V2.heading("🔒 SECURITY & LOCKS MODULE", 2),
+                    V2.heading("⛓️ [ GOD_LOCKS ]", 3),
+                    V2.text("> • **elock <type>** - Lock Media/Links/Cmds\n> • **eunlock <type>** - Lift lockdown\n> • **emassch <add/remove>** - Bulk channel work"),
+                    V2.heading("🛡️ [ DEFENSE_ANALYSIS ]", 3),
+                    V2.text("> • **audit** / **scan** - Security assessment\n> • **flagged** - Threat tracking\n> • **authsecurity** - Deploy security baselines\n> • **panic** - Immediate server shutdown")
+                ]
             },
             {
                 label: "Authority & Trust",
                 value: "trust",
                 emoji: "👑",
-                description: "Owners, Nukes, Backups",
-                embed: new EmbedBuilder()
-                    .setColor("#FFD700")
-                    .setTitle("☢️ AUTHORITY & TRUST MODULE")
-                    .setDescription(
-                        `### 👑 **[ ABSOLUTE_POWER ]**\n` +
-                        `> • **addowner** / **delowner** - Manage Architect circle\n` +
-                        `> • **listowners** - View authority hierarchy\n\n` +
-                        `### ☢️ **[ NUCLEAR_OPTIONS ]**\n` +
-                        `> • **antinuke autorestore <on/off>** - Toggle channel auto-recovery\n` +
-                        `> • **enuke** - High-yield channel deletion\n` +
-                        `> • **edelserv** - ⚠️ **FULL WIPEOUT**\n\n` +
-                        `### 💾 **[ ARCHIVAL_PROTOCOLS ]**\n` +
-                        `> • **backup** / **restore** - Standard DNA conservation\n` +
-                        `> • **safetybackup** - Extract structural DNA template\n` +
-                        `> • **rstsafbackup** - Deploy structural blueprint\n` +
-                        `> • **backuplist** - Catalog system snapshots`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Omega Protocol" })
+                description: "Management & Hierarchy",
+                content: [
+                    V2.heading("👑 AUTHORITY & TRUST MODULE", 2),
+                    V2.heading("🤝 [ TRUST_DELEGATION ]", 3),
+                    V2.text("> • **addowner** / **delowner** - Manage Acting Owners\n> • **listowners** - View local hierarchy\n> • **elistowners** - View global manifest"),
+                    V2.heading("👁️ [ VISUAL_VERIFY ]", 3),
+                    V2.text("> • **tmpdisplay** - Security alert preview\n> • **welcome test** / **left test**")
+                ]
+            },
+            {
+                label: "Archival Protocols",
+                value: "archival",
+                emoji: "💾",
+                description: "Backups & Restoration",
+                content: [
+                    V2.heading("💾 ARCHIVAL PROTOCOLS MODULE", 2),
+                    V2.heading("📦 [ SNAPSHOT_STORAGE ]", 3),
+                    V2.text("> • **backup create** - Structural DNA save\n> • **backup restore** - Deploy blueprint\n> • **backuplist** - Catalog snapshots"),
+                    V2.heading("🛰️ [ ADVANCED_VECTORS ]", 3),
+                    V2.text("> • **recovery** - Trigger emergency restoration\n> • **safetybackup** - Extract core logic mapping")
+                ]
             },
             {
                 label: "Diagnostic Protocols",
                 value: "diagnostics",
                 emoji: "🛰️",
-                description: "Latency, Module Audit, Previews",
-                embed: new EmbedBuilder()
-                    .setColor("#FFFFFF")
-                    .setTitle("🛰️ DIAGNOSTIC PROTOCOLS MODULE")
-                    .setDescription(
-                        `### 📡 **[ SYSTEM_VERIFICATION ]**\n` +
-                        `> • **ping** - Latency & Core status\n` +
-                        `> • **debugavatar** - Troubleshoot Identity\n` +
-                        `> • **ediagnose** - Deep Module Integrity Scan\n\n` +
-                        `### 👁️ **[ VISUAL_PREVIEWS ]**\n` +
-                        `> • **tmpdisplay** - Owner Security Tag Preview\n` +
-                        `> • **welcome test** / **welcome dm test**\n` +
-                        `> • **left test** / **left dm test**\n\n` +
-                        `### 🛡️ **[ DEFENSE_TESTS ]**\n` +
-                        `> • **vdefend** / **vundefend** - Test VC Sticky presence`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Kernel Audit" })
+                description: "Module Integrity & Verifications",
+                content: [
+                    V2.heading("🛰️ DIAGNOSTIC PROTOCOLS MODULE", 2),
+                    V2.heading("📡 [ SYSTEM_VERIFICATION ]", 3),
+                    V2.text("> • **ping** - Core latency and status\n> • **debugavatar** - Troubleshoot and sync identity\n> • **ediagnose** - Deep Module Integrity Scan")
+                ]
             }
         ];
 
-        // 3. COMPONENTS
-        const getComponents = (currentIndex) => {
+        const createV2Panel = (pageIdx) => {
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId("ehelp_select")
                 .setPlaceholder("💠 INITIALIZE ROOT MODULE")
@@ -185,38 +142,59 @@ module.exports = {
                     value: cat.value,
                     emoji: cat.emoji,
                     description: cat.description,
-                    default: index === currentIndex
+                    default: index === pageIdx
                 })));
 
             const buttons = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("ehelp_prev")
-                    .setLabel("⬅️ Back")
+                    .setLabel("Back")
                     .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentIndex === 0),
+                    .setDisabled(pageIdx === 0),
+                new ButtonBuilder()
+                    .setCustomId("ehelp_home")
+                    .setLabel("Home")
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(pageIdx === 0),
                 new ButtonBuilder()
                     .setCustomId("ehelp_stop")
-                    .setLabel("⏹️ Terminate")
+                    .setLabel("Terminate")
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId("ehelp_next")
-                    .setLabel("Next ➡️")
+                    .setLabel("Next")
                     .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentIndex === categories.length - 1)
+                    .setDisabled(pageIdx === categories.length - 1)
             );
 
-            return [new ActionRowBuilder().addComponents(selectMenu), buttons];
+            const menuRow = new ActionRowBuilder().addComponents(selectMenu);
+            const current = categories[pageIdx];
+
+            return V2.container([
+                V2.section([
+                    V2.heading("GOD MODE INTELLIGENCE PANEL", 1),
+                    V2.text(`\`\`\`yml\nStatus: System Override Active\nSession: Architect Mode\n\`\`\``)
+                ], clientUser.displayAvatarURL({ forceStatic: true, extension: 'png' })),
+                V2.separator(),
+                ...current.content,
+                V2.separator(),
+                menuRow,
+                buttons,
+                V2.text("*BlueSealPrime • Root Access Protocol*")
+            ], V2_BLUE);
         };
 
         let currentIndex = 0;
         const msg = await message.reply({
-            embeds: [categories[currentIndex].embed],
-            components: getComponents(currentIndex)
+            content: null,
+            flags: V2.flag,
+            components: [createV2Panel(currentIndex)]
         });
 
-        // 4. COLLECTOR
-        const filter = i => i.user.id === message.author.id;
-        const collector = msg.createMessageComponentCollector({ filter, time: 300000 });
+        const collector = msg.createMessageComponentCollector({
+            filter: i => i.user.id === message.author.id,
+            time: 300000
+        });
 
         collector.on("collect", async i => {
             if (i.customId === "ehelp_select") {
@@ -225,19 +203,22 @@ module.exports = {
                 currentIndex = Math.max(0, currentIndex - 1);
             } else if (i.customId === "ehelp_next") {
                 currentIndex = Math.min(categories.length - 1, currentIndex + 1);
+            } else if (i.customId === "ehelp_home") {
+                currentIndex = 0;
             } else if (i.customId === "ehelp_stop") {
-                await i.update({ content: "🔒 **Root Session Terminated.**", embeds: [], components: [] });
+                await i.update({ components: [] });
                 return collector.stop();
             }
 
             await i.update({
-                embeds: [categories[currentIndex].embed],
-                components: getComponents(currentIndex)
+                components: [createV2Panel(currentIndex)]
             });
         });
 
         collector.on("end", (_, reason) => {
-            if (reason !== "user") msg.edit({ components: [] }).catch(() => { });
+            if (reason !== "user") {
+                msg.edit({ components: [] }).catch(() => { });
+            }
         });
     }
 };

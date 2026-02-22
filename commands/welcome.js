@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DB_PATH = path.join(DATA_DIR, "welcome.json");
@@ -36,30 +37,72 @@ module.exports = {
         const isServerOwner = message.guild.ownerId === message.author.id;
 
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 You need Manage Server permission.")] });
+            return message.reply({ content: "🚫 **ACCESS DENIED:** You need Manage Server permission.", flags: V2.flag });
         }
 
         const subCommand = args[0]?.toLowerCase();
 
         // ───── CONFIGURATION ─────
         if (subCommand === "set") {
-            const channel = message.mentions.channels.first() || message.guild.channels.cache.get(args[1]);
+            const argsList = args.slice(1);
+            const channel = message.mentions.channels.first() || message.guild.channels.cache.get(argsList[0]);
+
             if (!channel) {
-                return message.reply("⚠️ **Please mention a valid channel.**\nUsage: `!welcome set #joins`");
+                return message.reply("⚠️ **Usage:** `!welcome set #joins [image_url] [@role]`\nExample: `!welcome set #joins https://...gif @Member`", { flags: V2.flag });
+            }
+
+            let imgUrl = null;
+            let roleId = null;
+
+            // Simple parsing for remaining args
+            for (let i = 1; i < argsList.length; i++) {
+                const arg = argsList[i];
+                if (arg.startsWith("http")) imgUrl = arg;
+                else if (arg.match(/<@&(\d+)>/)) roleId = arg.match(/<@&(\d+)>/)[1];
+                else if (message.guild.roles.cache.has(arg)) roleId = arg;
+                else if (["off", "none", "clear"].includes(arg.toLowerCase())) {
+                    // If 'off' is provided, we clear both but the user might want to clear specific ones.
+                    // For now, let's treat it as a clear signal for whatever follows.
+                }
             }
 
             const data = loadWelcomeData();
             data[message.guild.id] = channel.id;
+
+            if (imgUrl || argsList.includes("off") || argsList.includes("none")) {
+                if (!data.custom_imgs) data.custom_imgs = {};
+                if (["off", "none"].includes(imgUrl?.toLowerCase()) || argsList.includes("off") || argsList.includes("none")) {
+                    delete data.custom_imgs[message.guild.id];
+                } else if (imgUrl) {
+                    data.custom_imgs[message.guild.id] = imgUrl;
+                }
+            }
+
+            if (roleId || argsList.includes("off") || argsList.includes("none")) {
+                if (!data.verify_roles) data.verify_roles = {};
+                if (["off", "none"].includes(argsList.find(a => ["off", "none"].includes(a.toLowerCase())))) {
+                    delete data.verify_roles[message.guild.id];
+                } else if (roleId) {
+                    data.verify_roles[message.guild.id] = roleId;
+                }
+            }
+
             saveWelcomeData(data);
 
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(require("../config").SUCCESS_COLOR)
-                    .setTitle("✅ Welcome Channel Set")
-                    .setDescription(`**Premium Welcome System** is now active in ${channel}.`)
-                    .setFooter({ text: "BlueSealPrime Systems" })
-                ]
-            });
+            const container = V2.container([
+                V2.section([
+                    V2.heading("✅ WELCOME RECONFIGURED", 2),
+                    V2.text(`**Premium Welcome System** is now active in ${channel}.` +
+                        (imgUrl ? `\n🖼️ **Custom visual saved.**` : "") +
+                        (roleId ? `\n🔘 **Verification button enabled.**` : "")
+                    )
+                ]),
+                imgUrl && !["off", "none"].includes(imgUrl.toLowerCase()) ? V2.section([], { type: 'image', url: imgUrl }) : null,
+                V2.separator(),
+                V2.text("*BlueSealPrime • Automation Kernel*")
+            ].filter(Boolean), "#00FF00");
+
+            return message.reply({ content: null, flags: V2.flag, components: [container] });
         }
 
         // ───── DM TOGGLE & TEST ─────
@@ -73,15 +116,16 @@ module.exports = {
                     .setAuthor({ name: message.guild.name, iconURL: message.guild.iconURL({ dynamic: true, size: 1024 }) })
                     .setTitle(`👋 Welcome to ${message.guild.name}!`)
                     .setThumbnail(message.guild.iconURL({ dynamic: true, size: 1024 }))
-                    .setDescription(`Welcome to the server, ${message.author}! We're glad to have you here! 🎉\n\n**Server:** ${message.guild.name}`)
+                    .setDescription(`Welcome to the server, ${message.author}!! We're glad to have you here! 🎉\n\n**Server:** ${message.guild.name}`)
                     .setImage(message.guild.bannerURL({ size: 1024 }) || message.guild.iconURL({ size: 1024, dynamic: true }))
                     .setFooter({ text: `Joined on ${moment().format("DD MMMM YYYY, h:mm A")}` });
 
                 try {
                     await message.author.send({ embeds: [dmEmbed] });
-                    return message.reply("✅ **Simulation Complete:** Sent the new simplified DM preview to you!");
+                    return message.reply("✅ **Simulation Complete:** Sent the standard Welcome DM preview!");
                 } catch (e) {
-                    return message.reply("⚠️ **Simulation Failed:** I couldn't DM you (DMs closed?).");
+                    console.error("DM Test Error (Welcome):", e);
+                    return message.reply("⚠️ **Simulation Failed:** I couldn't deliver the DM. This is usually due to closed DMs or a temporary API issue.");
                 }
             }
 
@@ -94,14 +138,16 @@ module.exports = {
             data.dm_config[message.guild.id] = toggle === "on";
             saveWelcomeData(data);
 
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(require("../config").SUCCESS_COLOR)
-                    .setTitle("✅ Welcome DM Configured")
-                    .setDescription(`**Premium Welcome DMs** are now **${toggle.toUpperCase()}** for this server.`)
-                    .setFooter({ text: "BlueSealPrime Systems" })
-                ]
-            });
+            const container = V2.container([
+                V2.section([
+                    V2.heading("✅ DM CONFIGURATION UPDATED", 2),
+                    V2.text(`**Premium Welcome DMs** are now **${toggle.toUpperCase()}** for this server.`)
+                ]),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Automation Kernel*")
+            ], "#00FF00");
+
+            return message.reply({ content: null, flags: V2.flag, components: [container] });
         }
 
         // ───── DISABLE ─────
@@ -118,26 +164,59 @@ module.exports = {
         // ───── TEST ─────
         if (subCommand === "test") {
             try {
-                const buffer = await module.exports.generateWelcomeImage(message.member);
-                const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'welcome-image.png' });
+                const data = loadWelcomeData();
+                const verifyRole = data.verify_roles ? data.verify_roles[message.guild.id] : null;
+                const memberCount = message.guild.memberCount;
+                const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
-                const welcomeEmbed = new EmbedBuilder()
-                    .setColor("#2f3136")
-                    .setTitle(`Welcome to ${message.guild.name}`)
-                    .setDescription(`> Hello ${message.member}! We are absolutely delighted to have you here.\n> Please make yourself at home, check the rules, and enjoy your stay! ❤️`)
-                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                    .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
-                    .setTimestamp();
+                const container = V2.container([
+                    V2.section([
+                        V2.text(`**Time:** ${timeStr}`),
+                        V2.text(`**Executed by:** ${message.author}`)
+                    ], message.guild.iconURL({ dynamic: true, size: 512, forceStatic: true, extension: 'png' })),
+                    V2.separator(),
+                    V2.text(`\u200b`),
+                    V2.text(`**Welcome to ${message.guild.name}**`),
+                    V2.text(`\u200b`),
+                    V2.text(`${message.author}, your presence strengthens our hierarchy. You are now recognized as our **${memberCount}th** operative.`),
+                    V2.text(`\u200b`),
+                    V2.text(`Sovereign protection managed by <@${message.client.user.id}>`),
+                    V2.text(`\u200b`),
+                    V2.text(`Architect: <@${BOT_OWNER_ID}>`),
+                    V2.separator(),
+                    verifyRole ? new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`verify_${message.guild.id}`)
+                            .setLabel("Veriffy")
+                            .setStyle(ButtonStyle.Success)
+                    ) : null
+                ].filter(Boolean), V2_BLUE);
 
-                return message.channel.send({ content: "🖼️ **Channel Welcome Preview:**", embeds: [welcomeEmbed], files: [attachment] });
-
-            } catch (error) {
-                console.error(error);
-                return message.reply("❌ Error generating image. Is `canvas` installed?");
+                return message.reply({ content: null, components: [container], flags: V2.flag });
+            } catch (e) {
+                console.error("Welcome Test Error:", e);
+                return message.reply("❌ FAILD TO INITIALIZE SIMULATION CORE.");
             }
         }
 
-        return message.reply("❓ **Unknown subcommand.** Use `set #channel`, `off`, or `test`.");
+        const helpContainer = V2.container([
+            V2.section([
+                V2.heading("🤖 WELCOME SYSTEM CONTROL", 2),
+                V2.text(
+                    `### **[ CONFIGURATION_GUIDE ]**\n\n` +
+                    `> • **!welcome set #ch [img] [@role]** - Set automation parameters\n` +
+                    `> • **!welcome off** - Decommission welcome protocols\n` +
+                    `> • **!welcome test** - Preview channel visual\n\n` +
+                    `### **[ DIRECT_MESSAGE_MOD ]**\n` +
+                    `> • **!welcome dm <on/off>** - Toggle private greeting\n` +
+                    `> • **!welcome dm test** - Preview DM visual`
+                )
+            ]),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Automation Suite*")
+        ], "#0099ff");
+
+        return message.reply({ content: null, components: [helpContainer], flags: V2.flag });
     },
 
     async generateWelcomeImage(member) {

@@ -1,5 +1,5 @@
 const { EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
-const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR } = require("../config");
+const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR, V2_BLUE } = require("../config");
 
 module.exports = {
     name: "vmoveall",
@@ -40,7 +40,15 @@ module.exports = {
         const count = fromChannel.members.size;
         let moved = 0;
 
-        const loadingMsg = await message.reply(`🔄 **Moving ${count} members...**`);
+        const V2 = require("../utils/v2Utils");
+        const loadingMsg = await message.reply({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🔄 MASS VOICE TRANSFER", 3),
+                V2.text(`Relocating **${count}** members...`)
+            ], V2_BLUE)]
+        });
 
         // Parallel Move
         await Promise.all(Array.from(fromChannel.members.values()).map(async (member) => {
@@ -50,17 +58,20 @@ module.exports = {
             } catch (err) { }
         }));
 
-        const embed = new EmbedBuilder()
-            .setColor(EMBED_COLOR)
-            .setTitle("🔄 MASS VOICE TRANSFER")
-            .setDescription(`Successfully moved **${moved}/${count}** members.`)
-            .addFields(
-                { name: "📤 From", value: `${fromChannel.name}`, inline: true },
-                { name: "📥 To", value: `${toChannel.name}`, inline: true }
-            )
-            .setFooter({ text: "BlueSealPrime • Voice Systems", iconURL: message.client.user.displayAvatarURL() })
-            .setTimestamp();
+        const container = V2.container([
+            V2.section([
+                V2.heading("🔄 MASS VOICE TRANSFER", 2),
+                V2.text(`Successfully relocated **${moved}/${count}** members.`)
+            ], "https://cdn-icons-png.flaticon.com/512/3135/3135882.png"),
+            V2.separator(),
+            V2.heading("📂 ROUTING", 3),
+            V2.text(`> **From:** ${fromChannel.name}\n> **To:** ${toChannel.name}`),
+            V2.separator(),
+            V2.text(`> **Authorized By:** ${message.author}`),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Logistics Protocol*")
+        ], V2_BLUE);
 
-        await loadingMsg.edit({ content: null, embeds: [embed] });
+        await loadingMsg.edit({ content: null, flags: V2.flag, components: [container] });
     }
 };

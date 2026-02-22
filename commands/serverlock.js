@@ -1,59 +1,48 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_RED } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "serverlock",
-    description: "Locks the entire server (Admin Only)",
+    description: "Locks the entire server",
     usage: "!serverlock [reason]",
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
-        // Owner/Admin Check
+        const botAvatar = V2.botAvatar(message);
         const isBotOwner = message.author.id === BOT_OWNER_ID;
         const isServerOwner = message.guild.ownerId === message.author.id;
 
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 **ACCESS DENIED** | Protocol Omega Authorization Required.")] });
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **ACCESS DENIED:** Administrator required.")], V2_RED)] });
         }
 
-        const reason = args.join(" ") || "Administrative Lockdown Protocol Initiated";
-        const channels = message.guild.channels.cache.filter(c => c.type === 0); // Text Channels
-        let lockedCount = 0;
+        const reason = args.join(" ") || "Administrative Lockdown Protocol";
+        const channels = message.guild.channels.cache.filter(c => c.type === 0);
 
-        const statusEmbed = new EmbedBuilder()
-            .setColor("#FF0000")
-            .setTitle("🔒 SERVER LOCKDOWN INITIATED")
-            .setDescription(`**Secure Protocol Active**\nProcessing channel overrides...`)
-            .setFooter({ text: "BlueSealPrime • Absolute Control" });
+        const msg = await message.reply({
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🔒 LOCKDOWN INITIATED...", 2),
+                V2.text("Processing channel overrides in parallel...")
+            ], V2_RED)]
+        });
 
-        const msg = await message.reply({ embeds: [statusEmbed] });
-
-        // TURBO LOCKDOWN (PARALLEL)
-        const lockdownTasks = channels.map(channel =>
-            channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                SendMessages: false
-            }, { reason: `Server Lock: ${reason}` }).catch(() => { })
+        const results = await Promise.allSettled(
+            channels.map(ch => ch.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false }, { reason: `Server Lock: ${reason}` }).catch(() => { }))
         );
+        const lockedCount = results.filter(r => r.status === "fulfilled").length;
 
-        const results = await Promise.allSettled(lockdownTasks);
-        lockedCount = results.filter(r => r.status === "fulfilled").length;
-
-        const finalEmbed = new EmbedBuilder()
-            .setColor("#FF0000")
-            .setTitle("🔒 SERVER LOCKDOWN COMPLETE")
-            .setDescription(
-                "```diff\n" +
-                "- STATUS:      LOCKED DOWN\n" +
-                "- ACCESS:      RESTRICTED\n" +
-                "- REASON:      " + reason + "\n" +
-                "```\n" +
-                `**System Secured.**\n` +
-                `> Channels Affected: \`${lockedCount}\`\n` +
-                `> Only Administrators may communicate.`
-            )
-            .setImage("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDdtZnJxcG54OGZqMGZqMGZqMGZqMGZqMGZqMGZqMGZqMGZqMCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o6ZxpC8U7jX6/giphy.gif") // Red alert / lockdown gif
-            .setTimestamp();
-
-        return msg.edit({ embeds: [finalEmbed] });
+        return msg.edit({
+            flags: V2.flag,
+            components: [V2.container([
+                V2.section([
+                    V2.heading("🔒 SERVER LOCKDOWN COMPLETE", 2),
+                    V2.text(`\`\`\`yml\nSTATUS:   LOCKED\nACCESS:   RESTRICTED\nREASON:   ${reason}\n\`\`\``)
+                ], botAvatar),
+                V2.separator(),
+                V2.text(`> **Channels Affected:** \`${lockedCount}\`\n> **Only Admins may communicate.**`)
+            ], V2_RED)]
+        });
     }
 };

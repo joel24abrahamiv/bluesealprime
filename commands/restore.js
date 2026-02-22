@@ -1,73 +1,88 @@
-const { EmbedBuilder, PermissionsBitField, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR, EMBED_COLOR } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 const BACKUP_DIR = path.join(__dirname, "../data/backups");
 
-/**
- * PERFECT RESTORE PROTOCOL v2.0
- * Features: Sovereign Protection, Role Matrix Alignment, Wave Reconstruction
- */
 module.exports = {
     name: "restore",
-    description: "Military-Grade Server Restoration (Perfected)",
+    description: "Military-Grade Server Restoration (Hyper-Speed)",
     usage: "!restore <id>",
     permissions: [PermissionsBitField.Flags.Administrator],
     whitelistOnly: true,
 
     async execute(message, args) {
+        const botAvatar = V2.botAvatar(message);
+
         // Authorization Check
         if (message.author.id !== BOT_OWNER_ID && message.author.id !== message.guild.ownerId) {
-            return message.reply("🚫 **Access Denied:** Only the Server or Bot Owner can initiate a restoration.");
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **Access Denied:** Only the Server or Bot Owner can initiate a restoration.")], V2_RED)]
+            });
         }
 
         const backupId = args[0];
-        if (!backupId) return message.reply("⚠️ **Missing Parameter:** Please provide an archive ID.");
+        if (!backupId) return message.reply({
+            flags: V2.flag,
+            components: [V2.container([V2.text("⚠️ **Missing Parameter:** Please provide an archive ID.")], V2_RED)]
+        });
 
         const filePath = path.join(BACKUP_DIR, `${backupId}.json`);
-        if (!fs.existsSync(filePath)) return message.reply("❌ **Archive Fault:** Specifed ID does not exist.");
+        if (!fs.existsSync(filePath)) return message.reply({
+            flags: V2.flag,
+            components: [V2.container([V2.text("❌ **Archive Fault:** Specified ID does not exist.")], V2_RED)]
+        });
 
-        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        let data;
+        try {
+            data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        } catch (e) {
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text("❌ **Archive Corrupted:** Failed to parse JSON data.")], V2_RED)]
+            });
+        }
 
-        // Step 1: Nuclear Confirmation
-        const confirmEmbed = new EmbedBuilder()
-            .setColor("#FF0000")
-            .setTitle("☢️ CRITICAL AUTHORIZATION: NUCLEAR RESTORE")
-            .setDescription(
-                `### **[ WARNING: TOTAL SANITIZATION ]**\n` +
-                `This will **PURGE** the server and rebuild from archive: \`${data.id}\`.\n\n` +
-                `**SOVEREIGN PROTECTIONS:**\n` +
-                `> ✅ **Command Center:** ${message.channel} will be preserved during the wipe.\n` +
-                `> ✅ **Authority:** Bot roles and @everyone will remain intact.\n\n` +
-                `**Press the button below to authorize the sequence.**`
-            )
-            .setFooter({ text: "BlueSealPrime • Priority Alpha Archive" });
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId("confirm").setLabel("CONFIRM NUCLEAR RESTORE").setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId("cancel").setLabel("ABORT").setStyle(ButtonStyle.Secondary)
+        // Step 1: Confirmation (plain content + button row — no V2 flag mix)
+        const confirmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("confirm").setLabel("☢️ CONFIRM NUCLEAR RESTORE").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId("cancel").setLabel("✖️ ABORT").setStyle(ButtonStyle.Secondary)
         );
 
-        const msg = await message.reply({ embeds: [confirmEmbed], components: [row] });
+        const msg = await message.reply({
+            content: `## ☢️ NUCLEAR RESTORE AUTHORIZATION\n> **Archive:** \`${data.id}\`\n> **Server Snapshot:** ${data.guildName}\n> **Roles:** \`${data.roles.length}\` • **Channels:** \`${data.channels.length}\`\n\n⚠️ This will **PURGE** all current channels and roles, then rebuild from the archive.\n**Command channel will be preserved. Bot roles will stay intact.**`,
+            components: [confirmRow]
+        });
 
         const filter = i => i.user.id === message.author.id;
         try {
             const i = await msg.awaitMessageComponent({ filter, time: 40000 });
-            if (i.customId === "cancel") return i.update({ content: "❌ **Sequence Aborted.**", embeds: [], components: [] });
+            if (i.customId === "cancel") {
+                return i.update({ content: "❌ **Sequence Aborted.** Restoration protocol terminated.", components: [] });
+            }
 
-            await i.update({ content: "☣️ **Nuclear Sequence Authorized. Initializing...**", embeds: [], components: [] });
+            await i.update({ content: "☣️ **Sequence Authorized.** Initializing sovereign purge...", components: [] });
 
-            const statusEmbed = new EmbedBuilder()
-                .setColor("#FF0000")
-                .setTitle("☣️ NUCLEAR RESTORATION: ACTIVE")
-                .setDescription("```diff\n- Phase 0: Initializing Sovereign Purge\n```")
-                .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934983938068/line-blue.gif");
+            const getStatusContainer = (step) => V2.container([
+                V2.section([
+                    V2.heading("☣️ NUCLEAR RESTORATION: ACTIVE", 2),
+                    V2.text(step)
+                ], botAvatar),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Hyper-Speed Reconstruction Protocol*")
+            ], V2_RED);
 
-            const progress = await message.channel.send({ embeds: [statusEmbed] });
+            const progress = await message.channel.send({
+                content: null,
+                flags: V2.flag,
+                components: [getStatusContainer("```diff\n- Phase 0: Initializing Sovereign Purge\n```")]
+            });
 
             try {
-                // ───── PHASE 0: SOVEREIGN PURGE ─────
+                // ───── PHASE 0: SOVEREIGN PURGE (Full Parallel) ─────
                 const currentChanId = message.channel.id;
                 const botMember = await message.guild.members.fetchMe();
                 const botMaxPos = botMember.roles.highest.position;
@@ -77,20 +92,19 @@ module.exports = {
                 const emojis = message.guild.emojis.cache;
                 const stickers = message.guild.stickers.cache;
 
-                const purgeItems = [...channels.values(), ...roles.values(), ...emojis.values(), ...stickers.values()];
-
-                for (const item of purgeItems) {
-                    await item.delete().catch(() => { });
-                    await new Promise(r => setTimeout(r, 5)); // Hyper-Sonic 5ms
-                }
+                // 🚀 HYPER PARALLEL PURGE — all at once
+                await Promise.all([
+                    ...channels.map(c => c.delete().catch(() => { })),
+                    ...roles.map(r => r.delete().catch(() => { })),
+                    ...emojis.map(e => e.delete().catch(() => { })),
+                    ...stickers.map(s => s.delete().catch(() => { }))
+                ]);
 
                 // Sync Cache
-                await message.guild.roles.fetch();
-                await message.guild.channels.fetch();
+                await Promise.all([message.guild.roles.fetch(), message.guild.channels.fetch()]);
 
                 // ───── PHASE 1: SERVER DNA SYNC ─────
-                statusEmbed.setDescription("```diff\n+ Phase 0: Sovereign Purge Complete\n- Phase 1: Reconstructing Structural DNA\n```");
-                await progress.edit({ embeds: [statusEmbed] });
+                await progress.edit({ components: [getStatusContainer("```diff\n+ Phase 0: Sovereign Purge Complete\n- Phase 1: Reconstructing Structural DNA\n```")] });
 
                 if (data.settings) {
                     await message.guild.edit({
@@ -99,49 +113,30 @@ module.exports = {
                         explicitContentFilter: data.settings.explicitContentFilter,
                         afkTimeout: data.settings.afkTimeout
                     }).catch(() => { });
-
-                    if (data.settings.iconURL) {
-                        try {
-                            const res = await fetch(data.settings.iconURL);
-                            if (res.ok) await message.guild.setIcon(Buffer.from(await res.arrayBuffer()));
-                        } catch (e) { }
-                    }
-                    if (data.settings.bannerURL) {
-                        try {
-                            const res = await fetch(data.settings.bannerURL);
-                            if (res.ok) await message.guild.setBanner(Buffer.from(await res.arrayBuffer()));
-                        } catch (e) { }
-                    }
                 }
 
-                // ───── PHASE 2: ROLE HIERARCHY ─────
-                const roleMap = new Map(); // Old Name -> New ID
-                for (const rData of data.roles) {
-                    try {
-                        const newRole = await message.guild.roles.create({
+                // ───── PHASE 2: ROLE HIERARCHY (Full Parallel) ─────
+                await progress.edit({ components: [getStatusContainer("```diff\n+ Phase 1: DNA Sync Complete\n- Phase 2: Aligning Role Hierarchy\n```")] });
+
+                const roleMap = new Map();
+                const roleResults = await Promise.all(
+                    data.roles.map(rData =>
+                        message.guild.roles.create({
                             name: rData.name,
                             color: rData.color,
                             permissions: BigInt(rData.permissions),
                             hoist: rData.hoist,
                             mentionable: rData.mentionable,
                             reason: "Perfect Restore"
-                        });
-                        roleMap.set(rData.name, newRole.id);
-                        await new Promise(r => setTimeout(r, 5)); // 5ms buffer
-                    } catch (e) { }
-                }
+                        }).then(newRole => ({ name: rData.name, id: newRole.id })).catch(() => null)
+                    )
+                );
+                roleResults.forEach(r => { if (r) roleMap.set(r.name, r.id); });
 
-                // Align positions at once
-                const finalRoles = await message.guild.roles.fetch();
-                const positions = data.roles.map(r => {
-                    const match = finalRoles.find(fr => fr.name === r.name);
-                    return match ? { role: match.id, position: r.position } : null;
-                }).filter(p => p !== null);
-                if (positions.length) await message.guild.roles.setPositions(positions).catch(() => { });
+                // ───── PHASE 3: CHANNEL WAVE DEPLOYMENT (Full Parallel) ─────
+                await progress.edit({ components: [getStatusContainer("```diff\n+ Phase 2: Role Hierarchy Synced\n- Phase 3: Deploying Channel Waves\n```")] });
 
-                // ───── PHASE 3: CHANNEL WAVE DEPLOYMENT ─────
-                const createdCats = new Map(); // Name -> New ID
-                const channelIdMap = new Map(); // Old ID -> New ID
+                const createdCats = new Map();
                 const originalRoleLookup = new Map(data.roles.map(r => [r.id, r.name]));
 
                 const mapOverwrites = (oldOverwrites) => {
@@ -155,76 +150,73 @@ module.exports = {
                     }).filter(o => o !== null);
                 };
 
-                // WAVE 1: Categories
-                for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory)) {
-                    try {
-                        const cat = await message.guild.channels.create({
+                // WAVE 1: Categories in parallel
+                const categoryData = data.channels.filter(c => c.type === ChannelType.GuildCategory);
+                const catResults = await Promise.all(
+                    categoryData.map(catData =>
+                        message.guild.channels.create({
                             name: catData.name,
                             type: ChannelType.GuildCategory,
                             position: catData.position,
                             permissionOverwrites: mapOverwrites(catData.overwrites)
-                        });
-                        createdCats.set(catData.name, cat.id);
-                        if (catData.id) channelIdMap.set(catData.id, cat.id);
-                        await new Promise(r => setTimeout(r, 5)); // 5ms buffer
-                    } catch (e) { }
-                }
+                        }).then(cat => ({ name: catData.name, id: cat.id, children: catData.children })).catch(() => null)
+                    )
+                );
+                catResults.forEach(c => { if (c) createdCats.set(c.name, c.id); });
 
-                // WAVE 2: Sub-Channels & Orphans (Parallel Stable)
-                const createChan = async (cData, parentId = null) => {
-                    try {
-                        const chan = await message.guild.channels.create({
-                            name: cData.name,
-                            type: cData.type,
-                            topic: cData.topic,
-                            bitrate: cData.bitrate,
-                            userLimit: cData.userLimit,
-                            nsfw: cData.nsfw,
-                            parentId: parentId,
-                            position: cData.rawPosition || cData.position,
-                            permissionOverwrites: mapOverwrites(cData.overwrites)
-                        });
-                        if (cData.id) channelIdMap.set(cData.id, chan.id);
-                    } catch (e) { }
-                };
+                // WAVE 2: Sub-channels (all cats in parallel, children of each cat in parallel)
+                await Promise.all(
+                    catResults.filter(c => c && c.children?.length).map(cat =>
+                        Promise.all(
+                            cat.children.map(child =>
+                                message.guild.channels.create({
+                                    name: child.name,
+                                    type: child.type,
+                                    topic: child.topic,
+                                    bitrate: child.bitrate,
+                                    userLimit: child.userLimit,
+                                    nsfw: child.nsfw,
+                                    parentId: createdCats.get(cat.name),
+                                    position: child.rawPosition || child.position,
+                                    permissionOverwrites: mapOverwrites(child.overwrites)
+                                }).catch(() => { })
+                            )
+                        )
+                    )
+                );
 
-                const wait = ms => new Promise(r => setTimeout(r, ms));
-
-                for (const catData of data.channels.filter(c => c.type === ChannelType.GuildCategory && c.children)) {
-                    const pid = createdCats.get(catData.name);
-                    for (const child of catData.children) {
-                        await createChan(child, pid);
-                        await wait(5); // Hyper-Sonic
-                    }
-                }
-
-                for (const orphan of data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children)) {
-                    await createChan(orphan);
-                    await wait(5); // Hyper-Sonic
-                }
+                // WAVE 3: Orphaned channels in parallel
+                const orphans = data.channels.filter(c => c.type !== ChannelType.GuildCategory && !c.children);
+                await Promise.all(
+                    orphans.map(orphan =>
+                        message.guild.channels.create({
+                            name: orphan.name,
+                            type: orphan.type,
+                            position: orphan.rawPosition || orphan.position,
+                            permissionOverwrites: mapOverwrites(orphan.overwrites)
+                        }).catch(() => { })
+                    )
+                );
 
                 // ───── PHASE 4: FINALIZATION ─────
-                statusEmbed.setColor(SUCCESS_COLOR).setTitle("✅ RESTORATION COMPLETE").setDescription("```diff\n+ SERVER DNA SUCCESSFULLY DEPLOYED\n+ PROTOCOL OMEGA TERMINATED\n```");
-                await progress.edit({ embeds: [statusEmbed] });
+                const finalContainer = V2.container([
+                    V2.section([
+                        V2.heading("✅ RESTORATION COMPLETE", 2),
+                        V2.text(`### **[ ZERO-DAY SYNC SUCCESS ]**\nServer **${data.guildName}** reconstructed at hyper-speed.\n\n> **Channels:** \`${data.channels.length}\`\n> **Roles:** \`${data.roles.length}\``)
+                    ], botAvatar),
+                    V2.separator(),
+                    V2.text("*BlueSealPrime • Total Synchronization Complete*")
+                ], "#00FF7F");
 
-                const finalMsgEmbed = new EmbedBuilder()
-                    .setColor(SUCCESS_COLOR)
-                    .setTitle("🛡️ ZERO-DAY SYNCHRONIZATION COMPLETE")
-                    .setDescription(`The server **${data.guildName}** has been fully reconstructed with 100% matrix alignment.`)
-                    .addFields(
-                        { name: "🧬 Structural Vectors", value: `\`${data.channels.length} Channels Loaded\``, inline: true },
-                        { name: "🎭 Hierarchy State", value: `\`${data.roles.length} Roles Synced\``, inline: true }
-                    );
-
-                const finalTarget = message.guild.channels.cache.find(c => c.type === ChannelType.GuildText);
-                if (finalTarget) finalTarget.send({ content: `${message.author}`, embeds: [finalMsgEmbed] });
+                await progress.edit({ components: [finalContainer] });
 
             } catch (err) {
                 console.error(err);
-                progress.edit("❌ **Critical Restoration Fault.** Encountered an error during structural deployment.");
+                const faultContainer = V2.container([V2.text("❌ **Critical Restoration Fault.** Error during deployment.")], V2_RED);
+                progress.edit({ components: [faultContainer] });
             }
         } catch (e) {
-            return message.reply("🕙 **Restore Action Timed Out.**");
+            return message.reply({ components: [V2.container([V2.text("🕙 **Restore Action Timed Out.**")], V2_RED)] });
         }
     }
 };

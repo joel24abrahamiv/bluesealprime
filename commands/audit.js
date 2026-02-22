@@ -1,28 +1,23 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { EMBED_COLOR, ERROR_COLOR, WARN_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, AuditLogEvent } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "audit",
     description: "Performs a sovereign security audit of the server",
     aliases: ["scan", "securityscan"],
-    permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
         const { guild } = message;
-        const loadingEmbed = new EmbedBuilder()
-            .setColor(EMBED_COLOR)
-            .setDescription("🛡️ **ENGAGING SOVEREIGN AUDIT PROTOCOLS...**\n*Scanning server architecture for vulnerabilities.*")
-            .setFooter({ text: "BlueSealPrime • Security Systems" });
 
-        const statusMsg = await message.reply({ embeds: [loadingEmbed] });
+        const loadingContainer = V2.container([
+            V2.text("🛡️ **ENGAGING SOVEREIGN AUDIT PROTOCOLS...**\n*Scanning server architecture for vulnerabilities.*")
+        ], V2_BLUE);
+
+        const statusMsg = await message.reply({ content: null, flags: V2.flag, components: [loadingContainer] });
 
         try {
-            const report = {
-                critical: [],
-                warning: [],
-                info: [],
-                neutral: []
-            };
+            const report = { critical: [], warning: [], info: [], neutral: [] };
 
             // 1. DANGEROUS PERMISSIONS (@EVERYONE)
             const everyone = guild.roles.everyone;
@@ -39,14 +34,14 @@ module.exports = {
 
             dangerousPerms.forEach(p => {
                 if (everyone.permissions.has(p.perm)) {
-                    report.critical.push(`**@everyone** has **${p.name}** permission. This is a severe vulnerability.`);
+                    report.critical.push(`**@everyone** has **${p.name}** permission.`);
                 }
             });
 
             // 2. EXCESSIVE ADMINISTRATORS
             const admins = guild.members.cache.filter(m => m.permissions.has(PermissionsBitField.Flags.Administrator) && !m.user.bot);
             if (admins.size > 5) {
-                report.warning.push(`**Excessive Administrators:** There are \`${admins.size}\` human administrators. Restrict this to trusted staff only.`);
+                report.warning.push(`**Excessive Admins:** \`${admins.size}\` human administrators detected.`);
             }
 
             // 3. HIERARCHY ANALYSIS
@@ -59,128 +54,68 @@ module.exports = {
             );
 
             if (dangerousRoles.size > 0) {
-                report.warning.push(`**Hierarchy Warning:** There are \`${dangerousRoles.size}\` roles above me that have administrative powers. I cannot moderate members with these roles.`);
+                report.warning.push(`**Hierarchy:** \`${dangerousRoles.size}\` roles above bot have admin powers.`);
             }
 
             // 4. SERVER SETTINGS
-            if (guild.verificationLevel === 0) { // NONE
-                report.warning.push("**Verification Level:** Set to 'None'. Recommended to set to 'Medium' or higher to prevent raids.");
-            } else {
-                report.neutral.push(`**Verification Level:** \`${guild.verificationLevel}\` (Standard)`);
-            }
+            if (guild.verificationLevel === 0) report.warning.push("**Verification Level:** Set to 'None' (Unsafe).");
+            else report.neutral.push(`**Verification Level:** \`${guild.verificationLevel}\``);
 
-            if (guild.mfaLevel === 1) { // 2FA Required for mod
-                report.neutral.push("**2FA Requirement:** Enabled for staff.");
-            } else {
-                report.info.push("**2FA Requirement:** Not required for moderation. Recommended to enable in Server Settings.");
-            }
+            if (guild.mfaLevel === 1) report.neutral.push("**2FA Requirement:** Enabled for staff.");
+            else report.info.push("**2FA Requirement:** Not required for moderation.");
 
-            const explicitFilter = guild.explicitContentFilter;
-            if (explicitFilter === 0) {
-                report.warning.push("**Explicit Content Filter:** Disabled. Recommended to enable to protect members.");
-            }
+            if (guild.explicitContentFilter === 0) report.warning.push("**Content Filter:** Disabled.");
 
-            // 5. CHANNEL PRIVACY SCAN (TOP 5 CHECK)
-            const privateChannels = guild.channels.cache.filter(c => c.type === 0 && !c.permissionsFor(guild.roles.everyone).has(PermissionsBitField.Flags.ViewChannel));
-            report.neutral.push(`**Private Infrastructure:** \`${privateChannels.size}\` secure channels detected.`);
-
-            // BUILD FINAL EMBED
-            const auditEmbed = new EmbedBuilder()
-                .setColor(report.critical.length > 0 ? ERROR_COLOR : (report.warning.length > 0 ? WARN_COLOR : SUCCESS_COLOR))
-                .setTitle(`🛡️ SOVEREIGN SECURITY REPORT: ${guild.name.toUpperCase()}`)
-                .setThumbnail(guild.iconURL({ dynamic: true }))
-                .setDescription(
-                    `## **OVERALL THREAT LEVEL:** ${report.critical.length > 0 ? "🔴 CRITICAL" : (report.warning.length > 0 ? "🟡 ELEVATED" : "🟢 SECURE")}\n` +
-                    `*The Crown has concluded the analysis of server security protocols.*`
-                );
-
-            if (report.critical.length > 0) {
-                auditEmbed.addFields({
-                    name: "🚨 CRITICAL VULNERABILITIES",
-                    value: report.critical.map(v => `> • ${v}`).join("\n")
-                });
-            }
-
-            if (report.warning.length > 0) {
-                auditEmbed.addFields({
-                    name: "⚠️ SECURITY WARNINGS",
-                    value: report.warning.map(v => `> • ${v}`).join("\n")
-                });
-            }
-
-            const statusValue = [
-                ...report.neutral.map(v => `> • ${v}`),
-                ...report.info.map(v => `> • ${v}`)
-            ].join("\n");
-
-            if (statusValue) {
-                auditEmbed.addFields({
-                    name: "ℹ️ SYSTEM STATUS",
-                    value: statusValue
-                });
-            }
-
-            // 6. RECENT ACTIVITY (LAST 24 HOURS)
-            const { AuditLogEvent } = require("discord.js");
+            // 5. RECENT ACTIVITY
+            let activityLines = "> • *No activities detected in the last 24 hours.*";
             const logs = await guild.fetchAuditLogs({ limit: 100 }).catch(() => null);
             if (logs) {
                 const yesterday = Date.now() - (24 * 60 * 60 * 1000);
                 const recentLogs = logs.entries.filter(entry => entry.createdTimestamp > yesterday);
-
                 if (recentLogs.size > 0) {
                     const activity = {};
-                    recentLogs.forEach(entry => {
-                        const type = entry.action;
-                        activity[type] = (activity[type] || 0) + 1;
-                    });
-
-                    const activityLines = Object.entries(activity).map(([type, count]) => {
-                        let name = "Unknown Action";
-                        // Mapping some common ones
-                        if (type == AuditLogEvent.MemberKick) name = "Members Kicked";
-                        if (type == AuditLogEvent.MemberBanAdd) name = "Members Banned";
-                        if (type == AuditLogEvent.MemberBanRemove) name = "Members Unbanned";
+                    recentLogs.forEach(entry => { activity[entry.action] = (activity[entry.action] || 0) + 1; });
+                    activityLines = Object.entries(activity).map(([type, count]) => {
+                        let name = "Action " + type;
+                        if (type == AuditLogEvent.MemberKick) name = "Kicks";
+                        if (type == AuditLogEvent.MemberBanAdd) name = "Bans";
                         if (type == AuditLogEvent.RoleCreate) name = "Roles Created";
-                        if (type == AuditLogEvent.RoleDelete) name = "Roles Deleted";
-                        if (type == AuditLogEvent.RoleUpdate) name = "Roles Updated";
                         if (type == AuditLogEvent.ChannelCreate) name = "Channels Created";
-                        if (type == AuditLogEvent.ChannelDelete) name = "Channels Deleted";
-                        if (type == AuditLogEvent.ChannelUpdate) name = "Channels Updated";
-                        if (type == AuditLogEvent.InviteCreate) name = "Invites Created";
-                        if (type == AuditLogEvent.MessageDelete) name = "Messages Deleted";
-                        if (type == AuditLogEvent.EmojiCreate) name = "Emojis Created";
-                        if (type == AuditLogEvent.EmojiDelete) name = "Emojis Deleted";
-                        if (type == AuditLogEvent.MemberUpdate) name = "Member Profiles Updated";
-
                         return `> • **${name}:** \`${count}\``;
-                    });
-
-                    auditEmbed.addFields({
-                        name: "📜 RECENT ACTIVITY (LAST 24H)",
-                        value: activityLines.slice(0, 10).join("\n") || "> • *No significant activities detected.*"
-                    });
-                } else {
-                    auditEmbed.addFields({
-                        name: "📜 RECENT ACTIVITY (LAST 24H)",
-                        value: "> • *No activities detected in the last 24 hours.*"
-                    });
+                    }).slice(0, 5).join("\n");
                 }
             }
 
+            const threatLevel = report.critical.length > 0 ? "🔴 CRITICAL" : (report.warning.length > 0 ? "🟡 ELEVATED" : "🟢 SECURE");
+            const reportColor = report.critical.length > 0 ? V2_RED : (report.warning.length > 0 ? "#FFA500" : "#00FF7F");
 
-            auditEmbed.setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-                .setFooter({ text: "BlueSealPrime • Royal Protocol • Analysis Complete" })
-                .setTimestamp();
+            const finalContainer = V2.container([
+                V2.section([
+                    V2.heading(`🛡️ SOVEREIGN SECURITY REPORT: ${guild.name.toUpperCase()}`, 2),
+                    V2.text(`## **THREAT LEVEL:** ${threatLevel}\n*Analysis of server architectural integrity complete.*`)
+                ], guild.iconURL({ dynamic: true, size: 512 })),
+                V2.separator(),
+                V2.heading("📊 SYSTEM AUDIT MAPPINGS", 3),
+                V2.text(
+                    (report.critical.length > 0 ? `### **[ 🚨 CRITICAL_VULNERABILITIES ]**\n${report.critical.map(v => `> • ${v}`).join("\n")}\n\n` : "") +
+                    (report.warning.length > 0 ? `### **[ ⚠️ SECURITY_WARNINGS ]**\n${report.warning.map(v => `> • ${v}`).join("\n")}\n\n` : "") +
+                    `### **[ ℹ️ SYSTEM_STATUS ]**\n${[...report.neutral, ...report.info].map(v => `> • ${v}`).join("\n")}`
+                ),
+                V2.separator(),
+                V2.heading("📜 RECENT TELEMETRY (24H)", 3),
+                V2.text(activityLines),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Royal Protocol • Encryption Active*")
+            ], reportColor);
 
-            await statusMsg.edit({ embeds: [auditEmbed] });
+            await statusMsg.edit({ content: null, components: [finalContainer] });
 
         } catch (error) {
             console.error("Audit Error:", error);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(ERROR_COLOR)
-                .setTitle("❌ PROTOCOL FAILURE")
-                .setDescription("An internal error occurred during the security scan. Ensure the bot has full Administrator permissions to audit the infrastructure.");
-            await statusMsg.edit({ embeds: [errorEmbed] });
+            await statusMsg.edit({
+                content: null,
+                components: [V2.container([V2.text("❌ **PROTOCOL FAILURE:** An internal error occurred during scan.")], V2_RED)]
+            });
         }
     }
 };

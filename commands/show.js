@@ -1,4 +1,5 @@
-const { PermissionsBitField, EmbedBuilder } = require("discord.js");
+const { PermissionsBitField, AttachmentBuilder } = require("discord.js");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "show",
@@ -12,15 +13,31 @@ module.exports = {
                 ViewChannel: true
             });
 
-            const embed = new EmbedBuilder()
-                .setColor("#000000") // Black
-                .setDescription(`👀 **Channel Visible**\n> Access granted for @everyone.`);
+            const { AttachmentBuilder } = require("discord.js");
+            const showIcon = new AttachmentBuilder("./assets/show.png", { name: "show.png" });
 
-            await message.channel.send({ embeds: [embed] });
+            // Using global V2
+            const container = V2.container([
+                V2.section([
+                    V2.heading("👀 CHANNEL VISIBLE", 2),
+                    V2.text(`** Status:** \`VISIBLE\`\n**Target:** \`@everyone\`\n**Access:** \`Public Access Restored\``)
+                ], "attachment://show.png"), // Premium Blue Eye
+                V2.separator(),
+                V2.text(`> **Authorized By:** ${message.author}\n> **Time:** <t:${Math.floor(Date.now() / 1000)}:f>`),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Visibility Protocol*")
+            ], "#0099ff");
+
+            await message.channel.send({ content: null, flags: V2.flag, files: [showIcon], components: [container] });
 
         } catch (e) {
             console.error(e);
-            message.reply("❌ Error: Missing Permissions or Hierarchy issue.");
+            // Using global V2
+            message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("❌ **Error: Missing Permissions or Hierarchy issue.**")], "#FF0000")]
+            });
         }
     }
 };

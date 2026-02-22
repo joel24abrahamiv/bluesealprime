@@ -1,37 +1,47 @@
-const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "setupverify",
-    description: "Setup verification system",
-    usage: "!setupverify <channel> <role_id>",
+    description: "Setup the verification panel (button-based)",
+    usage: "!setupverify #channel @role",
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator) && message.author.id !== BOT_OWNER_ID) return;
 
         const channel = message.mentions.channels.first() || message.guild.channels.cache.get(args[0]);
-        const role = message.guild.roles.cache.get(args[1]); // ID only for safety
+        const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
 
-        if (!channel || !role) return message.reply("Usage: `!setupverify #channel <role_id>`");
+        if (!channel || !role)
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!setupverify #channel @role`")], V2_RED)] });
 
-        const embed = new EmbedBuilder()
-            .setColor(SUCCESS_COLOR)
-            .setTitle("🛡️ Server Verification")
-            .setDescription("Click the button below to verify yourself and gain access to the server.")
-            .setFooter({ text: "BlueSealPrime Security" })
-            .setThumbnail(message.guild.iconURL());
+        // The verification panel itself uses a regular message + button (works without V2 flag for public panels)
+        const panelRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`verify_${role.id}`)
+                .setLabel("✅  Verify Me")
+                .setStyle(ButtonStyle.Success)
+        );
 
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`verify_${role.id}`)
-                    .setLabel("Verify Me")
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji("✅")
-            );
+        await channel.send({
+            flags: V2.flag,
+            components: [
+                V2.container([
+                    V2.section([
+                        V2.heading("🛡️ SERVER VERIFICATION", 1),
+                        V2.text("Click the button below to verify yourself and gain full access to the server.\n\n> *By verifying, you agree to follow all server rules.*")
+                    ], message.guild.iconURL({ dynamic: true }) || V2.botAvatar(message)),
+                    V2.separator(),
+                    panelRow
+                ], V2_BLUE)
+            ]
+        });
 
-        await channel.send({ embeds: [embed], components: [row] });
-        message.reply("✅ Verification panel sent!");
+        return message.reply({
+            flags: V2.flag,
+            components: [V2.container([V2.text(`✅ **Verification panel sent to ${channel}.**\n> Role to grant: ${role}`)], V2_BLUE)]
+        });
     }
 };

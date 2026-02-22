@@ -1,56 +1,47 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "serverunlock",
-    description: "Unlocks the entire server (Admin Only)",
+    description: "Unlocks the entire server",
     usage: "!serverunlock",
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
-        // Owner/Admin Check
+        const botAvatar = V2.botAvatar(message);
         const isBotOwner = message.author.id === BOT_OWNER_ID;
         const isServerOwner = message.guild.ownerId === message.author.id;
 
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 **ACCESS DENIED** | Protocol Omega Authorization Required.")] });
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **ACCESS DENIED:** Administrator required.")], V2_RED)] });
         }
 
-        const channels = message.guild.channels.cache.filter(c => c.type === 0); // Text Channels
-        let unlockedCount = 0;
+        const channels = message.guild.channels.cache.filter(c => c.type === 0);
 
-        const statusEmbed = new EmbedBuilder()
-            .setColor("#00FF00")
-            .setTitle("🔓 SERVER UNLOCK INITIATED")
-            .setDescription(`**Lifting Security Protocols**\nProcessing channel overrides...`)
-            .setFooter({ text: "BlueSealPrime • Absolute Control" });
+        const msg = await message.reply({
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🔓 UNLOCK INITIATED...", 2),
+                V2.text("Lifting security overrides in parallel...")
+            ], V2_BLUE)]
+        });
 
-        const msg = await message.reply({ embeds: [statusEmbed] });
-
-        // TURBO UNLOCK (PARALLEL)
-        const unlockTasks = channels.map(channel =>
-            channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                SendMessages: null
-            }, { reason: `Server Unlock by ${message.author.tag}` }).catch(() => { })
+        const results = await Promise.allSettled(
+            channels.map(ch => ch.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null }, { reason: `Server Unlock by ${message.author.tag}` }).catch(() => { }))
         );
+        const unlockedCount = results.filter(r => r.status === "fulfilled").length;
 
-        const results = await Promise.allSettled(unlockTasks);
-        unlockedCount = results.filter(r => r.status === "fulfilled").length;
-
-        const finalEmbed = new EmbedBuilder()
-            .setColor(SUCCESS_COLOR)
-            .setTitle("🔓 SERVER UNLOCKED")
-            .setDescription(
-                "```diff\n" +
-                "+ STATUS:      OPERATIONAL\n" +
-                "+ ACCESS:      GRANTED\n" +
-                "```\n" +
-                `**Security Restrictions Lifted.**\n` +
-                `> Channels Restored: \`${unlockedCount}\`\n` +
-                `> Normal communications may resume.`
-            )
-            .setTimestamp();
-
-        return msg.edit({ embeds: [finalEmbed] });
+        return msg.edit({
+            flags: V2.flag,
+            components: [V2.container([
+                V2.section([
+                    V2.heading("🔓 SERVER UNLOCKED", 2),
+                    V2.text(`\`\`\`yml\nSTATUS:   OPERATIONAL\nACCESS:   GRANTED\n\`\`\``)
+                ], botAvatar),
+                V2.separator(),
+                V2.text(`> **Channels Restored:** \`${unlockedCount}\`\n> **Normal communications may resume.**`)
+            ], V2_BLUE)]
+        });
     }
 };

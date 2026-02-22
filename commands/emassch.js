@@ -1,5 +1,6 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ChannelType } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR, ERROR_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { ActionRowBuilder, StringSelectMenuBuilder, ChannelType } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "emassch",
@@ -13,7 +14,9 @@ module.exports = {
 
         if (!sub || !["add", "remove"].includes(sub)) {
             return message.reply({
-                embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ **Usage:**\n`!emassch add <amount> <name>`\n`!emassch remove`")]
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Usage:**\n`!emassch add <amount> <name>`\n`!emassch remove`")], V2_RED)]
             });
         }
 
@@ -24,13 +27,14 @@ module.exports = {
 
             if (isNaN(amount) || amount < 1 || amount > 50 || !name) {
                 return message.reply({
-                    embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ **Invalid Args:** Provide amount (1-50) and name.")]
+                    content: null,
+                    flags: V2.flag,
+                    components: [V2.container([V2.text("⚠️ **Invalid Args:** Provide amount (1-50) and name.")], V2_RED)]
                 });
             }
 
-            const statusMsg = await message.reply({
-                embeds: [new EmbedBuilder().setColor("#0099FF").setDescription(`🔄 **Creating ${amount} channels named \`${name}\`...**`)]
-            });
+            const statusContainer = V2.container([V2.text(`🔄 **Constructing ${amount} nodes...**\n**Identifier:** \`${name}\``)], V2_BLUE);
+            const statusMsg = await message.reply({ content: null, flags: V2.flag, components: [statusContainer] });
 
             let created = 0;
             const promises = [];
@@ -44,22 +48,26 @@ module.exports = {
                 );
             }
             await Promise.all(promises);
-            created = amount; // Assume success for speed, or we could filter results
+            created = amount;
 
-            return statusMsg.edit({
-                embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("✅ MASS CREATE COMPLETE").setDescription(`Created **${created}** channels.`)]
-            });
+            const finalContainer = V2.container([
+                V2.section([
+                    V2.heading("✅ DEPLOYMENT SUCCESSFUL", 2),
+                    V2.text(`Created **${created}** network nodes with identifier \`${name}\`.`)
+                ], "https://cdn-icons-png.flaticon.com/512/190/190411.png")
+            ], V2_BLUE);
+
+            return statusMsg.edit({ content: null, components: [finalContainer] });
         }
 
         // ───── REMOVE COMMAND ─────
         if (sub === "remove") {
-            // Fetch last 25 text channels to show in menu
             const channels = message.guild.channels.cache
                 .filter(c => c.type === ChannelType.GuildText)
-                .sort((a, b) => b.createdTimestamp - a.createdTimestamp) // Newest first
+                .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
                 .first(25);
 
-            if (channels.length === 0) return message.reply("⚠️ No text channels found.");
+            if (channels.length === 0) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ No text channels detected.")], V2_RED)] });
 
             const options = channels.map(c => ({
                 label: c.name.substring(0, 25),
@@ -71,15 +79,23 @@ module.exports = {
             const row = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
                     .setCustomId("emassch_del_select")
-                    .setPlaceholder("Select channels to DELETE")
+                    .setPlaceholder("Select channels to DEPLOY TERMINATION")
                     .setMinValues(1)
                     .setMaxValues(Math.min(options.length, 25))
                     .addOptions(options)
             );
 
+            const selectContainer = V2.container([
+                V2.section([
+                    V2.heading("🗑️ TERMINATION INTERFACE", 2),
+                    V2.text("Select the network shards to permanently disconnect.")
+                ], "https://cdn-icons-png.flaticon.com/512/3662/3662817.png")
+            ], V2_RED);
+
             const msg = await message.reply({
-                content: "**🗑️ SELECT CHANNELS TO DELETE:**",
-                components: [row]
+                content: null,
+                flags: V2.flag,
+                components: [selectContainer, row]
             });
 
             const filter = i => i.user.id === message.author.id && i.customId === "emassch_del_select";
@@ -89,20 +105,23 @@ module.exports = {
                 await i.deferUpdate();
                 const selectedIds = i.values;
 
-                await i.editReply({ content: `🔄 **Deleting ${selectedIds.length} channels...**`, components: [] });
+                const delStatus = V2.container([V2.text(`🔄 **Synchronizing termination for ${selectedIds.length} shards...**`)], V2_RED);
+                await i.editReply({ content: null, components: [delStatus] });
 
-                let deleted = 0;
                 const deletePromises = selectedIds.map(id => {
                     const ch = message.guild.channels.cache.get(id);
                     if (ch) return ch.delete("Mass Delete by Owner").catch(() => { });
                 });
                 await Promise.all(deletePromises);
-                deleted = selectedIds.length;
 
-                await i.editReply({
-                    content: null,
-                    embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setTitle("🗑️ CHANNELS DELETED").setDescription(`Successfully deleted **${deleted}** channels.`)]
-                });
+                const finalDel = V2.container([
+                    V2.section([
+                        V2.heading("🗑️ TERMINATION COMPLETE", 2),
+                        V2.text(`Successfully disconnected **${selectedIds.length}** shards from the node.`)
+                    ], "https://cdn-icons-png.flaticon.com/512/190/190411.png")
+                ], V2_RED);
+
+                await i.editReply({ content: null, components: [finalDel] });
             });
         }
     }

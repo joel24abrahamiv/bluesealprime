@@ -1,5 +1,6 @@
-const { PermissionsBitField, EmbedBuilder } = require("discord.js");
-const { SUCCESS_COLOR, ERROR_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "untimeout",
@@ -8,26 +9,20 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.ModerateMembers],
     async execute(message, args) {
         const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-        if (!target) return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ User not found.")] });
+        if (!target) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **User not found.**")], V2_RED)] });
 
         try {
-            if (!target.moderatable) {
-                return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ I cannot untimeout this user.")] });
-            }
-
+            if (!target.moderatable) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ I cannot remove the timeout from this user.")], V2_RED)] });
             await target.timeout(null, "Untimeout command");
-
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("🔊 TIMEOUT REMOVED")
-                .setDescription(`**${target.user.tag}** has been released from isolation.`)
-                .setFooter({ text: `Actioned by ${message.author.tag}` })
-                .setTimestamp();
-
-            return message.reply({ embeds: [embed] });
+            message.reply({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.heading("🔊 TIMEOUT REMOVED", 2),
+                    V2.text(`**${target.user.tag}** has been released from isolation.\n> *Actioned by ${message.author.tag}*`)
+                ], V2_BLUE)]
+            });
         } catch (err) {
-            console.error(err);
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ Failed to untimeout user.")] });
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ **Failed to remove timeout.** Check my role hierarchy.")], V2_RED)] });
         }
     }
 };

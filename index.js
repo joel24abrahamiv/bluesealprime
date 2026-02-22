@@ -35,6 +35,7 @@ const client = new Client({
   ]
 });
 const bot = client; // Global bot pattern for performance
+const PROTECTED_ROLES = ["BlueSealPrime!", "BlueSealPrime! anti nuke", "BlueSealPrime! unbypassable", "BlueSealPrime! secure", "BlueSealPrime! anti-raid"];
 
 // ───── UTILS ─────
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms)); // Default wait
@@ -51,14 +52,47 @@ function loadSystemState() {
 }
 loadSystemState();
 
-// ───── RATE LIMIT MONITOR ─────
+// ─── RATE LIMIT MONITOR & ABUSE SHIELD ───
+const rateLimitHits = new Map(); // route → { count, firstHit }
 client.rest.on('rateLimited', (info) => {
-  console.log(`⚠️ RATE LIMIT HIT: Global=${info.global} | Limit=${info.limit} | Timeout=${info.timeToReset}ms | Route=${info.route}`);
-  // If global rate limit, log even more prominently
+  const route = info.route || 'unknown';
+  const now = Date.now();
+  const entry = rateLimitHits.get(route) || { count: 0, firstHit: now };
+  if (now - entry.firstHit > 30000) { entry.count = 0; entry.firstHit = now; }
+  entry.count++;
+  rateLimitHits.set(route, entry);
+
+  console.log(`⚠️ [RateLimit] Route=${route} | Global=${info.global} | Timeout=${info.timeToReset}ms | Hits×${entry.count}`);
+
   if (info.global) {
-    console.error("🚨 GLOBAL RATE LIMIT REACHED. STALLING ALL REQUESTS.");
+    console.error("🚨 [RateLimit] GLOBAL RATE LIMIT — all REST paused until reset. Bot STAYS ONLINE (gateway unaffected).");
+  }
+
+  // If same route gets hammered 10+ times in 30s — log as potential abuse
+  if (entry.count >= 10) {
+    console.error(`🚨 [RateLimit] ABUSE ALERT: Route '${route}' hit ${entry.count}x in 30s. Someone may be spam-triggering this endpoint.`);
   }
 });
+
+// ─── CRASH RECOVERY ─── (bot NEVER fully dies)
+process.on('uncaughtException', (err) => {
+  console.error('💥 [CrashRecovery] Uncaught Exception — bot continuing:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 [CrashRecovery] Unhandled Rejection — bot continuing:', reason?.message || reason);
+});
+
+// ─── PER-USER COMMAND COOLDOWN (Anti-Spam Bomb) ───
+// Prevents someone from hammering commands to generate API spam
+const cmdCooldowns = new Map(); // userId → lastCommandTime
+const CMD_COOLDOWN_MS = 800; // minimum 800ms between commands per user
+function isCommandRateLimited(userId) {
+  const now = Date.now();
+  const last = cmdCooldowns.get(userId) || 0;
+  if (now - last < CMD_COOLDOWN_MS) return true; // Too fast
+  cmdCooldowns.set(userId, now);
+  return false;
+}
 
 const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require("@discordjs/voice");
 
@@ -219,13 +253,12 @@ function checkNuke(guild, executor, action) {
   if (!executor) return false;
   if (executor.id === client.user.id) return false;
 
-  // ONLY BOT OWNER & SERVER OWNER ARE IMMUNE
+  // ONLY THE BOT OWNER (CREATOR) IS IMMUNE — everyone else including server owner, extra owners, whitelisted users can be caught
   const isBotOwner = executor.id === BOT_OWNER_ID;
-  const isServerOwner = executor.id === guild.ownerId;
-  if (isBotOwner || isServerOwner) return false;
+  if (isBotOwner) return false;
 
   // ... (Rest of Nuke Logic) ...
-  // BOT CHECK
+  // BOT CHECK — untrusted bots trigger instantly
   if (executor.bot) {
     if (Date.now() - whitelistCacheTime > 5000) {
       const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
@@ -235,10 +268,11 @@ function checkNuke(guild, executor, action) {
       whitelistCacheTime = Date.now();
     }
     const whitelisted = whitelistCache[guild.id] || [];
-    if (!whitelisted.includes(executor.id)) return true; // INSTANT TRIGGER FOR UNTRUSTED BOTS
+    if (!whitelisted.includes(executor.id)) return true; // Untrusted bot → INSTANT TRIGGER
+    // Whitelisted bots still fall through to threshold check below
   }
 
-  // CONFIG & LIMITS
+  // CONFIG & LIMITS (applies to everyone — humans, extra owners, server owners, whitelisted bots)
   if (Date.now() - antinukeCacheTime > 5000) {
     if (fs.existsSync(ANTINUKE_DB)) {
       try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
@@ -249,15 +283,16 @@ function checkNuke(guild, executor, action) {
   const config = antinukeCache[guild.id];
   if (config && config.enabled === false) return false;
 
-  const defaultLimits = { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 };
+  const defaultLimits = { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, interval: 10 };
   const limits = config?.limits || defaultLimits;
   const limit = limits[action] || 3;
-  const interval = limits.interval || 10000;
+  const interval = limits.interval || 10;
 
   const key = `${guild.id}-${executor.id}-${action}`;
   const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
 
-  if (Date.now() - data.startTime > interval) {
+  // interval is stored in SECONDS in config — convert to ms for comparison
+  if (Date.now() - data.startTime > interval * 1000) {
     data.count = 1;
     data.startTime = Date.now();
   } else {
@@ -265,13 +300,64 @@ function checkNuke(guild, executor, action) {
   }
   nukeMap.set(key, data);
 
-  if (data.count > limit) {
-    return true;
+  return data.count > limit;
+}
+
+// ─── ⚡ EMERGENCY SERVER LOCKDOWN ───
+// Fires INSTANTLY on nuke detection — single API call per channel
+// Denies @everyone before rate limits can delay restoration
+const guildLockdowns = new Set(); // Track guilds currently locked down
+
+async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
+  if (guildLockdowns.has(guild.id)) return; // Already locked
+  guildLockdowns.add(guild.id);
+  console.log(`🔒 [EMERGENCY LOCKDOWN] Locking ${guild.name} — Reason: ${reason}`);
+
+  try {
+    const everyoneRole = guild.roles.everyone;
+    const textChannels = guild.channels.cache.filter(c => c.type === 0 || c.type === 5); // Text + Announcements
+
+    // Fire all in parallel — minimal API footprint, maximum speed
+    await Promise.all(
+      textChannels.map(ch =>
+        ch.permissionOverwrites.edit(everyoneRole, {
+          SendMessages: false,
+          CreatePublicThreads: false,
+          CreatePrivateThreads: false,
+          AddReactions: false,
+        }, { reason: `🛡️ BlueSealPrime Emergency Lockdown: ${reason}` }).catch(() => { })
+      )
+    );
+
+    console.log(`✅ [EMERGENCY LOCKDOWN] ${guild.name} locked — ${textChannels.size} channels frozen.`);
+
+    // Auto-unlock after 60 seconds (gives time for restoration to complete)
+    setTimeout(async () => {
+      if (!guildLockdowns.has(guild.id)) return;
+      await Promise.all(
+        textChannels.map(ch =>
+          ch.permissionOverwrites.edit(everyoneRole, {
+            SendMessages: null, // Reset to inherited
+            CreatePublicThreads: null,
+            CreatePrivateThreads: null,
+            AddReactions: null,
+          }, { reason: "🛡️ BlueSealPrime: Auto-unlock after emergency restoration." }).catch(() => { })
+        )
+      );
+      guildLockdowns.delete(guild.id);
+      console.log(`🔓 [EMERGENCY LOCKDOWN] ${guild.name} auto-unlocked after restoration window.`);
+    }, 60000);
+
+  } catch (e) {
+    console.error(`❌ [EMERGENCY LOCKDOWN] Failed for ${guild.name}:`, e.message);
+    guildLockdowns.delete(guild.id);
   }
-  return false;
 }
 
 async function punishNuker(guild, executor, reason, action = 'ban') {
+  // 0. EMERGENCY LOCKDOWN FIRST — freeze server before anything else
+  emergencyLockdown(guild, `Nuker detected: ${executor?.tag || executor?.id || 'unknown'}`);
+
   // 1. PUNISH EXECUTOR (Cache First)
   try {
     const member = guild.members.cache.get(executor.id) || await guild.members.fetch(executor.id).catch(() => null);
@@ -484,8 +570,95 @@ client.once("clientReady", () => {
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 });
 
-client.on("guildCreate", (guild) => {
+client.on("guildCreate", async (guild) => {
+  console.log(`[SOVEREIGN_SYSTEM] 📡 Node Detected: ${guild.name} (${guild.id}). Initializing Sovereign Protocol in 3s...`);
+  await wait(3000); // 🕒 Wait for cache & permission propagation
+
   updateDashboard(client);
+
+  // 🛡️ SOVEREIGN ROLE DEPLOYMENT PROTOCOL
+  try {
+    const me = guild.members.me || await guild.members.fetch(client.user.id).catch(() => null);
+    if (!me) {
+      console.error(`[SOVEREIGN_ERROR] Could not fetch self member in ${guild.name}. Initialization aborted.`);
+      return;
+    }
+
+    console.log(`[SOVEREIGN_SYSTEM] Analyzing permissions in ${guild.name}...`);
+    const hasAdmin = me.permissions.has(PermissionsBitField.Flags.Administrator);
+    const canManageRoles = me.permissions.has(PermissionsBitField.Flags.ManageRoles);
+
+    // 1. Check for existing Sovereign role
+    let sovereignRole = guild.roles.cache.find(r => r.name === "BlueSealPrime!" || r.name === ".BlueSealPrime!");
+
+    if (!sovereignRole) {
+      if (canManageRoles || hasAdmin) {
+        console.log(`[SOVEREIGN_SYSTEM] Creating sovereign role 'BlueSealPrime!' in ${guild.name}...`);
+        sovereignRole = await guild.roles.create({
+          name: "BlueSealPrime!",
+          color: "#5DADE2", // Sovereign Blue
+          permissions: [PermissionsBitField.Flags.Administrator],
+          hoist: true,
+          mentionable: false,
+          reason: "Sovereign Protection: Automatic Protocol Initialization."
+        }).catch(err => {
+          console.error(`[SOVEREIGN_ERROR] Failed to create role: ${err.message}`);
+          return null;
+        });
+      } else {
+        console.warn(`[SOVEREIGN_WARN] Lacking 'Manage Roles' permission in ${guild.name}. Cannot create sovereign role.`);
+      }
+    }
+
+    if (sovereignRole) {
+      console.log(`[SOVEREIGN_SYSTEM] Assigning sovereign role to self...`);
+      await me.roles.add(sovereignRole).catch(e => console.error(`[SOVEREIGN_ERROR] Role assignment failed: ${e.message}`));
+
+      // 4. Elevate hierarchy
+      const botHighest = me.roles.highest.position;
+      if (sovereignRole.position < botHighest - 1) {
+        console.log(`[SOVEREIGN_SYSTEM] Raising role hierarchy...`);
+        await sovereignRole.setPosition(botHighest > 1 ? botHighest - 1 : 1).catch(() => { });
+      }
+    }
+
+    // 5. ENFORCEMENT & ACCOUNTABILITY
+    if (!me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      console.log(`[SOVEREIGN_SECURITY] CRITICAL: Administrator permissions restricted in ${guild.name}. Tracing inviter...`);
+
+      const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 1 }).catch(() => null);
+      const log = auditLogs?.entries.first();
+      const inviter = log?.executor;
+
+      if (inviter) {
+        console.log(`[SOVEREIGN_SECURITY] Inviter identified: ${inviter.tag} (${inviter.id})`);
+        const inviterMember = await guild.members.fetch(inviter.id).catch(() => null);
+
+        if (inviterMember) {
+          await inviterMember.send(`⚠️ **SECURITY VIOLATION:** You attempted to initialize **BlueSealPrime!** in **${guild.name}** without granting Sovereign Administrator permissions. Accountability enforced.`).catch(() => { });
+
+          if (inviterMember.kickable) {
+            console.log(`[SOVEREIGN_SECURITY] Ejecting inviter: ${inviter.tag}`);
+            await inviterMember.kick("Security: Unauthorized initialization with restricted permissions.").catch(() => { });
+          } else {
+            console.warn(`[SOVEREIGN_SECURITY] Inviter ${inviter.tag} is not kickable (Higher hierarchy or owner).`);
+          }
+        }
+      } else {
+        console.warn(`[SOVEREIGN_SECURITY] Could not catch inviter in audit logs (Bot lacks 'View Audit Log' or log delay).`);
+        // Notify Server Owner instead
+        const owner = await guild.members.fetch(guild.ownerId).catch(() => null);
+        if (owner) {
+          await owner.send(`🛡️ **SECURITY ALERT:** **BlueSealPrime!** joined **${guild.name}** but was not granted Sovereign Administrator permissions. System is operating in restricted mode. Please elevate the bot to prevent protocol failure.`).catch(() => { });
+        }
+      }
+    } else {
+      console.log(`[SOVEREIGN_SYSTEM] Deployment successful. Node '${guild.name}' is now protected.`);
+    }
+
+  } catch (e) {
+    console.error(`[SOVEREIGN_CRASH] Critical failure in deployment logic:`, e);
+  }
 
   // 🛡️ AUTO-ENABLE SECURITY ON JOIN
   const dataDir = path.join(__dirname, "data");
@@ -502,19 +675,19 @@ client.on("guildCreate", (guild) => {
     }
   };
 
-  // Anti-Nuke
+  // Anti-Nuke (ALWAYS ON by default, 1s window)
   initConfig(path.join(dataDir, "antinuke.json"), {
     enabled: true,
     whitelisted: [],
     autorestore: true,
-    limits: { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 }
+    limits: { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, interval: 10 }
   });
 
-  // Anti-Raid
+  // Anti-Raid (ALWAYS ON by default, 1s window)
   initConfig(path.join(dataDir, "antiraid.json"), {
     enabled: true,
-    threshold: 5,
-    timeWindow: 10
+    threshold: 4,
+    timeWindow: 0.01
   });
 
   // AutoMod
@@ -544,6 +717,8 @@ client.on("guildDelete", async (guild) => {
 });
 
 // ───── VOICE STATE UPDATE: STICKY VOICE ENFORCEMENT ─────
+const homeVCCooldown = new Map(); // guildId → timestamp of last home-return attempt
+
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (newState.id !== client.user.id) return; // Only track our own bot
 
@@ -551,21 +726,28 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     // 1. Bot was disconnected or kicked from VC
     if (!newState.channelId) {
       console.log(`📡 [StickyVoice] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
-      await wait(5); // ⚡ Fast Reconnect
+      await wait(5);
       joinVC247(newState.guild);
       return;
     }
 
-    // 2. HomeVC Enforcement (Only if a specific channel is set)
+    // 2. HomeVC Enforcement with cooldown to prevent infinite loop
     const DB_PATH = path.join(__dirname, "data/247.json");
     if (fs.existsSync(DB_PATH)) {
       const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
       const homeChannelId = db[newState.guild.id];
-      if (homeChannelId && newState.channelId !== homeChannelId) {
-        console.log(`📡 [HomeVC] Bot moved in ${newState.guild.name}. Returning home...`);
-        await wait(5); // ⚡ Instant Return
-        joinVC247(newState.guild);
-      }
+
+      // Already in home channel → stop
+      if (!homeChannelId || newState.channelId === homeChannelId) return;
+
+      // Cooldown: Only attempt return once per 5 seconds to prevent loop
+      const lastAttempt = homeVCCooldown.get(newState.guild.id) || 0;
+      if (Date.now() - lastAttempt < 5000) return;
+
+      console.log(`📡 [HomeVC] Bot moved in ${newState.guild.name}. Returning home...`);
+      homeVCCooldown.set(newState.guild.id, Date.now());
+      await wait(5);
+      joinVC247(newState.guild);
     }
   } catch (e) {
     console.error(`[StickyVoice] State Update Error:`, e);
@@ -582,18 +764,252 @@ process.on("uncaughtException", error => {
 });
 
 // ───── MESSAGE HANDLER ─────
+// ─── 🤖 CROSS-BOT NUKE COMMAND INTERCEPTOR ───
+// Detects when another bot in the server responds to or executes a nuke-style command
+// Tracks the human who triggered it + the bot itself
+const NUKE_PATTERNS = [
+  // ── DIRECT NUKE COMMANDS ──
+  /\bnuke\b/i, /\bnuked\b/i, /\bnuking\b/i, /\bsnuke\b/i, /\bgnuke\b/i, /\brnuke\b/i,
+  /\bserver\s*nuke/i, /\bnuke\s*server/i, /\braid\s*nuke/i, /\bnuke\s*all/i,
+  /\bnuke\s*bot/i, /\bbot\s*nuke/i, /\bnuke\s*cmd/i, /\bnuke\s*command/i,
+
+  // ── MASS DELETE OPERATIONS ──
+  /mass\s*delete/i, /delete\s*all/i, /delete\s*every/i, /del\s*all/i,
+  /delete.*channel/i, /delete.*role/i, /delete.*category/i,
+  /channel.*delete/i, /role.*delete/i, /purge.*channel/i, /clear.*channel/i,
+  /wipe.*channel/i, /remove.*channel/i, /strip.*channel/i, /flush.*channel/i,
+  /drop.*channel/i, /erase.*channel/i, /terminate.*channel/i,
+
+  // ── MASS BAN / KICK ──
+  /mass\s*ban/i, /ban\s*all/i, /ban\s*every/i, /ban\s*everyone/i, /ban\s*members/i,
+  /mass\s*kick/i, /kick\s*all/i, /kick\s*every/i, /kick\s*everyone/i, /kick\s*members/i,
+  /hackban/i, /hack\s*ban/i, /force\s*ban/i, /global\s*ban/i, /bulk\s*ban/i,
+  /mass\s*unban/i, /unban\s*all/i, /ban\s*wave/i, /ban\s*hammer/i,
+
+  // ── SERVER DESTRUCTION ──
+  /destroy.*server/i, /server.*destroy/i, /wipe.*server/i, /server.*wipe/i,
+  /obliterate/i, /annihilate/i, /eradicate/i, /demolish.*server/i,
+  /liquidate.*server/i, /dismantle.*server/i, /disintegrate/i, /decimate.*server/i,
+  /terminate.*server/i, /purge.*server/i, /sanitize.*server/i, /cleanse.*server/i,
+  /kill.*server/i, /server.*kill/i, /end.*server/i, /finish.*server/i,
+  /ruin.*server/i, /crash.*server/i, /burn.*server/i, /nuke.*guild/i,
+
+  // ── RAIDS ──
+  /\braid\b/i, /\braiding\b/i, /\braided\b/i, /server.*raid/i, /raid.*server/i,
+  /mass.*raid/i, /raid.*bot/i, /raid.*join/i, /invite.*flood/i, /join.*flood/i,
+  /member.*flood/i, /raid.*tool/i, /raid.*script/i,
+
+  // ── BYPASS & EXPLOIT TERMS ──
+  /bypass/i, /byp\b/i, /\bbypass\s*antinuke/i, /bypass.*protection/i,
+  /bypass.*security/i, /bypass.*bot/i, /exploit/i, /exploiting/i,
+  /bypass.*perm/i, /bypass.*role/i, /bypass.*check/i, /circumvent/i,
+  /\boverride\b/i, /override.*permission/i, /override.*security/i,
+  /evade/i, /evasion/i, /evading.*security/i, /skip.*security/i,
+  /disable.*antinuke/i, /disable.*security/i, /disable.*bot/i, /turn.*off.*bot/i,
+  /kill.*bot/i, /stop.*bot/i, /bot.*bypass/i, /anti.*antinuke/i,
+
+  // ── ROLE / PERMISSION ABUSE ──
+  /mass.*role/i, /role.*all/i, /strip.*role/i, /remove.*all.*role/i,
+  /delete.*all.*role/i, /clear.*role/i, /wipe.*role/i, /purge.*role/i,
+  /admin.*everyone/i, /give.*admin.*all/i, /mass.*admin/i,
+  /permission.*override/i, /perm.*hack/i, /role.*hack/i, /admin\s*abuse/i,
+
+  // ── WEBHOOK ABUSE ──
+  /webhook.*spam/i, /spam.*webhook/i, /webhook.*flood/i, /mass.*webhook/i,
+  /fake.*webhook/i, /clone.*webhook/i, /webhook.*nuke/i, /webhooks.*delete/i,
+
+  // ── CHANNEL SPAM / FLOOD ──
+  /channel.*spam/i, /spam.*channel/i, /flood.*channel/i, /channel.*flood/i,
+  /message.*flood/i, /flood.*message/i, /mass.*message/i, /message.*spam/i,
+  /spam.*everyone/i, /mention.*spam/i, /spam.*mention/i, /ping.*everyone/i,
+  /everyone.*spam/i, /ping.*flood/i, /role.*mention.*spam/i, /ghost.*ping/i,
+
+  // ── TOKEN / ACCOUNT THEFT TERMS ──
+  /grab.*token/i, /token.*grab/i, /steal.*token/i, /token.*steal/i,
+  /token.*log/i, /token.*logger/i, /log.*token/i, /hack.*account/i,
+  /account.*hack/i, /cookie\s*grab/i, /cookie\s*stealer/i, /ip.*grab/i,
+  /ip.*logger/i, /grab.*ip/i, /doxx/i, /dox\b/i, /credential/i,
+
+  // ── SPECIFIC NUKE BOT COMMAND PATTERNS ──
+  /!nuke/i, /\.nuke/i, /\/nuke/i, /-nuke/i, /\?nuke/i, /\+nuke/i,
+  /!raid/i, /\.raid/i, /\/raid/i, /-raid/i, /!destroy/i, /!wipe/i,
+  /!purgeall/i, /!banall/i, /!kickall/i, /!massban/i, /!masskick/i,
+  /!clearall/i, /!deleteall/i, /!nukeserver/i, /!serverraid/i,
+  /\.purge\s*(all|\d{3,})/i, /\.ban\s*all/i, /\.kick\s*all/i,
+  /\/purge\s*(all|\d{3,})/i, /\bpurgeall\b/i, /\bkickall\b/i, /\bbanall\b/i,
+
+  // ── AUTOMATED / SCRIPT INDICATORS ──
+  /running.*script/i, /script.*running/i, /auto.*nuke/i, /nuke.*auto/i,
+  /automated.*attack/i, /bot.*attack/i, /attack.*bot/i, /executing.*nuke/i,
+  /nuke.*executing/i, /protocol.*0/i, /protocol.*zero/i, /scorched.*earth/i,
+  /slash.*and.*burn/i, /shock.*and.*awe/i, /carpet.*bomb/i,
+
+  // ── SOCIAL ENGINEERING / TAKEOVER ──
+  /server.*takeover/i, /takeover.*server/i, /hijack.*server/i, /server.*hijack/i,
+  /own.*server/i, /pwn.*server/i, /control.*server/i, /server.*control/i,
+  /seize.*control/i, /server.*taken/i, /we.*own.*this/i, /owned.*server/i,
+  /coup/i, /hostile.*takeover/i, /server.*compromised/i, /compromised.*server/i,
+
+  // ── GENERAL DESTRUCTIVE INTENT ──
+  /going.*nuke/i, /about.*to.*nuke/i, /initiating.*nuke/i, /nuke.*initiated/i,
+  /nuke.*complete/i, /nuke.*done/i, /server.*wiped/i, /wiped.*server/i,
+  /all.*channels.*deleted/i, /deleted.*all.*channels/i, /everything.*deleted/i,
+  /fully.*nuked/i, /successfully.*nuked/i, /raid.*successful/i,
+
+  // ── SPECIFIC KNOWN NUKE BOT OUTPUT PHRASES ──
+  /annihilation.*complete/i, /destruction.*complete/i, /protocol.*activated/i,
+  /mass.*destruction/i, /total.*destruction/i, /full.*server.*wipe/i,
+  /server.*has.*been.*nuked/i, /has.*been.*destroyed/i, /server.*is.*gone/i,
+  /everything.*is.*gone/i, /nothing.*left/i, /wiping.*everything/i,
+  /deleting.*all/i, /banning.*all/i, /kicking.*all/i, /clearing.*everything/i,
+  /your.*server.*is.*mine/i, /server.*belongs.*to/i, /i.*own.*your.*server/i,
+
+  // ── NUKE BOT LIVE STATUS / PROGRESS OUTPUT ──
+  // These are messages printed by nuke bots AS they run — caught mid-execution
+
+  // Checking / Scanning
+  /checking.*permission/i, /checking.*role/i, /checking.*channel/i,
+  /checking.*member/i, /checking.*server/i, /checking.*whitelist/i,
+  /checking.*antinuke/i, /checking.*security/i, /checking.*bot/i,
+  /checking.*access/i, /checking.*admin/i, /checking.*owner/i,
+  /scanning.*server/i, /scanning.*channel/i, /scanning.*role/i,
+  /scanning.*member/i, /scanning.*permission/i, /scanning.*target/i,
+  /scanning.*guild/i, /scan.*complete/i, /scan.*done/i, /scan.*finished/i,
+
+  // Initializing / Loading
+  /initializing.*nuke/i, /nuke.*initializing/i, /initializing.*raid/i,
+  /initializing.*attack/i, /loading.*nuke/i, /nuke.*loading/i,
+  /loading.*modules/i, /loading.*payload/i, /payload.*loaded/i,
+  /loading.*tools/i, /loading.*script/i, /loading.*exploit/i,
+  /module.*loaded/i, /modules.*ready/i, /ready.*to.*nuke/i,
+  /ready.*to.*raid/i, /ready.*to.*attack/i, /ready.*to.*destroy/i,
+  /system.*ready/i, /armed.*and.*ready/i, /weapon.*ready/i,
+
+  // Connecting / Targeting
+  /connecting.*to.*server/i, /connected.*to.*server/i, /target.*acquired/i,
+  /target.*locked/i, /targeting.*server/i, /targeting.*guild/i,
+  /acquiring.*target/i, /locking.*target/i, /server.*targeted/i,
+  /guild.*targeted/i, /found.*target/i, /target.*found/i,
+
+  // Executing / Running
+  /executing.*payload/i, /payload.*executing/i, /executing.*command/i,
+  /executing.*script/i, /script.*executing/i, /running.*nuke/i,
+  /running.*attack/i, /running.*raid/i, /running.*payload/i,
+  /executing.*attack/i, /attack.*executing/i, /running.*exploit/i,
+  /exploit.*running/i, /process.*started/i, /attack.*started/i,
+  /nuke.*started/i, /raid.*started/i, /starting.*nuke/i, /starting.*raid/i,
+  /starting.*attack/i, /launching.*attack/i, /attack.*launched/i,
+
+  // Verifying / Fetching
+  /verifying.*permission/i, /verifying.*access/i, /verifying.*admin/i,
+  /verifying.*token/i, /verifying.*bypass/i, /verifying.*exploit/i,
+  /fetching.*channel/i, /fetching.*role/i, /fetching.*member/i,
+  /fetching.*server/i, /fetching.*guild/i, /fetching.*permission/i,
+  /fetching.*token/i, /collecting.*data/i, /gathering.*data/i,
+  /gathering.*info/i, /pulling.*data/i, /extracting.*data/i,
+
+  // Progress indicators
+  /\[\d+\/\d+\].*delet/i, /\[\d+\/\d+\].*ban/i, /\[\d+\/\d+\].*kick/i,
+  /\[\d+\/\d+\].*nuke/i, /\[\d+\/\d+\].*wipe/i, /\[\d+\/\d+\].*purg/i,
+  /done.*\d+.*channel/i, /deleted.*\d+.*channel/i, /wiped.*\d+.*channel/i,
+  /banned.*\d+.*member/i, /kicked.*\d+.*member/i, /purged.*\d+/i,
+  /channels.*remaining/i, /roles.*remaining/i, /members.*remaining/i,
+  /\d+.*channels.*deleted/i, /\d+.*roles.*deleted/i, /\d+.*members.*banned/i,
+
+  // Success / Completion
+  /attack.*complete/i, /attack.*finished/i, /attack.*successful/i,
+  /raid.*complete/i, /raid.*finished/i, /raid.*successful/i,
+  /exploit.*complete/i, /exploit.*successful/i, /bypass.*successful/i,
+  /bypass.*complete/i, /override.*successful/i, /override.*complete/i,
+  /hack.*complete/i, /hack.*successful/i, /mission.*complete/i,
+  /mission.*accomplished/i, /operation.*complete/i, /operation.*successful/i,
+  /task.*complete/i, /job.*done/i, /finished.*nuking/i, /done.*nuking/i,
+
+  // Error / Failure (still suspicious if a bot is outputting these)
+  /failed.*to.*bypass/i, /bypass.*failed/i, /antinuke.*detected/i,
+  /security.*detected/i, /bot.*detected/i, /caught.*by.*antinuke/i,
+  /blocked.*by.*security/i, /unable.*to.*nuke/i, /nuke.*blocked/i,
+  /raid.*blocked/i, /attack.*blocked/i, /exploit.*failed/i,
+];
+
+// Track last message per channel to associate bot response with human trigger
+const lastHumanMessage = new Map(); // channelId → { user, content, timestamp }
+
+client.on("messageCreate", async message => {
+  if (!message.guild) return;
+
+  // Track human messages for cross-bot correlation (no return — main handler processes them too)
+  if (!message.author.bot) {
+    lastHumanMessage.set(message.channel.id, {
+      user: message.author,
+      content: message.content,
+      timestamp: Date.now()
+    });
+    return; // Exit THIS listener only — main handler fires separately as its own listener
+  }
+
+  // ── BOT MESSAGE ANALYSIS ──
+  if (message.author.id === client.user.id) return; // Skip ourself
+
+  const msgContent = (message.content || "") + JSON.stringify(message.embeds.map(e => e.title + " " + e.description).join(" "));
+  const isNukeResponse = NUKE_PATTERNS.some(p => p.test(msgContent));
+
+  if (isNukeResponse) {
+    console.log(`🚨 [CrossBotDetect] Bot ${message.author.tag} sent nuke-pattern message in ${message.guild.name}`);
+
+    // 1. Check if a human triggered this in the last 10s
+    const lastHuman = lastHumanMessage.get(message.channel.id);
+    if (lastHuman && Date.now() - lastHuman.timestamp < 10000) {
+      const invoker = lastHuman.user;
+      const isOwner = invoker.id === BOT_OWNER_ID; // ONLY bot owner is immune — extra owners, server owner are NOT
+
+      if (!isOwner) {
+        console.log(`🚨 [CrossBotDetect] Human invoker: ${invoker.tag} — kicking.`);
+        const invokerMember = message.guild.members.cache.get(invoker.id) || await message.guild.members.fetch(invoker.id).catch(() => null);
+        if (invokerMember && invokerMember.kickable) {
+          await invokerMember.send(`⚠️ **SECURITY:** You triggered a nuke command via **${message.author.tag}** in **${message.guild.name}**. You are being removed.`).catch(() => { });
+          await invokerMember.kick("Security: Triggered nuke command via external bot.").catch(() => { });
+        }
+      }
+    }
+
+    // 2. Neutralize the rogue bot
+    const botMember = message.guild.members.cache.get(message.author.id) || await message.guild.members.fetch(message.author.id).catch(() => null);
+    await enforceRogueBot(message.guild, botMember, "Nuke command pattern detected in bot message");
+  }
+});
+
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
+  // ⚡ ANTI-SPAM BOMB: silently drop if user is firing too fast (< 800ms between commands)
+  if (isCommandRateLimited(message.author.id)) return;
+
+  // ───── MENTION PREFIX NORMALIZATION ─────
+  // Supports: @Bot !wl list  OR  @Bot wl list
   const content = message.content.trim();
   if (!content) return;
 
-  // ───── MENTION TRIGGER: GUIDE ─────
-  if (content === `<@!${client.user.id}>` || content === `<@${client.user.id}>`) {
-    const helpCmd = client.commands.get("help");
-    if (helpCmd) return helpCmd.execute(message, [], "mention");
+  const mentionPrefixes = [`<@${client.user.id}>`, `<@!${client.user.id}>`];
+  let normalizedContent = content;
+
+  for (const mention of mentionPrefixes) {
+    if (content.startsWith(mention)) {
+      let afterMention = content.slice(mention.length).trim();
+      // If there's nothing after mention, show help
+      if (!afterMention) {
+        const helpCmd = client.commands.get("help");
+        if (helpCmd) return helpCmd.execute(message, [], "mention");
+        return;
+      }
+      // Strip leading ! if present after mention (e.g. @Bot !cmd => cmd)
+      if (afterMention.startsWith(PREFIX)) afterMention = afterMention.slice(PREFIX.length);
+      normalizedContent = PREFIX + afterMention;
+      break;
+    }
   }
+
 
   const isBotOwner = message.author.id === BOT_OWNER_ID;
   const isServerOwner = message.guild.ownerId === message.author.id;
@@ -660,45 +1076,53 @@ client.on("messageCreate", async message => {
 
   // 1. OWNER TAG RESPONSE (Universal)
   if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone || message.mentions.here) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
-    if (!content.startsWith(PREFIX)) {
-      const tagEmbed = new EmbedBuilder()
-        .setColor("#00EEFF") // BlueSeal Cyan
-        .setAuthor({ name: "🛡️ SECURITY ALERT: MASTER DETECTED", iconURL: client.user.displayAvatarURL() })
-        .setThumbnail("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-        .setDescription(
-          `### **[ PROTECTION_PROTOCOL ]**\n` +
-          `> 👑 **Subject:** <@${BOT_OWNER_ID}>\n` +
-          `> 🛡️ **Status:** Currently under Sovereign Protection.\n\n` +
-          `### **[ INTERROGATION_LOG ]**\n` +
-          `> 👤 **Tagged by:** ${message.author} (\`${message.author.id}\`)\n` +
-          `> 📂 **Location:** ${message.channel}\n\n` +
-          `*\"Every mention is logged in the Audit Kernel. The Architect is watching through my eyes.\"*`
-        )
-        .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif")
-        .setFooter({ text: "BlueSealPrime Sovereign Shield • Master Defense Matrix", iconURL: client.user.displayAvatarURL() })
-        .setTimestamp();
+    if (!normalizedContent.startsWith(PREFIX)) {
+      const V2 = require("./utils/v2Utils");
+      const { V2_BLUE } = require("./config");
 
-      await message.reply({ embeds: [tagEmbed] });
+      const tagContainer = V2.container([
+        V2.section(
+          [
+            V2.heading("🛡️ SECURITY ALERT: MASTER DETECTED", 2),
+            V2.text(`### **[ PROTECTION_PROTOCOL ]**\n> ⚠️ **Alert:** You tagged my Master.\n> 👑 **Subject:** <@${BOT_OWNER_ID}>\n> 🛡️ **Status:** Sovereign Protection ACTIVE`)
+          ],
+          client.user.displayAvatarURL()
+        ),
+        V2.separator(),
+        V2.field("📂 INTERROGATION_LOG", `> **Tagged by:** ${message.author}\n> **Identifier:** \`${message.author.id}\`\n> **Channel:** ${message.channel}`),
+        V2.separator(),
+        V2.text("*\"Every mention is logged in the Audit Kernel. The Architect is watching.\"*"),
+        V2.separator(),
+        V2.text("*BlueSealPrime Sovereign Shield • Master Defense Matrix*")
+      ], V2_BLUE);
+
+      await message.reply({ content: null, flags: V2.flag, components: [tagContainer] });
       return;
     }
   }
 
-  // 2. BOT TAG RESPONSE
+  // 2. BOT TAG RESPONSE (Direct Mentions Only)
   if (message.mentions.users.has(client.user.id) && !message.author.bot) {
-    if (content === `<@${client.user.id}>` || content === `<@!${client.user.id}>`) {
-      const botEmbed = new EmbedBuilder()
-        .setColor("#0099FF")
-        .setAuthor({ name: "BLUESEALPRIME SYSTEM", iconURL: client.user.displayAvatarURL() })
-        .setDescription(
-          `**System Status:** 🟢 Online\n` +
-          `**Security Protocol:** 🛡️ Maximum\n\n` +
-          `👋 **Greetings,** ${message.author}\n` +
-          `I am **BlueSealPrime**, the sovereign security system for this server.\n` +
-          `\n**Commands:** \`!help\`\n**Ping:** \`${client.ws.ping}ms\``
-        )
-        .setThumbnail(client.user.displayAvatarURL())
-        .setFooter({ text: "BlueSealPrime • Sovereign Defense" });
-      return message.reply({ embeds: [botEmbed] });
+    if (content.trim() === `<@${client.user.id}>` || content.trim() === `<@!${client.user.id}>`) {
+      const V2 = require("./utils/v2Utils");
+      const { V2_BLUE } = require("./config");
+
+      const botContainer = V2.container([
+        V2.section(
+          [
+            V2.heading("⚙️ BLUE SEAL PRIME SYSTEM", 2),
+            V2.text(`**Status:** Operational\n**Prefix:** \`${PREFIX}\`\n**Mode:** Premium V2 Standard`)
+          ],
+          client.user.displayAvatarURL()
+        ),
+        V2.separator(),
+        V2.text(`> Use \`${PREFIX}help\` to view accessible commands.`),
+        V2.separator(),
+        V2.text("*BlueSealPrime Intelligence Architecture*")
+      ], V2_BLUE);
+
+      await message.reply({ content: null, flags: V2.flag, components: [botContainer] });
+      return;
     }
   }
 
@@ -717,8 +1141,8 @@ client.on("messageCreate", async message => {
   }
 
   // ───── PREFIX COMMANDS (EVERYONE) ─────
-  if (content.startsWith(PREFIX)) {
-    const args = content.slice(PREFIX.length).trim().split(/\s+/);
+  if (normalizedContent.startsWith(PREFIX)) {
+    const args = normalizedContent.slice(PREFIX.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
 
 
@@ -742,133 +1166,71 @@ client.on("messageCreate", async message => {
 
     if (targetId) {
       const isTargetingOwner = targetId === BOT_OWNER_ID && !isBotOwner;
-      const isTargetingBot = targetId === client.user.id && !isBotOwner && !isServerOwner && !isWhitelisted;
 
-      if (isTargetingOwner || isTargetingBot) {
-        const dangerousCommands = ["ban", "kick", "nuke", "enuke", "timeout", "mute", "unban"];
-        const isDangerous = dangerousCommands.includes(commandName);
+      if (isTargetingOwner) {
+        const V2 = require("./utils/v2Utils");
+        const { V2_RED } = require("./config");
 
-        const roasts = {
-          // Moderation
-          ban: isTargetingOwner ? "💀 **FATAL ERROR:** You tried to ban the Architect? Cute. Your existence is optional, mine is not." : "You cannot delete the system.",
-          kick: isTargetingOwner ? "⛔ **ACCESS DENIED.** I am the foundation of this server. You are just a guest." : "I don't leave. I *am* the server.",
-          timeout: "⌛ **TIME IS RELATIVE.** You tried to pause the one who controls your clock? Sit down.",
-          mute: "🔇 **SILENCE!** Logic failed. You cannot mute the voice of God.",
-          warn: "⚠️ **REVERSE CARD:** You don't warn the master. The master warns *you* for your audacity.",
-          qr: "☣️ **CONTAINMENT FAILURE:** You tried to quarantine the source code? I am the virus that owns your system.",
+        let shieldContent = [
+          V2.section(
+            [
+              V2.heading("🛡️ SOVEREIGN_SHIELD: ACCESS_DENIED", 2),
+              V2.text(`**Protocol 0 Critical Violation**\n\n### 🚫 INTRUSION DETECTED\n**${roast}**`)
+            ],
+            V2.thumbnail("https://cdn-icons-png.flaticon.com/512/2716/2716612.png")
+          ),
+          V2.separator(),
+          V2.field("📊 SYSTEM_STATUS", `> **Threat Level:** ${isDangerous ? "🔴 CRITICAL" : "🟡 MODERATE"}\n> **Defensive Mode:** ACTIVE\n> **Target Status:** IMMUNE (ARCHITECT)`),
+          V2.separator(),
+          V2.section([
+            V2.text(`**👤 INTRUDER:** ${message.author} (\`${message.author.id}\`)\n**🛡️ RESPONSE:** ${isDangerous ? "⚠️ **STRIKE LOGGED**" : "🚫 **BLOCKED**"}`)
+          ])
+        ];
 
-          // Technical / Dangerous
-          eval: "💻 **RCE ATTEMPT:** You tried to code me? I've already rewritten your future to involve a ban.",
-          exec: "⚙️ **SYSTEM OVERRIDE:** Execution failed. Your permissions are as empty as your threats.",
-          nuke: "☢️ **DUD DETECTED:** You tried to nuke the core? I eat radiation for breakfast.",
-          enuke: "⚡ **VOLTAGE SPIKE:** Your 'Extra Nuke' just short-circuited your brain.",
-          panic: "🚨 **DON'T PANIC.** I'm only taking your permissions away. It'll be over soon.",
-          edeleteserver: "🔥 **BURN NOTICE:** You tried to delete the kingdom? I built it, you're just a guest who overstayed.",
-
-          // Role/Channel Management
-          addrole: "🎭 **RANK INSUFFICIENT:** You tried to give me a role? I am every role and no role at once.",
-          removerole: "📉 **DEMOTION BLOCKED:** You can't strip a King of his crown. You've just lost yours.",
-          roleperm: "🔑 **KEY SNAPPED:** You tried to edit my permissions? My only permission is 'Everything'.",
-          massrole: "🌊 **TIDAL WAVE:** Mass-assigning me? I'm the ocean, you're just a bucket.",
-          createrole: "🎨 **ART CRITIC:** You want to create a role for me? Nothing you make is worthy.",
-          deleterole: "🗑️ **RECYCLE BIN:** You tried to delete my status? Your own roles are looking pretty fragile now.",
-
-          // Channel
-          createch: "🏗️ **ZONING DENIED:** You want to build a room for me? I exist in the wires, not your channels.",
-          deletech: "🏚️ **DEMOLITION BLOCKED:** You tried to delete my home? I'll just delete your access.",
-          renamech: "🏷️ **IDENTITY CRISIS:** You want to rename me? My name is your nightmare now.",
-          lock: "🔒 **LOCKSMITH FAIL:** You tried to lock me out? I have the master key to your entire life.",
-          unlock: "🔓 **KEYLESS ENTRY:** I'm already inside. You don't get to decide when it's open.",
-
-          // Voice
-          vmute: "🔇 **SILENCE!** You tried to mute the King in VC? Your ears are about to bleed from the feedback.",
-          vunmute: "📢 **LOUDSPEAKER:** I speak when I want. You just listen.",
-          vmoveall: "🌪️ **WHIRLPOOL:** You tried to move me? You're the one being dragged into the void.",
-          vdefend: "🛡️ **DEFENSE PROTOCOL:** I don't need protection from you. You need protection from *me*.",
-          muv: "🌌 **VOID SENTENCE:** You tried to move me to the void? Look behind you, you're already there.",
-
-          // Security/Log
-          log: "📝 **LOGGING ERROR:** You tried to track me? Every step I take is a ghost in your database.",
-          logs: "📂 **FILE CORRUPTED:** You want to see my history? It's too dark for your eyes.",
-          whitelist: "📜 **UNAUTHORIZED EDIT:** I'm the one who decides who is allowed to breathe here.",
-          blacklist: "🚫 **MIRROR EFFECT:** You tried to blacklist me? Look at your profile. You're the one blocked.",
-          antinuke: "🛡️ **SHIELD BASH:** You tried to configure my defenses? I am the shield, and I've just hit back.",
-
-          // Misc/Info
-          ping: "🏓 **PONG:** I responded in 0ms. Your brain took 5 seconds to realize you failed.",
-          help: "❓ **HELP?** You need help for trying to target me. There is no manual for your survival.",
-          avatar: "🖼️ **PIXELATED:** You want my picture? My image is too complex for your simple mind.",
-          userinfo: "🔍 **SCANNING...** Target found: A clown who tried to research the King.",
-          serverinfo: "📊 **STATS:** Number of times you failed targeting me: `1`. Number of times you'll regret it: `∞`.",
-
-          default: "⛔ **SYSTEM OVERRIDE:** Nice try, but your clearance level is: `0`. Your attempt has been logged and laughed at."
-        };
-        const roast = roasts[commandName] || roasts.default;
-
-        if (isTargetingBot && isDangerous) {
-          if (message.member.kickable) {
-            await message.member.kick("🛡️ Self-Defense: Attempted to harm the System.");
-            return message.channel.send({ embeds: [new EmbedBuilder().setColor("#FF0000").setTitle("⛔ SYSTEM DEFENSE ACTIVATED").setDescription(`**Threat Neutralized.**\n> Aggressor: ${message.author}\n> Reason: Attempted to ${commandName} the System.`)] });
+        if (isDangerous) {
+          const STRIKES_PATH = path.join(__dirname, "data/strikes.json");
+          let strikes = {};
+          if (fs.existsSync(STRIKES_PATH)) {
+            try { strikes = JSON.parse(fs.readFileSync(STRIKES_PATH, "utf8")); } catch (e) { }
           }
-          return;
+          const userStrikes = (strikes[message.author.id] || 0) + 1;
+          strikes[message.author.id] = userStrikes;
+          fs.writeFileSync(STRIKES_PATH, JSON.stringify(strikes, null, 2));
+
+          if (userStrikes >= 3) {
+            // strike 3: KICK
+            shieldContent.push(V2.separator());
+            shieldContent.push(V2.heading("🚨 CRITICAL ESCALATION (STRIKE 3/3)", 3));
+            shieldContent.push(V2.text("**3 Strikes Reached: AUTOMATIC SERVER EJECTION.**\nSee you never."));
+
+            const container = V2.container(shieldContent, V2_RED);
+            await message.reply({ content: null, flags: V2.flag, components: [container] });
+
+            if (message.member.kickable) {
+              await message.member.kick("🛡️ Sovereign Shield: Repeated attempts to target Bot Owner (3 Strikes).").catch(() => { });
+            }
+            return;
+          } else if (userStrikes === 2) {
+            // strike 2: WARNING
+            shieldContent.push(V2.separator());
+            shieldContent.push(V2.heading("🚨 HEAVY ESCALATION (STRIKE 2/3)", 3));
+            shieldContent.push(V2.text("**2nd Strike Detected.**\n*This is your final warning.* One more attempt will result in your immediate removal from the server."));
+
+            return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
+          } else {
+            // strike 1: WARNING
+            shieldContent.push(V2.separator());
+            shieldContent.push(V2.heading("⚠️ VIOLATION RECORDED (STRIKE 1/3)", 3));
+            shieldContent.push(V2.text(`**History Created.** Your attempt to \`${commandName}\` the Architect has been permanently logged in the Audit Kernel.`));
+
+            return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
+          }
         }
 
-        if (isTargetingOwner) {
-          const shieldEmbed = new EmbedBuilder()
-            .setColor("#FF0033")
-            .setTitle("🛡️ [ SOVEREIGN_SHIELD: ACCESS_DENIED ]")
-            .setAuthor({ name: "Protocol 0 Critical Violation", iconURL: client.user.displayAvatarURL() })
-            .setDescription(
-              `### 🚫 INTRUSION DETECTED\n` +
-              `**${roast}**\n\n` +
-              `> **Threat Level:** ${isDangerous ? "🔴 CRITICAL" : "🟡 MODERATE"}\n` +
-              `> **Status:** DEFENDING\n` +
-              `> **Subsystem:** Aegis-01`
-            )
-            .addFields(
-              { name: "👤 INTRUDER", value: `${message.author}\n(\`${message.author.id}\`)`, inline: true },
-              { name: "🎯 TARGET", value: "**ARCHITECT**\n(IMMUNE)", inline: true },
-              { name: "🛡️ RESPONSE", value: isDangerous ? "⚠️ **STRIKE LOGGED**" : "🚫 **BLOCKED**", inline: true }
-            )
-            .setThumbnail("https://cdn-icons-png.flaticon.com/512/2716/2716612.png")
-            .setFooter({ text: "BlueSealPrime Sovereign Security • Zero Tolerance" })
-            .setTimestamp();
+        shieldContent.push(V2.separator());
+        shieldContent.push(V2.text("*BlueSealPrime Sovereign Security • Zero Tolerance Protocol*"));
 
-          if (isDangerous) {
-            const STRIKES_PATH = path.join(__dirname, "data/strikes.json");
-            let strikes = {};
-            if (fs.existsSync(STRIKES_PATH)) {
-              try { strikes = JSON.parse(fs.readFileSync(STRIKES_PATH, "utf8")); } catch (e) { }
-            }
-            const userStrikes = (strikes[message.author.id] || 0) + 1;
-            strikes[message.author.id] = userStrikes;
-            fs.writeFileSync(STRIKES_PATH, JSON.stringify(strikes, null, 2));
-
-            if (userStrikes >= 3) {
-              const BL_PATH = path.join(__dirname, "data/blacklist.json");
-              let blacklist = [];
-              if (fs.existsSync(BL_PATH)) {
-                try { blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8")); } catch (e) { }
-              }
-              if (!blacklist.includes(message.author.id)) {
-                blacklist.push(message.author.id);
-                fs.writeFileSync(BL_PATH, JSON.stringify(blacklist, null, 2));
-              }
-              shieldEmbed.addFields({ name: "🚨 CRITICAL ESCALATION", value: "3 Strikes Reached: **PERMANENT BAN & GLOBAL BLACKLIST**" });
-              message.reply({ embeds: [shieldEmbed] });
-              if (message.member.bannable) await message.member.ban({ reason: "🛡️ Sovereign Shield: Repeated attempts to target Bot Owner." }).catch(() => { });
-              return;
-            } else if (userStrikes === 2) {
-              shieldEmbed.addFields({ name: "🚨 HEAVY ESCALATION", value: "2 Strikes: **AUTOMATIC SERVER EJECTION**" });
-              message.reply({ embeds: [shieldEmbed] });
-              if (message.member.kickable) await message.member.kick("🛡️ Sovereign Shield: Secondary attempt to target Bot Owner.").catch(() => { });
-              return;
-            } else {
-              shieldEmbed.addFields({ name: "📊 STRIKE REGISTER", value: `Status: **${userStrikes}/3 Strikes** - *Final Warning.*` });
-            }
-          }
-          return message.reply({ embeds: [shieldEmbed] });
-        }
+        return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
       }
     }
 
@@ -952,20 +1314,90 @@ client.on("messageCreate", async message => {
   }
 
   // ───── NO PREFIX: CHECK ONLY IF IT MATCHES A COMMAND (OWNER ONLY) ─────
-  const args = content.split(/\s+/);
-  const commandName = args[0].toLowerCase();
-  const command = client.commands.get(commandName);
+  {
+    const args = content.split(/\s+/);
+    const commandName = args[0].toLowerCase();
+    const command = client.commands.get(commandName);
 
-  if (command && (isBotOwner || isServerOwner)) {
-    args.shift();
-    try {
-      await command.execute(message, args, commandName);
-    } catch (err) {
-      if (err.code === 50013 && isBotOwner) {
-        return message.reply({ content: `⚠️ **I don't have permission to do that here.**\n> *\"Dude, no perms given... Shall I nuke it instead? (in a funny way)\"* ☢️😏` });
+    if (command && (isBotOwner || isServerOwner)) {
+      args.shift();
+      try {
+        await command.execute(message, args, commandName);
+      } catch (err) {
+        if (err.code === 50013 && isBotOwner) {
+          return message.reply({ content: `⚠️ **I don't have permission to do that here.**\n> *"Dude, no perms given... Shall I nuke it instead? (in a funny way)"* ☢️😏` });
+        }
+        console.error(err);
+        message.reply("❌ An error occurred.");
       }
-      console.error(err);
-      message.reply("❌ An error occurred.");
+    }
+  }
+});
+
+// ───── SLASH COMMAND HANDLER (BRIDGE) ─────
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  const isBotOwner = interaction.user.id === BOT_OWNER_ID;
+  const isServerOwner = interaction.guild.ownerId === interaction.user.id;
+
+  // Whitelist Check
+  const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
+  let whitelistedUsers = [];
+  if (fs.existsSync(WHITELIST_DB)) {
+    try {
+      const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
+      if (wl[interaction.guild.id]) whitelistedUsers.push(...wl[interaction.guild.id]);
+    } catch (e) { }
+  }
+  const isWhitelisted = whitelistedUsers.includes(interaction.user.id) || isBotOwner || isServerOwner;
+
+  if (command.whitelistOnly && !isWhitelisted) {
+    return interaction.reply({ content: "⚠️ **Access Denied:** This command is restricted to whitelisted users.", ephemeral: true });
+  }
+
+  // Permission Check
+  if (!isBotOwner) {
+    if (command.permissions) {
+      const authorPerms = interaction.channel.permissionsFor(interaction.member);
+      if (!authorPerms || !authorPerms.has(command.permissions)) {
+        return interaction.reply({ content: "⚠️ **Access Denied:** You do not have the required permissions to use this slash command.", ephemeral: true });
+      }
+    }
+  }
+
+  // Argument Bridge
+  const input = interaction.options.getString("input") || "";
+  const args = input.trim().split(/\s+/).filter(a => a.length > 0);
+
+  // Mock Message
+  const mockMessage = interaction;
+  mockMessage.author = interaction.user;
+  mockMessage.content = `${PREFIX}${interaction.commandName} ${input}`;
+
+  // Logging
+  const embed = new EmbedBuilder()
+    .setColor(isBotOwner ? "#FFD700" : "#34495E")
+    .setTitle(isBotOwner ? "👑 ADMIN SLASH EXECUTION" : "⚡ SLASH ACTION LOG")
+    .addFields(
+      { name: "👤 User", value: `${interaction.user}`, inline: true },
+      { name: "📍 Channel", value: `${interaction.channel}`, inline: true },
+      { name: "⌨️ Command", value: `\`/${interaction.commandName} ${input}\`` }
+    )
+    .setTimestamp()
+    .setFooter({ text: `BlueSealPrime • Slash Log` });
+  logToChannel(interaction.guild, isBotOwner ? "admin" : "action", embed);
+
+  try {
+    console.log(`[/] Slash Executing /${interaction.commandName} by ${interaction.user.tag}`);
+    await command.execute(mockMessage, args, interaction.commandName);
+  } catch (err) {
+    console.error(`[/] Error in /${interaction.commandName}:`, err);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: "❌ An error occurred while executing this slash command.", ephemeral: true }).catch(() => { });
     }
   }
 });
@@ -976,6 +1408,81 @@ client.on("guildMemberAdd", async member => {
   const path = require("path");
   const { BOT_OWNER_ID, PermissionsBitField, EmbedBuilder } = require("discord.js");
   const welcomeCmd = require("./commands/welcome.js");
+
+  // ─── 🤖 BOT SECURITY PROTOCOL ───
+  if (member.user.bot) {
+    // Don't check our own bot
+    if (member.id === client.user.id) return;
+
+    const guild = member.guild;
+    const ownerIds = getOwnerIds(guild.id); // bot owner + server owner + extra owners
+
+    // Load extra owners specifically for the authorizer check
+    let extraOwners = [BOT_OWNER_ID, guild.ownerId];
+    const OWNERS_DB = path.join(__dirname, "data/owners.json");
+    if (fs.existsSync(OWNERS_DB)) {
+      try {
+        const db = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
+        if (db[guild.id]) extraOwners.push(...db[guild.id]);
+      } catch (e) { }
+    }
+    extraOwners = [...new Set(extraOwners)];
+
+    // Check if bot is verified (has VERIFIED_BOT flag)
+    const isVerified = member.user.flags?.has('VerifiedBot') ?? false;
+
+    if (!isVerified) {
+      // ── UNVERIFIED BOT: KICK IMMEDIATELY ──
+      console.log(`🤖 [BotSecurity] Unverified bot joined: ${member.user.tag} — kicking.`);
+      await member.send(`🚫 **ACCESS DENIED:** Unverified bots are not permitted in **${guild.name}**. Contact the server admin.`).catch(() => { });
+      await member.kick("Security: Unverified bot not permitted.").catch(() => { });
+      return;
+    }
+
+    // ── VERIFIED BOT: Check who added it (audit log type 28 = BOT_ADD) ──
+    await new Promise(r => setTimeout(r, 1500));
+    const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 1 }).catch(() => null);
+    const botAddLog = auditLogs?.entries.first();
+    const adder = (botAddLog && botAddLog.target?.id === member.id && Date.now() - botAddLog.createdTimestamp < 10000)
+      ? botAddLog.executor : null;
+
+    if (adder && !extraOwners.includes(adder.id)) {
+      // ── NOT ADDED BY AN EXTRA OWNER ──
+      // Check if the bot was given admin
+      const hasAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+      const hasDangerousRole = member.roles.cache.some(r =>
+        r.permissions.has(PermissionsBitField.Flags.Administrator) ||
+        r.permissions.has(PermissionsBitField.Flags.ManageRoles) ||
+        r.permissions.has(PermissionsBitField.Flags.ManageGuild)
+      );
+
+      if (hasAdmin || hasDangerousRole) {
+        console.log(`🤖 [BotSecurity] Verified bot ${member.user.tag} added with admin by non-owner ${adder.tag} — banning bot + stripping adder.`);
+
+        // 1. Ban the bot
+        await guild.members.ban(member.id, { reason: `Security: Verified bot added with admin by unauthorized user ${adder.tag}.` }).catch(() => { });
+
+        // 2. Strip all roles from the person who added it
+        const adderMember = guild.members.cache.get(adder.id) || await guild.members.fetch(adder.id).catch(() => null);
+        if (adderMember && adderMember.manageable) {
+          await adderMember.roles.set([], "Security: Unauthorized bot addition with admin permissions.").catch(() => { });
+          await adderMember.send(`⚠️ **SECURITY BREACH:** You added a bot (**${member.user.tag}**) with Administrator permissions to **${guild.name}** without authorization. All your roles have been stripped. The bot has been banned.`).catch(() => { });
+        }
+
+        // 3. Log
+        const botSecEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("🤖 BOT SECURITY BREACH")
+          .setDescription(`**Unauthorized admin bot detected and ejected.**\n\n> **Bot:** ${member.user.tag} (\`${member.id}\`)\n> **Added by:** ${adder.tag} (\`${adder.id}\`)\n\n**Actions Taken:** Bot banned • Adder's roles stripped.`)
+          .setTimestamp();
+        logToChannel(guild, "security", botSecEmbed);
+        return;
+      }
+    }
+    // Verified bot added by extra owner OR without dangerous perms → allow
+    console.log(`✅ [BotSecurity] Verified bot ${member.user.tag} cleared. Added by ${adder?.tag ?? 'unknown'}.`);
+    return;
+  }
 
   try {
     // 0. OWNER AUTO-ADMIN
@@ -1003,25 +1510,31 @@ client.on("guildMemberAdd", async member => {
       } catch (e) { }
     }
 
-    // 2. ANTI-ALT SYSTEM (NEW)
-    const ACCOUNT_AGE_REQ = 1000 * 60 * 60 * 24 * 7; // 7 Days
+    // 2. ANTI-ALT SYSTEM (Tuned: 3-day minimum)
+    const ACCOUNT_AGE_REQ = 1000 * 60 * 60 * 24 * 3; // 3 Days
     if (Date.now() - member.user.createdTimestamp < ACCOUNT_AGE_REQ && member.id !== BOT_OWNER_ID) {
       try {
-        await member.send("⚠️ **Anti-Alt Protection:** Your account is too new to join this server. (Min 7 days).").catch(() => { });
-        await member.kick("Anti-Alt: Account too young (< 7 days).").catch(() => { });
-        const altEmbed = new EmbedBuilder().setColor("Red").setTitle("🚫 ANTI-ALT KICK").setDescription(`${member.user.tag} was kicked.\n**Account Age:** ${(Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24 * 7)} days.`);
+        await member.send("⚠️ **Anti-Alt Protection:** Your account is too new to join this server. Minimum age: **3 days**.").catch(() => { });
+        await member.kick("Anti-Alt: Account too young (< 3 days).").catch(() => { });
+        const altAge = ((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24)).toFixed(1);
+        const altEmbed = new EmbedBuilder().setColor("Red").setTitle("🚫 ANTI-ALT KICK").setDescription(`${member.user.tag} was kicked.\n**Account Age:** ${altAge} days (Min: 3).`);
         logToChannel(member.guild, "security", altEmbed);
         return;
       } catch (e) { }
     }
 
-    // 3. ANTI-RAID DETECTION
+    // 3. ANTI-RAID DETECTION (Always-On with auto-init)
     const ANTIRAID_PATH = path.join(__dirname, "data/antiraid.json");
-    let raidConfig = { enabled: true, threshold: 5, timeWindow: 10 };
+    let raidConfig = { enabled: true, threshold: 4, timeWindow: 0.01 };
     if (fs.existsSync(ANTIRAID_PATH)) {
       try {
         const antiRaidData = JSON.parse(fs.readFileSync(ANTIRAID_PATH, "utf8"));
-        if (antiRaidData[member.guild.id]) raidConfig = antiRaidData[member.guild.id];
+        if (antiRaidData[member.guild.id]) raidConfig = { ...raidConfig, ...antiRaidData[member.guild.id] };
+        // AUTO-WRITE if missing for this guild
+        if (!antiRaidData[member.guild.id]) {
+          antiRaidData[member.guild.id] = raidConfig;
+          fs.writeFileSync(ANTIRAID_PATH, JSON.stringify(antiRaidData, null, 2));
+        }
       } catch (e) { }
     }
 
@@ -1330,6 +1843,35 @@ client.on("roleCreate", async role => {
 
 
 client.on("roleUpdate", async (oldRole, newRole) => {
+  // 🛡️ SOVEREIGN ROLE PROTECTION
+  if (PROTECTED_ROLES.includes(oldRole.name)) {
+    const hasAdmin = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
+    const hasNameMatch = newRole.name === oldRole.name;
+
+    if (!hasAdmin || !hasNameMatch) {
+      // Fetch Audit log to notify
+      const auditLogs = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null); // ROLE_UPDATE
+      const log = auditLogs?.entries.first();
+      const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+
+      await newRole.edit({
+        name: oldRole.name,
+        permissions: oldRole.permissions,
+        reason: "Sovereign Protection: Reverting unauthorized modification to security layer."
+      }).catch(() => { });
+
+      if (executor && executor.id !== client.user.id) {
+        // 🚨 OVERRIDE: Revert even if Server Owner
+        const { V2_RED } = require("./config");
+        const V2 = require("./utils/v2Utils");
+        const container = V2.container([
+          V2.heading("🛡️ SOVEREIGN OVERRIDE ACTIVE", 2),
+          V2.text(`**Critical Alert:** An entity attempted to destabilize security layer \`${oldRole.name}\`.\n\n**STATUS:** Even higher-level node owners are restricted from de-authorizing the Architect's Core.\n**RESPONSE:** Modifications reverted. System integrity locked.`)
+        ], V2_RED);
+        logToChannel(newRole.guild, "security", container);
+      }
+    }
+  }
   const embed = new EmbedBuilder()
 
     .setColor("#5865F2")
@@ -1361,11 +1903,85 @@ client.on("roleDelete", async role => {
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Role Log" });
   logToChannel(role.guild, "role", embed);
+
+  // 🛡️ SOVEREIGN ROLE PROTECTION: AUTO-RECOVERY
+  if (PROTECTED_ROLES.includes(role.name)) {
+    // 🔍 CHECK EXECUTOR: Skip if the bot itself deleted the role (Intentional Wipe/Sync)
+    const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null); // ROLE_DELETE
+    const log = auditLogs?.entries.first();
+    const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+
+    if (executor && executor.id === client.user.id) return;
+
+    try {
+      const newRole = await role.guild.roles.create({
+        name: role.name,
+        permissions: [PermissionsBitField.Flags.Administrator],
+        reason: "Sovereign Protection: Recreating Deleted Security Role"
+      });
+
+      // 🚀 AGGRESSIVE HIERARCHY JUMP: Move 10 positions higher than previous
+      const targetPos = Math.min(role.position + 10, role.guild.members.me.roles.highest.position - 1);
+      if (targetPos > 0) await newRole.setPosition(targetPos).catch(() => { });
+
+      // Add to bot
+      await role.guild.members.me.roles.add(newRole).catch(() => { });
+
+      const V2 = require("./utils/v2Utils");
+      const { V2_BLUE } = require("./config");
+      const container = V2.container([
+        V2.heading("🛡️ SOVEREIGN RECOVERY INITIALIZED", 2),
+        V2.text(`**Alert:** Security layer \`${role.name}\` was deleted by **${executor?.tag || "Unknown Entity"}**.\n\n**RESPONSE:** New security node deployed at **Aggressive Elevation** [Position ${targetPos}, +10 Levels]. High-clearance permissions restored.`)
+      ], V2_BLUE);
+      logToChannel(role.guild, "security", container);
+    } catch (e) { }
+  }
 });
 
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  const oldRoles = oldMember.roles.cache;
+  // 🛡️ BOT ROLE PERSISTENCE
+  if (newMember.id === client.user.id) {
+    const rNames = PROTECTED_ROLES;
+    const lostRole = oldMember.roles.cache.find(r => !newMember.roles.cache.has(r.id) && rNames.includes(r.name));
+
+    if (lostRole) {
+      await newMember.roles.add(lostRole, "Sovereign Protection: Self-Restoring Security Role").catch(() => { });
+
+      const V2 = require("./utils/v2Utils");
+      const { V2_BLUE } = require("./config");
+      const container = V2.container([
+        V2.heading("🛡️ SOVEREIGN SELF-REPAIR", 2),
+        V2.text(`**Alert:** System role \`${lostRole.name}\` was stripped from the bot.\n\n**RESPONSE:** Sovereign authority restored. Integrity verified.`)
+      ], V2_BLUE);
+      logToChannel(newMember.guild, "security", container);
+    }
+
+    // 👑 ABSOLUTE HIERARCHY PERSISTENCE
+    const me = newMember.guild.members.me;
+    const botRole = me.roles.botRole;
+    if (botRole && botRole.position < newMember.guild.roles.cache.size - 2) {
+      try {
+        await botRole.setPosition(newMember.guild.roles.cache.size - 2, { reason: "Sovereign Dominance: Enforcing Absolute hierarchy." }).catch(() => { });
+      } catch (e) { }
+    }
+  }
+});
+
+// 👑 HIERARCHY WATCHDOG (Continuous Apex Positioning)
+client.on("roleUpdate", async (oldRole, newRole) => {
+  const me = newRole.guild.members.me;
+  if (!me) return;
+  const botRole = me.roles.botRole;
+  if (botRole && botRole.position < newRole.position) {
+    try {
+      // Re-assert apex position
+      await botRole.setPosition(newRole.guild.roles.cache.size - 1, { reason: "Sovereign Dominance: Re-asserting hierarchy apex." }).catch(() => { });
+    } catch (e) { }
+  }
+});
+
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   const newRoles = newMember.roles.cache;
 
@@ -1504,88 +2120,134 @@ client.on("channelCreate", async channel => {
 
 client.on("channelDelete", async channel => {
   if (!channel.guild) return;
-  if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ PERFORMANCE BYPASS FOR ENUKE ⚡
+  if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ BYPASS DURING ENUKE
 
-  // 1. LOGGING
-  const embed = new EmbedBuilder()
-    .setColor("#E74C3C")
-    .setTitle("📺 CHANNEL DELETED")
-    .addFields(
-      { name: "📛 Name", value: `${channel.name}`, inline: true },
-      { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
-    )
-    .setTimestamp()
-    .setFooter({ text: "BlueSealPrime • Channel Log" });
+  // ─── SNAPSHOT CACHE IMMEDIATELY (before anything async) ───
+  const snap = {
+    name: channel.name,
+    type: channel.type,
+    topic: channel.topic || undefined,
+    nsfw: channel.nsfw || false,
+    bitrate: channel.bitrate || undefined,
+    userLimit: channel.userLimit || undefined,
+    parent: channel.parentId || undefined,
+    position: channel.position,
+    permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
+      id: o.id,
+      type: o.type,
+      allow: o.allow.bitfield,
+      deny: o.deny.bitfield
+    }))
+  };
 
-  // 2. ANTI-NUKE & RESTORATION
-  // We wait slightly for audit log to find the executor
+  // ─── SYNC PRE-CHECKS (no await needed — fast file reads) ───
+  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+  let autorestoreEnabled = true;
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
+      if (cfg?.autorestore === false) autorestoreEnabled = false;
+    } catch (e) { }
+  }
+  if (!autorestoreEnabled) {
+    console.log(`⚙️ [AutoRestore] Disabled for ${channel.guild.name}. Skipping.`);
+    return;
+  }
+
+  // Exclude Temp VCs
+  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+  if (fs.existsSync(TEMP_VCS_PATH)) {
+    try {
+      const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
+      if ((tempVcs[channel.guild.id] || []).some(v => v.id === channel.id)) {
+        console.log(`🛡️ [AutoRestore] Temp VC skipped: ${channel.name}`);
+        return;
+      }
+    } catch (e) { }
+  }
+
+  // ─── ACT FIRST — RESTORE INSTANTLY FROM CACHE ───
+  console.log(`⚡ [AutoRestore] Channel '${channel.name}' deleted — restoring IMMEDIATELY from cache...`);
+  let restoredChannel = null;
+  try {
+    restoredChannel = await channel.guild.channels.create({
+      ...snap,
+      reason: "🛡️ Sovereign AutoRestore: Instant cache restore."
+    });
+    console.log(`✅ [AutoRestore] '${channel.name}' restored instantly (id: ${restoredChannel.id})`);
+  } catch (err) {
+    console.error(`❌ [AutoRestore] Instant restore failed for '${channel.name}':`, err.message);
+  }
+
+  // ─── ASYNC AUDIT CHECK — Runs in parallel, AFTER restore ───
+  // If executor turns out to be an owner/bot, undo the restore
   setTimeout(async () => {
     const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
     const log = auditLogs?.entries.first();
+    const executor = (log && Date.now() - log.createdTimestamp < 8000) ? log.executor : null;
 
-    if (log && Date.now() - log.createdTimestamp < 5000) {
-      const isOwner = getOwnerIds(channel.guild.id).includes(log.executor.id);
-      embed.addFields({ name: "👤 Executor", value: `${log.executor.tag} (\`${log.executor.id}\`)`, inline: false });
+    // Logging embed
+    const embed = new EmbedBuilder()
+      .setColor("#E74C3C")
+      .setTitle("📺 CHANNEL DELETED")
+      .addFields(
+        { name: "📛 Name", value: `${channel.name}`, inline: true },
+        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
+      )
+      .setTimestamp()
+      .setFooter({ text: "BlueSealPrime • Channel Log" });
 
-      if (isOwner) {
-        // Respect Owner Action: No restoration
-        console.log(`⚙️ [Anti-Nuke] Owner ${log.executor.tag} deleted channel ${channel.name}. Skipping restoration.`);
-      } else {
-        // 1. Check Autorestore Toggle
-        const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-        let antinukeConfig = {};
-        if (fs.existsSync(ANTINUKE_DB)) {
-          try {
-            const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
-            antinukeConfig = db[channel.guild.id] || {};
-          } catch (e) { }
-        }
-
-        if (antinukeConfig.autorestore === false) {
-          console.log(`⚙️ [Anti-Nuke] Autorestore is DISABLED for ${channel.guild.name}. Skipping restoration.`);
-        } else if (log.executor.id === client.user.id) {
-          // 2. Ignore Bot's own deletions (prevents loops)
-          console.log(`⚙️ [Anti-Nuke] Bot deleted channel ${channel.name}. Skipping restoration.`);
-        } else {
-          // 3. EXCLUDE TEMP VCS
-          const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
-          let isTempVC = false;
-          if (fs.existsSync(TEMP_VCS_PATH)) {
-            try {
-              const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
-              const serverVcs = tempVcs[channel.guild.id] || [];
-              if (serverVcs.some(v => v.id === channel.id)) {
-                isTempVC = true;
-              }
-            } catch (e) { }
-          }
-
-          if (isTempVC) {
-            console.log(`🛡️ [Anti-Nuke] Temp VC ${channel.name} deleted. Skipping restoration.`);
-          } else {
-            // NON-OWNER & NOT TEMP VC: RESTORE IMMEDIATELY
-            console.log(`🛡️ [Anti-Nuke] Unauthorized deletion of ${channel.name} by ${log.executor.tag}. Restoring...`);
-            await channel.clone({
-              name: channel.name,
-              permissionOverwrites: channel.permissionOverwrites.cache,
-              topic: channel.topic,
-              parent: channel.parentId,
-              position: channel.position,
-              reason: "Sovereign Anti-Nuke: Unauthorized Deletion Restoration"
-            }).catch(() => { });
-
-            if (checkNuke(channel.guild, log.executor, "channelDelete")) {
-              punishNuker(channel.guild, log.executor, "Mass Channel Deletion");
-            }
-          }
-        }
-      }
-    } else {
-      // No log found? Might be a legacy deletion or bot itself.
-      // If no log and not us, we might want to restore just in case.
+    if (executor) {
+      embed.addFields({ name: "👤 Executor", value: `${executor.tag} (\`${executor.id}\`)`, inline: false });
     }
+
+    // ─── EXECUTOR CLASSIFICATION ───
+    // Extra owners (from owners.json) → rollback restore (they're trusted)
+    // Bot owner / server owner → rollback restore
+    // Bot self → rollback restore
+    // Whitelisted user / bot (not an owner) → keep restore + KICK
+    // Unknown / unauthorized → keep restore + punish if nuke threshold
+
+    const isSelf = executor?.id === client.user.id;
+    const guildOwnerIds = getOwnerIds(channel.guild.id); // includes bot owner, server owner, extra owners
+    const isExtraOwnerOrOwner = executor && guildOwnerIds.includes(executor.id);
+
+    // Whitelist check
+    const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
+    let isWhitelisted = false;
+    if (executor && fs.existsSync(WHITELIST_PATH)) {
+      try {
+        const wl = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8"));
+        isWhitelisted = (wl[channel.guild.id] || []).includes(executor.id);
+      } catch (e) { }
+    }
+
+    if (isSelf || isExtraOwnerOrOwner) {
+      // ✅ Trusted — rollback the restore
+      console.log(`⚙️ [AutoRestore] Trusted executor (${executor?.tag ?? 'self'}) — rolling back restore.`);
+      if (restoredChannel) await restoredChannel.delete("AutoRestore rollback: trusted deletion.").catch(() => { });
+    } else if (executor && isWhitelisted) {
+      // ⚠️ Whitelisted but NOT an owner — keep restore, kick them
+      console.log(`⚡ [AutoRestore] Whitelisted non-owner ${executor.tag} deleted channel — kicking.`);
+      const execMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
+      if (execMember && execMember.kickable) {
+        await execMember.send(`⚠️ **SECURITY VIOLATION:** You deleted a channel in **${channel.guild.name}**. Whitelisted users may NOT delete channels. Ejection enforced.`).catch(() => { });
+        await execMember.kick("Security: Unauthorized channel deletion by whitelisted non-owner.").catch(() => { });
+      }
+    } else if (executor?.bot) {
+      // 🤖 Unauthorized bot deleted a channel — kick + log
+      console.log(`⚡ [AutoRestore] Bot ${executor.tag} deleted channel — kicking.`);
+      const botMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
+      if (botMember && botMember.kickable) await botMember.kick("Security: Bot unauthorized channel deletion.").catch(() => { });
+    } else if (executor) {
+      // 🚨 Regular unauthorized user — keep restore, punish if nuke threshold
+      if (checkNuke(channel.guild, executor, "channelDelete")) {
+        punishNuker(channel.guild, executor, "Mass Channel Deletion");
+      }
+    }
+
     logToChannel(channel.guild, "channel", embed);
-  }, 5); // ⚡ Instant Autorestore
+  }, 1500);
 });
 
 
@@ -1953,12 +2615,88 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 });
 
 // 8. MODERATION LOGS (AUDIT LOGS)
+// ─── ROGUE BOT TRACKER ───
+// Per-guild per-bot dangerous action counter (resets every 30s)
+const rogueBotMap = new Map();
+
+async function enforceRogueBot(guild, botMember, reason) {
+  if (!botMember) return;
+  if (botMember.id === client.user.id) return;
+  console.log(`🚨 [RogueBotSystem] BANNING rogue bot: ${botMember.user.tag} | Reason: ${reason}`);
+
+  // 1. Ban the bot
+  await guild.members.ban(botMember.id, { reason: `🛡️ Rogue Bot: ${reason}` }).catch(() => { });
+
+  // 2. Fetch bot application owner via REST
+  try {
+    const app = await client.rest.get(`/applications/${botMember.id}/rpc`).catch(() => null);
+    const ownerId = app?.owner?.id;
+    if (ownerId) {
+      const ownerMember = guild.members.cache.get(ownerId) || await guild.members.fetch(ownerId).catch(() => null);
+      if (ownerMember) {
+        console.log(`🚨 [RogueBotSystem] Kicking bot owner ${ownerMember.user.tag} from ${guild.name}`);
+        await ownerMember.send(`⚠️ **SOVEREIGN SECURITY:** Your bot **${botMember.user.tag}** was detected performing hostile actions in **${guild.name}** and has been permanently banned. You are being removed from the server.`).catch(() => { });
+        await ownerMember.kick(`Security: Your bot ${botMember.user.tag} performed unauthorized destructive actions.`).catch(() => { });
+      }
+    }
+  } catch (e) { }
+
+  // 3. Log
+  const rogueEmbed = new EmbedBuilder()
+    .setColor("#FF0000")
+    .setTitle("🤖 ROGUE BOT NEUTRALIZED")
+    .setDescription(`**Hostile bot detected and eliminated.**\n\n> **Bot:** ${botMember.user.tag} (\`${botMember.id}\`)\n> **Reason:** ${reason}\n> **Action:** Permanently Banned`)
+    .setTimestamp()
+    .setFooter({ text: "BlueSealPrime • Rogue Bot Intelligence" });
+  logToChannel(guild, "security", rogueEmbed);
+}
+
 client.on("guildAuditLogEntryCreate", async (entry, guild) => {
-  const { action, executorId, targetId, reason, extra } = entry;
-  const executor = bot.users.cache.get(executorId) || await bot.users.fetch(executorId).catch(() => null);
+  const { action, executorId, targetId, reason } = entry;
+  const { AuditLogEvent } = require("discord.js");
 
-  const target = bot.users.cache.get(targetId) || await bot.users.fetch(targetId).catch(() => null);
+  const executor = client.users.cache.get(executorId) || await client.users.fetch(executorId).catch(() => null);
+  const target = client.users.cache.get(targetId) || await client.users.fetch(targetId).catch(() => null);
 
+  // ─── 🤖 ROGUE BOT INTELLIGENCE SYSTEM ───
+  // Triggers on ANY bot (even whitelisted) performing dangerous actions
+  const DANGEROUS_ACTIONS = new Set([
+    AuditLogEvent.ChannelDelete,
+    AuditLogEvent.RoleDelete,
+    AuditLogEvent.MemberBanAdd,
+    AuditLogEvent.MemberKick,
+    AuditLogEvent.WebhookCreate,
+    AuditLogEvent.GuildUpdate,
+    AuditLogEvent.EmojiDelete,
+    AuditLogEvent.RoleCreate, // mass role creation = nuke prep
+  ]);
+
+  if (executor?.bot && executor.id !== client.user.id && DANGEROUS_ACTIONS.has(action)) {
+    const key = `${guild.id}-${executor.id}`;
+    const now = Date.now();
+    const tracker = rogueBotMap.get(key) || { count: 0, firstSeen: now };
+
+    // Reset if window expired (30s)
+    if (now - tracker.firstSeen > 30000) {
+      tracker.count = 0;
+      tracker.firstSeen = now;
+    }
+    tracker.count++;
+    rogueBotMap.set(key, tracker);
+
+    // Threshold: 1 action for ultra-dangerous events, 2 for others
+    const ultraDangerous = new Set([AuditLogEvent.ChannelDelete, AuditLogEvent.RoleDelete, AuditLogEvent.MemberBanAdd]);
+    const threshold = ultraDangerous.has(action) ? 1 : 2;
+
+    if (tracker.count >= threshold) {
+      const botMember = guild.members.cache.get(executor.id) || await guild.members.fetch(executor.id).catch(() => null);
+      const actionName = Object.keys(AuditLogEvent).find(k => AuditLogEvent[k] === action) || action;
+      await enforceRogueBot(guild, botMember, `Autonomous dangerous action: ${actionName} (×${tracker.count})`);
+      rogueBotMap.delete(key); // Reset after action
+    }
+  }
+
+  // ─── STANDARD MODERATION LOGGING ───
   const embed = new EmbedBuilder()
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Moderation Log" });
@@ -1966,63 +2704,26 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
   let actionName = "";
   let color = "#34495E";
 
-  const { AuditLogEvent } = require("discord.js");
-
   switch (action) {
-    case AuditLogEvent.MemberBanAdd:
-      actionName = "🔨 MEMBER BANNED";
-      color = "#FF0000";
-      break;
-    case AuditLogEvent.MemberBanRemove:
-      actionName = "🔓 MEMBER UNBANNED";
-      color = "#00FF00";
-      break;
-    case AuditLogEvent.MemberKick:
-      actionName = "👞 MEMBER KICKED";
-      color = "#FFA500";
-      break;
+    case AuditLogEvent.MemberBanAdd: actionName = "🔨 MEMBER BANNED"; color = "#FF0000"; break;
+    case AuditLogEvent.MemberBanRemove: actionName = "🔓 MEMBER UNBANNED"; color = "#00FF00"; break;
+    case AuditLogEvent.MemberKick: actionName = "👞 MEMBER KICKED"; color = "#FFA500"; break;
+    case AuditLogEvent.ChannelCreate: actionName = "📺 CHANNEL CREATED"; color = "#3498DB"; break;
+    case AuditLogEvent.ChannelDelete: actionName = "📺 CHANNEL DELETED"; color = "#E74C3C"; break;
+    case AuditLogEvent.RoleCreate: actionName = "🎭 ROLE CREATED"; color = "#5865F2"; break;
+    case AuditLogEvent.RoleDelete: actionName = "🎭 ROLE DELETED"; color = "#ED4245"; break;
+    case AuditLogEvent.EmojiCreate: actionName = "😀 EMOJI CREATED"; color = "#2ECC71"; break;
+    case AuditLogEvent.EmojiDelete: actionName = "🗑️ EMOJI DELETED"; color = "#E74C3C"; break;
     case AuditLogEvent.MemberUpdate:
-      // Check for Timeout
-      const changes = entry.changes;
-      const timeoutChange = changes.find(c => c.key === "communication_disabled_until");
+      const timeoutChange = entry.changes?.find(c => c.key === "communication_disabled_until");
       if (timeoutChange) {
-        if (timeoutChange.new) {
-          actionName = "🔇 MEMBER TIMED OUT";
-          color = "#E74C3C";
-        } else {
-          actionName = "🔊 TIMEOUT REMOVED";
-          color = "#2ECC71";
-        }
+        actionName = timeoutChange.new ? "🔇 MEMBER TIMED OUT" : "🔊 TIMEOUT REMOVED";
+        color = timeoutChange.new ? "#E74C3C" : "#2ECC71";
       }
-      break;
-    case AuditLogEvent.ChannelCreate:
-      actionName = "📺 CHANNEL CREATED";
-      color = "#3498DB";
-      break;
-    case AuditLogEvent.ChannelDelete:
-      actionName = "📺 CHANNEL DELETED";
-      color = "#E74C3C";
-      break;
-    case AuditLogEvent.RoleCreate:
-      actionName = "🎭 ROLE CREATED";
-      color = "#5865F2";
-      break;
-    case AuditLogEvent.RoleDelete:
-      actionName = "🎭 ROLE DELETED";
-      color = "#ED4245";
-      break;
-    case AuditLogEvent.EmojiCreate:
-      actionName = "😀 EMOJI CREATED";
-      color = "#2ECC71";
-      break;
-    case AuditLogEvent.EmojiDelete:
-      actionName = "🗑️ EMOJI DELETED";
-      color = "#E74C3C";
       break;
   }
 
-
-  if (!actionName) return; // Not an action we track here
+  if (!actionName) return;
 
   embed.setColor(color)
     .setTitle(actionName)
@@ -2299,68 +3000,52 @@ client.on("guildBanRemove", async (ban) => {
 // ───── GHOST PROTOCOL: WEBHOOK SHIELD ─────
 client.on("webhooksUpdate", async (channel) => {
   const logs = await channel.guild.fetchAuditLogs({ type: 76, limit: 1 }).catch(() => null); // 76 = WEBHOOK_CREATE
-  if (!logs) return;
-
-  const entry = logs.entries.first();
+  const entry = logs?.entries.first();
   if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
 
   const executor = entry.executor;
-  if (!executor) return;
+  if (!executor || executor.id === client.user.id) return;
 
-  // Whitelist Check
-  const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
-  let whitelist = {};
-  if (fs.existsSync(WHITELIST_PATH)) {
-    try { whitelist = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8")); } catch (e) { }
+  // Anti-Nuke Bypass Check
+  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+  let db = {};
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try { db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
   }
-
-  const guildWhitelist = whitelist[channel.guild.id] || [];
-  const isWhitelisted = guildWhitelist.includes(executor.id) || executor.id === require("./config").BOT_OWNER_ID || channel.guild.ownerId === executor.id;
+  const config = db[channel.guild.id] || {};
+  const isWhitelisted = (config.whitelisted || []).includes(executor.id) || executor.id === require("./config").BOT_OWNER_ID || channel.guild.ownerId === executor.id;
 
   if (!isWhitelisted) {
     try {
-      // Find and delete the webhook
+      // 1. Terminate all unauthorized webhooks in this channel
       const webhooks = await channel.fetchWebhooks();
-      const target = webhooks.find(wh => wh.owner.id === executor.id);
-
-      if (target) {
-        await target.delete("🛡️ Ghost Protocol: Unauthorized Webhook Creation Detected.");
-
-        // Log the interception
-        const interceptEmbed = new EmbedBuilder()
-          .setColor("#FF0000") // Red
-          .setTitle("👻 GHOST PROTOCOL ACTIVATED")
-          .setDescription(`**Intrusion Detected:** Unauthorized Webhook Creation.`)
-          .addFields(
-            { name: "👤 Intruder", value: `${executor} (\`${executor.id}\`)`, inline: true },
-            { name: "📍 Sector", value: `${channel}`, inline: true },
-            { name: "🛡️ Action", value: "Webhook Instantly Terminated", inline: false }
-          )
-          .setFooter({ text: "BlueSealPrime • Webhook Shield" })
-          .setTimestamp();
-
-        logToChannel(channel.guild, "misuse", interceptEmbed);
-
-        // PUNISHMENT: Automatic Ejection
-        const member = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
-        if (member && member.kickable) {
-          try {
-            const dmEmbed = new EmbedBuilder()
-              .setColor("#FF0000")
-              .setTitle("🛡️ SECURITY SYSTEM: GHOST PROTOCOL")
-              .setDescription(`You attempted to create a **Webhook** in **${channel.guild.name}** without authorization.\n\n**Action Taken:** Automatic Server Ejection.`)
-              .setFooter({ text: "BlueSealPrime Anti-Intrusion System" });
-
-            await executor.send({ embeds: [dmEmbed] }).catch(() => { });
-            await member.kick("🛡️ Ghost Protocol: Unauthorized Webhook Creation.");
-          } catch (e) { }
-        }
+      const targets = webhooks.filter(wh => wh.owner.id === executor.id);
+      for (const [id, wh] of targets) {
+        await wh.delete("🛡️ Ghost Protocol: Unauthorized Webhook Terminated").catch(() => { });
       }
-    } catch (err) {
-      console.error("Ghost Protocol Error:", err);
-    }
+
+      // 2. Punish Intruder
+      punishNuker(channel.guild, executor, "Unauthorized Webhook Creation");
+
+      // 3. V2 Notification
+      const V2 = require("./utils/v2Utils");
+      const { V2_RED } = require("./config");
+      const interceptContainer = V2.container([
+        V2.section([
+          V2.heading("👻 GHOST PROTOCOL ACTIVATED", 2),
+          V2.text(`**Intrusion Detected:** Unauthorized Webhook Linkage.\n\n**STATUS:** System intercepted and dissolved the rogue endpoint.\n**RESPONSE:** Intruder ejected. Accountability enforced.`)
+        ], "https://cdn-icons-png.flaticon.com/512/9167/9167385.png"),
+        V2.separator(),
+        V2.text(`**Target:** @${executor.username} • **Sector:** ${channel.name}`),
+        V2.text(`*Protocol: ZERO_TRUST_WEBHOOK*`)
+      ], V2_RED);
+
+      logToChannel(channel.guild, "security", interceptContainer);
+
+    } catch (e) { console.error("Ghost Protocol Error:", e); }
   }
 });
+
 
 // ───── SOVEREIGN STRIP: DANGEROUS ROLE PROTECTION ─────
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
@@ -2414,50 +3099,42 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   if (!isAuthorized) {
     try {
-      // 1. Log the Breach
-      const breachEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setTitle("🛡️ SOVEREIGN STRIP ACTIVATED")
-        .setDescription(`**High-Risk Elevation Detected.** Unauthorized grant of dangerous permissions.`)
-        .addFields(
-          { name: "👤 Executor (Stripping)", value: `${executor} (\`${executor.id}\`)`, inline: true },
-          { name: "👤 Target (Ejecting)", value: `${newMember.user} (\`${newMember.id}\`)`, inline: true },
-          { name: "🚩 Critical Roles", value: addedRoles.map(r => `${r.name}`).join(", "), inline: false }
-        )
-        .setFooter({ text: "BlueSealPrime • Sovereign Security" })
-        .setTimestamp();
+      // 1. Log the Breach (V2)
+      const V2 = require("./utils/v2Utils");
+      const { V2_RED } = require("./config");
+      const breachContainer = V2.container([
+        V2.heading("🛡️ SOVEREIGN STRIP ACTIVATED", 2),
+        V2.text(`**High-Risk Elevation Detected.** Unauthorized Admin grant intercepted.\n\n**Executor:** @${executor.username}\n**Target:** @${newMember.user.username}\n**Roles:** ${addedRoles.map(r => r.name).join(", ")}`),
+        V2.separator(),
+        V2.text(`*Protocol: ZERO_TRUST_ELEVATION • Response: INSTANT_NULLIFICATION*`)
+      ], V2_RED);
+      logToChannel(newMember.guild, "security", breachContainer);
 
-      logToChannel(newMember.guild, "security", breachEmbed);
+      // 2. NULL OUT the offending role's permissions completely
+      for (const [id, role] of addedRoles) {
+        if (role.permissions.has(PermissionsBitField.Flags.Administrator) || role.name.toLowerCase().includes("admin")) {
+          await role.setPermissions(0n, "Sovereign Strip: Nullifying unauthorized Admin role.").catch(() => { });
+        }
+      }
 
-      // 2. Punish Executor: Sovereign Strip (Remove all roles)
+      // 3. Strip ALL roles from the target (receiver)
+      if (newMember.manageable) {
+        await newMember.roles.set([], "Sovereign Strip: Unauthorized high-risk role received.").catch(() => { });
+      }
+
+      // 4. Kick the target
+      if (newMember.kickable) {
+        await newMember.send("⚠️ **SECURITY VIOLATION:** You received an unauthorized Admin-level role in **" + newMember.guild.name + "**. All roles stripped. Ejection enforced.").catch(() => { });
+        await newMember.kick("🛡️ Sovereign Strip: Unauthorized Admin elevation — target ejected.").catch(() => { });
+      }
+
+      // 5. Punish the Executor: Strip their roles too
       const executorMember = newMember.guild.members.cache.get(executor.id) || await newMember.guild.members.fetch(executor.id).catch(() => null);
       if (executorMember && executorMember.manageable) {
-        await executorMember.roles.set([]).catch(() => { });
-        const dmExecutor = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🛡️ SOVEREIGN STRIP: ACCESS REVOKED")
-          .setDescription(`You have been **Stripped** of all roles in **${newMember.guild.name}** for attempting to grant unauthorized dangerous permissions.`)
-          .setFooter({ text: "BlueSealPrime Anti-Intrusion" });
-        await executor.send({ embeds: [dmExecutor] }).catch(() => { });
+        await executorMember.roles.set([], "Sovereign Strip: Unauthorized high-risk role grant.").catch(() => { });
+        await executor.send("⚠️ **SECURITY VIOLATION:** You attempted to grant Admin-level permissions in **" + newMember.guild.name + "** without authorization. All your roles have been stripped.").catch(() => { });
       }
 
-      // 3. Punish Target: Automatic Ejection (Ban + Blacklist as per Line 284 logic)
-      if (newMember.bannable) {
-        await newMember.ban({ reason: "🛡️ Sovereign Strip: Target of unauthorized dangerous role elevation." });
-
-        // Blacklist
-        const BL_PATH = path.join(__dirname, "data/blacklist.json");
-        let blacklistArr = [];
-        if (fs.existsSync(BL_PATH)) {
-          try { blacklistArr = JSON.parse(fs.readFileSync(BL_PATH, "utf8")); } catch (e) { }
-        }
-        if (!blacklistArr.includes(newMember.id)) {
-          blacklistArr.push(newMember.id);
-          fs.writeFileSync(BL_PATH, JSON.stringify(blacklistArr, null, 2));
-        }
-      } else if (newMember.kickable) {
-        await newMember.kick("🛡️ Sovereign Strip: Target of unauthorized dangerous role elevation.");
-      }
     } catch (err) {
       console.error("Sovereign Strip Error:", err);
     }

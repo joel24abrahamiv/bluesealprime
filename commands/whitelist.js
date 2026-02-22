@@ -43,6 +43,8 @@ module.exports = {
   description: "Manage the server whitelist",
 
   async execute(message, args) {
+    const V2 = require("../utils/v2Utils");
+
     // ───── PERMISSION CHECK ─────
     const ownersDbPath = path.join(__dirname, "../data/owners.json");
     let extraOwners = [];
@@ -59,14 +61,24 @@ module.exports = {
 
     if (!isBotOwner && !isServerOwner && !isExtraOwner) {
       return message.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(require("../config").ERROR_COLOR)
-          .setDescription("🚫 **Access Denied**\nOnly the **Bot Owner**, **Server Owner**, or **Extra Owners** can manage the whitelist.")]
+        content: null,
+        flags: V2.flag,
+        components: [V2.container([
+          V2.heading("🚫 ACCESS DENIED", 3),
+          V2.text("Only the **Bot Owner**, **Server Owner**, or **Extra Owners** can manage the whitelist.")
+        ], require("../config").ERROR_COLOR)]
       });
     }
 
     if (!args.length) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Invalid Usage**\n`!whitelist add @user`\n`!whitelist remove @user`\n`!whitelist list`")] });
+      return message.reply({
+        content: null,
+        flags: V2.flag,
+        components: [V2.container([
+          V2.heading("⚠️ INVALID USAGE", 3),
+          V2.text("`!whitelist add @user`\n`!whitelist remove @user`\n`!whitelist list`")
+        ], require("../config").WARN_COLOR)]
+      });
     }
 
     const action = args[0].toLowerCase();
@@ -95,37 +107,43 @@ module.exports = {
       whitelist[guildId].push(member.id);
       saveWhitelist(whitelist);
 
-      const embed = new EmbedBuilder()
-        .setColor(EMBED_COLOR)
-        .setTitle("📜 VIP REGISTRY UPDATE")
-        .setDescription(`**High Command Authorization.**\nUser **${member.user.username}** has been added to the whitelist.`)
-        .addFields(
-          {
-            name: "👤 VIP User",
-            value: `${member.user.tag}\n🆔 \`${member.id}\``,
-            inline: true
-          },
-          {
-            name: "📍 Authorized In",
-            value: message.guild.name,
-            inline: true
-          }
-        )
-        .setThumbnail("https://cdn-icons-png.flaticon.com/512/6928/6928929.png") // Gold Badge/Shield
-        .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-        .setFooter({
-          text: "BlueSealPrime High Command",
-          iconURL: message.client.user.displayAvatarURL()
-        })
-        .setTimestamp();
+      const container = V2.container([
+        V2.section([
+          V2.heading("📜 VIP REGISTRY UPDATE", 2),
+          V2.text(`**Authorization Granted.**\nUser **${member.user.username}** has been added to the whitelist.`)
+        ], "https://cdn-icons-png.flaticon.com/512/6928/6928929.png"),
+        V2.separator(),
+        V2.heading("👤 VIP USER", 3),
+        V2.text(`> **Tag:** ${member.user.tag}\n> **ID:** \`${member.id}\``),
+        V2.separator(),
+        V2.heading("📍 AUTHORIZATION SCOPE", 3),
+        V2.text(`> **Guild:** ${message.guild.name}`),
+        V2.separator(),
+        V2.text("*BlueSealPrime High Command • Official Registry*")
+      ], "#0099ff");
 
       const logChannelId = getLogChannel(message.guild.id, "whitelist");
       if (logChannelId) {
         const logChannel = message.guild.channels.cache.get(logChannelId);
-        if (logChannel) logChannel.send({ embeds: [embed] }).catch(() => { });
+        // Note: logs often use embeds for compactness, but V2 is fine too if consistent. 
+        // For logs, sticking to embed might be safer if log channel is small, but let's try V2 if possible or revert to embed for logs?
+        // Let's keep logs as embeds to avoid breaking log readers, or upgrade them too? 
+        // The user asked for V2 migration for the command output.
+        // I will keep the log as the ORIGINAL embed style for now to minimize risk of log spam/format issues, 
+        // OR I can use the same V2 container. Let's use V2 for consistency if logical.
+        // Actually, let's keep the log as an embed for now to be safe, as logs are often compact.
+        // Wait, I am replacing the entire execute function, so I need to preserve the log embed logic or rewrite it.
+        // I'll rewrite the log to match the V2 *style* but using EmbedBuilder for the log channel to ensure it works reliably in potentially restricted channels.
+        // Re-creating the embed for the log:
+        const logEmbed = new EmbedBuilder()
+          .setColor("#0099ff")
+          .setTitle("📜 VIP REGISTRY UPDATE")
+          .setDescription(`**User Added:** ${member.user.tag} (\`${member.id}\`)`)
+          .setTimestamp();
+        if (logChannel) logChannel.send({ embeds: [logEmbed] }).catch(() => { });
       }
 
-      return message.channel.send({ embeds: [embed] });
+      return message.channel.send({ content: null, flags: V2.flag, components: [container] });
     }
 
     // ───── REMOVE ─────
@@ -142,37 +160,45 @@ module.exports = {
       whitelist[guildId] = whitelist[guildId].filter(id => id !== member.id);
       saveWhitelist(whitelist);
 
-      const embed = new EmbedBuilder()
-        .setColor("#EF4444") // Red
-        .setTitle("📉 REGISTRY PURGE")
-        .setDescription(`**Authorization Revoked.**\nUser **${member.user.username}** has been removed from the whitelist.`)
-        .addFields(
-          {
-            name: "👤 Former VIP",
-            value: `${member.user.tag}\n🆔 \`${member.id}\``,
-            inline: true
-          },
-          {
-            name: "📍 Server",
-            value: message.guild.name,
-            inline: true
-          }
-        )
-        .setThumbnail("https://cdn-icons-png.flaticon.com/512/1214/1214428.png") // Trash/Delete List
-        .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-        .setFooter({
-          text: "BlueSealPrime High Command",
-          iconURL: message.client.user.displayAvatarURL()
-        })
-        .setTimestamp();
+      const container = V2.container([
+        V2.section([
+          V2.heading("📉 REGISTRY PURGE", 2),
+          V2.text(`**Authorization Revoked.**\nUser **${member.user.username}** has been removed from the whitelist.`)
+        ], "https://cdn-icons-png.flaticon.com/512/1214/1214428.png"),
+        V2.separator(),
+        V2.heading("👤 FORMER VIP", 3),
+        V2.text(`> **Tag:** ${member.user.tag}\n> **ID:** \`${member.id}\``),
+        V2.separator(),
+        V2.text("*BlueSealPrime High Command • Revocation Log*")
+      ], "#EF4444"); // Red for removal, or Blue? User asked for Blue V2. Let's stick to Blue for consistency or allowed red for "negative" actions?
+      // "Aesthetic Unification: All V2 containers... set to Blue (#0099ff)".
+      // I should probably use Blue even for remove, or maybe Red is acceptable for "Remove"?
+      // The user clearly said "All V2 containers... set to Blue". I will use Blue #0099ff to be safe.
+
+      const blueContainer = V2.container([
+        V2.section([
+          V2.heading("📉 REGISTRY PURGE", 2),
+          V2.text(`**Authorization Revoked.**\nUser **${member.user.username}** has been removed from the whitelist.`)
+        ], "https://cdn-icons-png.flaticon.com/512/1214/1214428.png"),
+        V2.separator(),
+        V2.heading("👤 FORMER VIP", 3),
+        V2.text(`> **Tag:** ${member.user.tag}\n> **ID:** \`${member.id}\``),
+        V2.separator(),
+        V2.text("*BlueSealPrime High Command • Revocation Log*")
+      ], "#0099ff");
 
       const logChannelId = getLogChannel(message.guild.id, "whitelist");
       if (logChannelId) {
         const logChannel = message.guild.channels.cache.get(logChannelId);
-        if (logChannel) logChannel.send({ embeds: [embed] }).catch(() => { });
+        const logEmbed = new EmbedBuilder()
+          .setColor("#EF4444")
+          .setTitle("📉 REGISTRY PURGE")
+          .setDescription(`**User Removed:** ${member.user.tag} (\`${member.id}\`)`)
+          .setTimestamp();
+        if (logChannel) logChannel.send({ embeds: [logEmbed] }).catch(() => { });
       }
 
-      return message.channel.send({ embeds: [embed] });
+      return message.channel.send({ content: null, flags: V2.flag, components: [blueContainer] });
     }
 
     // ───── LIST ─────
@@ -180,58 +206,40 @@ module.exports = {
       const users = whitelist[guildId] || [];
 
       if (users.length === 0) {
-        const emptyEmbed = new EmbedBuilder()
-          .setColor(EMBED_COLOR)
-          .setTitle("📜 Server Whitelist")
-          .setDescription("🚫 **No users are currently whitelisted in this server.**")
-          .setFooter({
-            text: "Whitelist System",
-            iconURL: message.client.user.displayAvatarURL()
-          })
-          .setTimestamp();
-
-        return message.channel.send({ embeds: [emptyEmbed] });
+        const emptyContainer = V2.container([
+          V2.heading("📜 SERVER VIP REGISTRY", 2),
+          V2.text("🚫 **No users are currently whitelisted in this server.**")
+        ], "#0099ff");
+        return message.channel.send({ content: null, flags: V2.flag, components: [emptyContainer] });
       }
 
       const description = users
-        .map((id, index) => {
-          return (
-            `**${index + 1}. <@${id}>**\n` +
-            `🆔 **User ID:** \`${id}\``
-          );
-        })
-        .join("\n\n");
+        .map((id, index) => `**${index + 1}.** <@${id}> (\`${id}\`)`)
+        .join("\n");
 
-      const embed = new EmbedBuilder()
-        .setColor(EMBED_COLOR)
-        .setTitle("📜 SERVER VIP REGISTRY") // Updated Title
-        .setDescription(description)
-        .addFields(
-          {
-            name: "👥 Personnel Count",
-            value: `**${users.length}** Authorized Users`,
-            inline: true
-          },
-          {
-            name: "📍 Jurisdiction",
-            value: message.guild.name,
-            inline: true
-          }
-        )
-        .setThumbnail("https://cdn-icons-png.flaticon.com/512/3135/3135810.png") // List/Registry Icon
-        .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-        .setFooter({
-          text: "BlueSealPrime High Command • Official Registry",
-          iconURL: message.client.user.displayAvatarURL()
-        })
-        .setTimestamp();
+      const container = V2.container([
+        V2.section([
+          V2.heading("📜 SERVER VIP REGISTRY", 2),
+          V2.text(`**Jurisdiction:** ${message.guild.name}`)
+        ], "https://cdn-icons-png.flaticon.com/512/3135/3135810.png"),
+        V2.separator(),
+        V2.heading(`👥 PERSONNEL (${users.length})`, 3),
+        V2.text(description.length > 2000 ? description.substring(0, 2000) + "... (truncated)" : description),
+        V2.separator(),
+        V2.text("*BlueSealPrime High Command • Official Registry*")
+      ], "#0099ff");
 
-      return message.channel.send({ embeds: [embed] });
+      return message.channel.send({ content: null, flags: V2.flag, components: [container] });
     }
 
     // ───── INVALID SUBCOMMAND ─────
-    return message.reply(
-      "❌ **Invalid subcommand**\nUse: `add`, `remove`, or `list`"
-    );
+    return message.reply({
+      content: null,
+      flags: V2.flag,
+      components: [V2.container([
+        V2.heading("⚠️ INVALID SUBCOMMAND", 3),
+        V2.text("Use: `add`, `remove`, or `list`")
+      ], require("../config").WARN_COLOR)]
+    });
   }
 };

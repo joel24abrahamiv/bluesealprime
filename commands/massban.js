@@ -1,5 +1,6 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "massban",
@@ -8,21 +9,22 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
-        // Owner/Admin Check
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
-        const isServerOwner = message.guild.ownerId === message.author.id;
-
-        if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 **ACCESS DENIED** | Protocol Omega Authorization Required.")] });
+        if (message.author.id !== BOT_OWNER_ID) {
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **ACCESS DENIED** | Protocol Omega Restricted to Bot Owner.")], V2_RED)]
+            });
         }
 
         if (args.length === 0) {
-            return message.reply("⚠️ **Invalid Syntax**\nUsage: `!massban <id1> <id2> ... [reason]`");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Invalid Syntax**\nUsage: `!massban <id1> <id2> ... [reason]`")], V2_RED)]
+            });
         }
 
-        // Separate IDs strings from Reason string
-        // Assuming IDs are numeric strings of length 17-19. 
-        // Anything else is considered part of the reason.
         const ids = [];
         const reasonParts = [];
 
@@ -37,22 +39,24 @@ module.exports = {
         const reason = reasonParts.join(" ") || "Mass Ban Operation - Security Protocol";
 
         if (ids.length === 0) {
-            return message.reply("⚠️ **No valid user IDs found.**");
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **No valid user IDs found.**")], V2_RED)]
+            });
         }
 
-        // Confirmation Message
-        const confirmMsg = await message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor("#FFFF00")
-                .setTitle("⚠️ MASS BAN INITIATED")
-                .setDescription(`preparing to ban **${ids.length}** targets.\nReason: ${reason}`)
-                .setFooter({ text: "Processing..." })
-            ]
-        });
+        const initContainer = V2.container([
+            V2.section([
+                V2.heading("⚠️ MASS BAN INITIATED", 2),
+                V2.text(`Preparing to ban **${ids.length}** targets.\n**Reason:** ${reason}`)
+            ], "https://cdn-icons-png.flaticon.com/512/564/564619.png")
+        ], "#FFFF00");
+
+        const confirmMsg = await message.reply({ content: null, components: [initContainer] });
 
         let successCount = 0;
         let failCount = 0;
-
 
         await Promise.all(ids.map(async (id) => {
             if (id === BOT_OWNER_ID) {
@@ -63,22 +67,24 @@ module.exports = {
                 await message.guild.members.ban(id, { reason: reason });
                 successCount++;
             } catch (err) {
-                console.error(`Failed to ban ${id}:`, err);
                 failCount++;
             }
         }));
 
-        const finalEmbed = new EmbedBuilder()
-            .setColor(SUCCESS_COLOR)
-            .setTitle("🚫 MASS BAN COMPLETE")
-            .setDescription(
-                `**Targets Eliminated**\n` +
-                `> Banned: \`${successCount}\`\n` +
-                `> Failed: \`${failCount}\`\n` +
-                `> Reason: ${reason}`
-            )
-            .setTimestamp();
+        const finalContainer = V2.container([
+            V2.section([
+                V2.heading("🚫 MASS BAN COMPLETE", 2),
+                V2.text(
+                    `### **[ OPERATION_OMEGA_SUCCESS ]**\n\n` +
+                    `> **Banned Entites:** \`${successCount}\`\n` +
+                    `> **Failed Linked:** \`${failCount}\`\n` +
+                    `> **Stored Reason:** ${reason}`
+                )
+            ], "https://cdn-icons-png.flaticon.com/512/190/190411.png"),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Global Blacklist Sync*")
+        ], V2_RED);
 
-        return confirmMsg.edit({ embeds: [finalEmbed] });
+        return confirmMsg.edit({ content: null, components: [finalContainer] });
     }
 };

@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DB_PATH = path.join(DATA_DIR, "left.json");
@@ -36,7 +37,7 @@ module.exports = {
         const isServerOwner = message.guild.ownerId === message.author.id;
 
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 You need Manage Server permission.")] });
+            return message.reply({ content: "🚫 **ACCESS DENIED:** You need Manage Server permission.", flags: V2.flag });
         }
 
         const subCommand = args[0]?.toLowerCase();
@@ -44,22 +45,37 @@ module.exports = {
         // ───── CONFIGURATION ─────
         if (subCommand === "set") {
             const channel = message.mentions.channels.first() || message.guild.channels.cache.get(args[1]);
+            const imgUrl = args[2];
+
             if (!channel) {
-                return message.reply("⚠️ **Please mention a valid channel.**\nUsage: `!left set #goodbyes`");
+                return message.reply("⚠️ **Please mention a valid channel.**\nUsage: `!left set #goodbyes [optional_img_url]`", { flags: V2.flag });
             }
 
             const data = loadLeftData();
             data[message.guild.id] = channel.id;
+
+            if (imgUrl) {
+                if (!data.custom_imgs) data.custom_imgs = {};
+                if (["off", "none", "clear", "remove"].includes(imgUrl.toLowerCase())) {
+                    delete data.custom_imgs[message.guild.id];
+                } else {
+                    data.custom_imgs[message.guild.id] = imgUrl;
+                }
+            }
+
             saveLeftData(data);
 
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(require("../config").SUCCESS_COLOR)
-                    .setTitle("✅ Goodbye Channel Set")
-                    .setDescription(`**Premium Goodbye System** is now active in ${channel}.`)
-                    .setFooter({ text: "BlueSealPrime Systems" })
-                ]
-            });
+            const container = V2.container([
+                V2.section([
+                    V2.heading("✅ GOODBYE SYSTEM INITIALIZED", 2),
+                    V2.text(`**Premium Farewell Protocol** is now monitoring departures in ${channel}.` + (imgUrl ? `\n\n🖼️ **Custom image/GIF saved.**` : ""))
+                ]),
+                imgUrl ? V2.section([], { type: 'image', url: imgUrl }) : null,
+                V2.separator(),
+                V2.text("*BlueSealPrime • Automation Kernel*")
+            ].filter(Boolean), "#FF4500");
+
+            return message.reply({ content: null, flags: V2.flag, components: [container] });
         }
 
         // ───── DM TOGGLE & TEST ─────
@@ -73,15 +89,16 @@ module.exports = {
                     .setAuthor({ name: message.guild.name, iconURL: message.guild.iconURL({ dynamic: true, size: 1024 }) })
                     .setTitle(`📤 Farewell from ${message.guild.name}!`)
                     .setThumbnail(message.guild.iconURL({ dynamic: true, size: 1024 }))
-                    .setDescription(`Goodbye, ${message.author}! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${message.guild.name}`)
+                    .setDescription(`Goodbye, ${message.author}!! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${message.guild.name}`)
                     .setImage(message.guild.bannerURL({ size: 1024 }) || message.guild.iconURL({ size: 1024, dynamic: true }))
                     .setFooter({ text: `Left on ${moment().format("DD MMMM YYYY, h:mm A")}` });
 
                 try {
                     await message.author.send({ embeds: [dmEmbed] });
-                    return message.reply("✅ **Simulation Complete:** Sent the new simplified Farewell DM preview!");
+                    return message.reply("✅ **Simulation Complete:** Sent the standard Farewell DM preview!");
                 } catch (e) {
-                    return message.reply("⚠️ **Simulation Failed:** I couldn't DM you (DMs closed?).");
+                    console.error("DM Test Error (Left):", e);
+                    return message.reply("⚠️ **Simulation Failed:** I couldn't deliver the DM. This is usually due to closed DMs or a temporary API issue.");
                 }
             }
 
@@ -94,14 +111,16 @@ module.exports = {
             data.dm_config[message.guild.id] = toggle === "on";
             saveLeftData(data);
 
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(require("../config").SUCCESS_COLOR)
-                    .setTitle("✅ Goodbye DM Configured")
-                    .setDescription(`**Premium Farewell DMs** are now **${toggle.toUpperCase()}** for this server.`)
-                    .setFooter({ text: "BlueSealPrime Systems" })
-                ]
-            });
+            const container = V2.container([
+                V2.section([
+                    V2.heading("✅ DM CONFIGURATION UPDATED", 2),
+                    V2.text(`**Premium Farewell DMs** are now **${toggle.toUpperCase()}** for this server.`)
+                ]),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Automation Kernel*")
+            ], "#FF4500");
+
+            return message.reply({ content: null, flags: V2.flag, components: [container] });
         }
 
         // ───── DISABLE ─────
@@ -118,26 +137,52 @@ module.exports = {
         // ───── TEST ─────
         if (subCommand === "test") {
             try {
-                const buffer = await module.exports.generateGoodbyeImage(message.member);
-                const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye-image.png' });
+                const data = loadLeftData();
+                const memberCount = message.guild.memberCount;
+                const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
-                const embed = new EmbedBuilder()
-                    .setColor("#2f3136")
-                    .setTitle(`Goodbye from ${message.guild.name}`)
-                    .setDescription(`> Goodbye ${message.member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
-                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                    .setFooter({ text: `BlueSealPrime Systems`, iconURL: message.client.user.displayAvatarURL() })
-                    .setTimestamp();
+                const container = V2.container([
+                    V2.section([
+                        V2.text(`**Time:** ${timeStr}`),
+                        V2.text(`**Executed by:** ${message.author}`)
+                    ], message.guild.iconURL({ dynamic: true, size: 512, forceStatic: true, extension: 'png' })),
+                    V2.separator(),
+                    V2.text(`\u200b`),
+                    V2.text(`**Farewell from ${message.guild.name}**`),
+                    V2.text(`\u200b`),
+                    V2.text(`${message.author}, your departure has been logged. We hope our paths cross again in the void.`),
+                    V2.text(`\u200b`),
+                    V2.text(`Sovereign protection remains active via <@${message.client.user.id}>`),
+                    V2.text(`\u200b`),
+                    V2.text(`Architect: <@${BOT_OWNER_ID}>`),
+                    V2.separator()
+                ].filter(Boolean), V2_RED);
 
-                return message.channel.send({ content: "🖼️ **Channel Goodbye Preview:**", embeds: [embed], files: [attachment] });
-
-            } catch (error) {
-                console.error(error);
-                return message.reply("❌ Error generating goodbye image.");
+                return message.reply({ content: null, components: [container], flags: V2.flag });
+            } catch (e) {
+                console.error("Left Test Error:", e);
+                return message.reply("❌ FAILD TO INITIALIZE SIMULATION CORE.");
             }
         }
 
-        return message.reply("❓ **Unknown subcommand.** Use `set #channel`, `off`, or `test`.");
+        const helpContainer = V2.container([
+            V2.section([
+                V2.heading("🤖 GOODBYE SYSTEM CONTROL", 2),
+                V2.text(
+                    `### **[ CONFIGURATION_GUIDE ]**\n\n` +
+                    `> • **!left set #ch [img]** - Set channel & optional GIF\n` +
+                    `> • **!left off** - Decommission departure protocols\n` +
+                    `> • **!left test** - Preview channel visual\n\n` +
+                    `### **[ DIRECT_MESSAGE_MOD ]**\n` +
+                    `> • **!left dm <on/off>** - Toggle private farewell\n` +
+                    `> • **!left dm test** - Preview DM visual`
+                )
+            ]),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Automation Suite*")
+        ], "#FF4500");
+
+        return message.reply({ content: null, components: [helpContainer], flags: V2.flag });
     },
 
     async generateGoodbyeImage(member) {

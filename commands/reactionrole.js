@@ -1,29 +1,18 @@
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const fs = require("fs");
 const path = require("path");
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, SUCCESS_COLOR, ERROR_COLOR, EMBED_COLOR } = require("../config");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DB_PATH = path.join(DATA_DIR, "reactionroles.json");
 
-// ───── DATA MANAGEMENT ─────
-function loadReactionRoles() {
+function loadRR() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(DB_PATH)) {
-        fs.writeFileSync(DB_PATH, JSON.stringify({}, null, 2));
-        return {};
-    }
-    try {
-        return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-    } catch {
-        return {};
-    }
+    if (!fs.existsSync(DB_PATH)) { fs.writeFileSync(DB_PATH, JSON.stringify({}, null, 2)); return {}; }
+    try { return JSON.parse(fs.readFileSync(DB_PATH, "utf8")); } catch { return {}; }
 }
-
-function saveReactionRoles(data) {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-}
+function saveRR(data) { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2)); }
 
 module.exports = {
     name: "reactionrole",
@@ -33,241 +22,107 @@ module.exports = {
     aliases: ["rr"],
 
     async execute(message, args) {
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
-        const isServerOwner = message.guild.ownerId === message.author.id;
+        const isOwner = message.author.id === BOT_OWNER_ID || message.guild.ownerId === message.author.id;
+        if (!isOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 You need **Manage Roles** permission.")], V2_RED)] });
 
-        // Permission Check (Owner Bypass)
-        if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 You need Manage Roles permission.")] });
-        }
+        const sub = args[0]?.toLowerCase();
+        const data = loadRR();
 
-        const subCommand = args[0]?.toLowerCase();
-        const data = loadReactionRoles();
-
-        // ───── CREATE PANEL ─────
-        if (subCommand === "create") {
+        // ─── CREATE ───
+        if (sub === "create") {
             const channel = message.mentions.channels.first() || message.guild.channels.cache.get(args[1]);
             const title = args.slice(2).join(" ") || "Self-Assign Roles";
+            if (!channel) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!reactionrole create #channel <title>`")], V2_RED)] });
 
-            if (!channel) {
-                return message.reply("⚠️ **Please mention a channel.**\nUsage: `!reactionrole create #channel <title>`");
-            }
+            const panelMsg = await channel.send({
+                embeds: [{
+                    color: 0x5865F2,
+                    title: `🎭 ${title}`,
+                    description: "```diff\n+ ROLE ASSIGNMENT PANEL\n+ REACT TO CLAIM ROLES\n```\n\n**React to add a role — remove reaction to remove the role.**\n\n*No roles configured yet. Use `!reactionrole add` to add roles.*",
+                    footer: { text: "BlueSealPrime • Reaction Roles" }
+                }]
+            });
 
-            const embed = new EmbedBuilder()
-                .setColor(EMBED_COLOR)
-                .setTitle(`🎭 ${title}`)
-                .setDescription(
-                    "```diff\n" +
-                    "+ ROLE ASSIGNMENT PANEL\n" +
-                    "+ REACT TO CLAIM ROLES\n" +
-                    "```\n\n\n" +
-                    "**Click the reactions below to assign yourself roles.**\n\n" +
-                    "> React to add a role\n\n" +
-                    "> Remove reaction to remove the role\n\n\n" +
-                    "*No roles configured yet. Use `!reactionrole add` to add roles.*"
-                )
-                .setFooter({ text: "BlueSealPrime • Reaction Roles", iconURL: message.client.user.displayAvatarURL() })
-                .setTimestamp();
-
-            const panelMessage = await channel.send({ embeds: [embed] });
-
-            // Store in database
-            data[panelMessage.id] = {
-                guildId: message.guild.id,
-                channelId: channel.id,
-                roles: []
-            };
-            saveReactionRoles(data);
+            data[panelMsg.id] = { guildId: message.guild.id, channelId: channel.id, roles: [] };
+            saveRR(data);
 
             return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(SUCCESS_COLOR)
-                    .setTitle("✅ Reaction Role Panel Created")
-                    .setDescription(
-                        `**Panel created in ${channel}**\n\n` +
-                        `> **Message ID:** \`${panelMessage.id}\`\n\n` +
-                        `> Use \`!reactionrole add ${panelMessage.id} <emoji> <role>\` to add roles`
-                    )
-                    .setFooter({ text: "BlueSealPrime • Reaction Roles" })
-                ]
+                flags: V2.flag, components: [V2.container([
+                    V2.heading("✅ Reaction Role Panel Created", 2),
+                    V2.text(`Panel created in ${channel}\n\n> **Message ID:** \`${panelMsg.id}\`\n> Use \`!reactionrole add ${panelMsg.id} <emoji> <@role>\` to add roles`)
+                ], V2_BLUE)]
             });
         }
 
-        // ───── ADD ROLE ─────
-        if (subCommand === "add") {
-            const messageId = args[1];
-            const emoji = args[2];
+        // ─── ADD ───
+        if (sub === "add") {
+            const [, messageId, emoji] = args;
             const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[3]);
+            if (!messageId || !emoji || !role)
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!reactionrole add <messageID> <emoji> <@role>`")], V2_RED)] });
+            if (!data[messageId]) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ That message is not a reaction role panel.")], V2_RED)] });
+            if (data[messageId].roles.some(r => r.emoji === emoji))
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ That emoji is already assigned on this panel.")], V2_RED)] });
 
-            if (!messageId || !emoji || !role) {
-                return message.reply("⚠️ **Invalid syntax.**\nUsage: `!reactionrole add <messageID> <emoji> <@role>`");
-            }
-
-            if (!data[messageId]) {
-                return message.reply("❌ **That message is not a reaction role panel.**");
-            }
-
-            // Check if emoji already exists
-            if (data[messageId].roles.some(r => r.emoji === emoji)) {
-                return message.reply("⚠️ **That emoji is already assigned to a role on this panel.**");
-            }
-
-            // Add role to panel
             data[messageId].roles.push({ emoji, roleId: role.id });
-            saveReactionRoles(data);
+            saveRR(data);
 
-            // Fetch and update the message
             try {
-                const channel = message.guild.channels.cache.get(data[messageId].channelId);
-                const panelMessage = await channel.messages.fetch(messageId);
-
-                // Add reaction
-                await panelMessage.react(emoji);
-
-                // Update embed
-                const currentEmbed = panelMessage.embeds[0];
-                const roleList = data[messageId].roles.map(r => `${r.emoji} - <@&${r.roleId}>`).join("\n");
-
-                const updatedEmbed = EmbedBuilder.from(currentEmbed)
-                    .setDescription(
-                        "```diff\n" +
-                        "+ ROLE ASSIGNMENT PANEL\n" +
-                        "+ REACT TO CLAIM ROLES\n" +
-                        "```\n\n\n" +
-                        "**Click the reactions below to assign yourself roles.**\n\n" +
-                        "> React to add a role\n\n" +
-                        "> Remove reaction to remove the role\n\n\n" +
-                        `**Available Roles:**\n${roleList}`
-                    );
-
-                await panelMessage.edit({ embeds: [updatedEmbed] });
-
-                return message.reply({
-                    embeds: [new EmbedBuilder()
-                        .setColor(SUCCESS_COLOR)
-                        .setTitle("✅ Role Added to Panel")
-                        .setDescription(`**${emoji} → ${role}** has been added to the reaction role panel.`)
-                        .setFooter({ text: "BlueSealPrime • Reaction Roles" })
-                    ]
-                });
+                const ch = message.guild.channels.cache.get(data[messageId].channelId);
+                const pm = await ch.messages.fetch(messageId);
+                await pm.react(emoji);
+                const roleList = data[messageId].roles.map(r => `${r.emoji} — <@&${r.roleId}>`).join("\n");
+                const old = pm.embeds[0];
+                const { EmbedBuilder } = require("discord.js");
+                await pm.edit({ embeds: [EmbedBuilder.from(old).setDescription(`\`\`\`diff\n+ ROLE ASSIGNMENT PANEL\n+ REACT TO CLAIM ROLES\n\`\`\`\n\n**React to add a role — remove to remove the role.**\n\n**Available Roles:**\n${roleList}`)] });
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text(`✅ **${emoji} → ${role}** added to the panel.`)], V2_BLUE)] });
             } catch (err) {
-                console.error(err);
-                return message.reply("❌ **Failed to update the panel.** Make sure the message still exists.");
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Failed to update the panel. Does the message still exist?")], V2_RED)] });
             }
         }
 
-        // ───── REMOVE ROLE ─────
-        if (subCommand === "remove") {
-            const messageId = args[1];
-            const emoji = args[2];
+        // ─── REMOVE ───
+        if (sub === "remove") {
+            const [, messageId, emoji] = args;
+            if (!messageId || !emoji) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!reactionrole remove <messageID> <emoji>`")], V2_RED)] });
+            if (!data[messageId]) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ That message is not a reaction role panel.")], V2_RED)] });
 
-            if (!messageId || !emoji) {
-                return message.reply("⚠️ **Invalid syntax.**\nUsage: `!reactionrole remove <messageID> <emoji>`");
-            }
+            const idx = data[messageId].roles.findIndex(r => r.emoji === emoji);
+            if (idx === -1) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ That emoji is not assigned on this panel.")], V2_RED)] });
 
-            if (!data[messageId]) {
-                return message.reply("❌ **That message is not a reaction role panel.**");
-            }
+            data[messageId].roles.splice(idx, 1);
+            saveRR(data);
 
-            const roleIndex = data[messageId].roles.findIndex(r => r.emoji === emoji);
-            if (roleIndex === -1) {
-                return message.reply("⚠️ **That emoji is not assigned to any role on this panel.**");
-            }
-
-            // Remove role
-            data[messageId].roles.splice(roleIndex, 1);
-            saveReactionRoles(data);
-
-            // Update message
             try {
-                const channel = message.guild.channels.cache.get(data[messageId].channelId);
-                const panelMessage = await channel.messages.fetch(messageId);
-
-                // Remove reaction
-                await panelMessage.reactions.cache.get(emoji)?.remove();
-
-                // Update embed
-                const currentEmbed = panelMessage.embeds[0];
-                const roleList = data[messageId].roles.length > 0
-                    ? data[messageId].roles.map(r => `${r.emoji} - <@&${r.roleId}>`).join("\n")
-                    : "*No roles configured yet. Use `!reactionrole add` to add roles.*";
-
-                const updatedEmbed = EmbedBuilder.from(currentEmbed)
-                    .setDescription(
-                        "```diff\n" +
-                        "+ ROLE ASSIGNMENT PANEL\n" +
-                        "+ REACT TO CLAIM ROLES\n" +
-                        "```\n\n\n" +
-                        "**Click the reactions below to assign yourself roles.**\n\n" +
-                        "> React to add a role\n\n" +
-                        "> Remove reaction to remove the role\n\n\n" +
-                        `**Available Roles:**\n${roleList}`
-                    );
-
-                await panelMessage.edit({ embeds: [updatedEmbed] });
-
-                return message.reply({
-                    embeds: [new EmbedBuilder()
-                        .setColor(SUCCESS_COLOR)
-                        .setTitle("✅ Role Removed from Panel")
-                        .setDescription(`**${emoji}** has been removed from the reaction role panel.`)
-                        .setFooter({ text: "BlueSealPrime • Reaction Roles" })
-                    ]
-                });
-            } catch (err) {
-                console.error(err);
-                return message.reply("❌ **Failed to update the panel.**");
-            }
+                const ch = message.guild.channels.cache.get(data[messageId].channelId);
+                const pm = await ch.messages.fetch(messageId);
+                await pm.reactions.cache.get(emoji)?.remove();
+                const roleList = data[messageId].roles.length > 0 ? data[messageId].roles.map(r => `${r.emoji} — <@&${r.roleId}>`).join("\n") : "*No roles configured yet.*";
+                const { EmbedBuilder } = require("discord.js");
+                await pm.edit({ embeds: [EmbedBuilder.from(pm.embeds[0]).setDescription(`\`\`\`diff\n+ ROLE ASSIGNMENT PANEL\n+ REACT TO CLAIM ROLES\n\`\`\`\n\n**React to add a role — remove to remove the role.**\n\n**Available Roles:**\n${roleList}`)] });
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text(`✅ **${emoji}** removed from the panel.`)], V2_BLUE)] });
+            } catch { return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Failed to update the panel.")], V2_RED)] }); }
         }
 
-        // ───── LIST PANELS ─────
-        if (subCommand === "list") {
-            const guildPanels = Object.entries(data).filter(([id, panel]) => panel.guildId === message.guild.id);
-
-            if (guildPanels.length === 0) {
-                return message.reply("ℹ️ **No reaction role panels found in this server.**");
-            }
-
-            const panelList = guildPanels.map(([id, panel]) => {
-                return `**Message ID:** \`${id}\`\n> Channel: <#${panel.channelId}>\n> Roles: ${panel.roles.length}`;
-            }).join("\n\n");
-
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(EMBED_COLOR)
-                    .setTitle("📋 Reaction Role Panels")
-                    .setDescription(panelList)
-                    .setFooter({ text: "BlueSealPrime • Reaction Roles" })
-                ]
-            });
+        // ─── LIST ───
+        if (sub === "list") {
+            const panels = Object.entries(data).filter(([, p]) => p.guildId === message.guild.id);
+            if (panels.length === 0) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("ℹ️ **No reaction role panels** found in this server.")], V2_BLUE)] });
+            const list = panels.map(([id, p]) => `> \`${id}\` — <#${p.channelId}> | **${p.roles.length} roles**`).join("\n");
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.heading("📋 Reaction Role Panels", 2), V2.text(list)], V2_BLUE)] });
         }
 
-        // ───── DELETE PANEL ─────
-        if (subCommand === "delete") {
+        // ─── DELETE ───
+        if (sub === "delete") {
             const messageId = args[1];
-
-            if (!messageId) {
-                return message.reply("⚠️ **Invalid syntax.**\nUsage: `!reactionrole delete <messageID>`");
-            }
-
-            if (!data[messageId]) {
-                return message.reply("❌ **That message is not a reaction role panel.**");
-            }
-
-            // Delete from database
+            if (!messageId) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!reactionrole delete <messageID>`")], V2_RED)] });
+            if (!data[messageId]) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ That message is not a reaction role panel.")], V2_RED)] });
             delete data[messageId];
-            saveReactionRoles(data);
-
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(SUCCESS_COLOR)
-                    .setTitle("✅ Panel Deleted")
-                    .setDescription("**The reaction role panel has been removed from the database.**\n\n> The message itself was not deleted.")
-                    .setFooter({ text: "BlueSealPrime • Reaction Roles" })
-                ]
-            });
+            saveRR(data);
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("✅ **Panel removed from database.** The message itself was not deleted.")], V2_BLUE)] });
         }
 
-        return message.reply("❓ **Unknown subcommand.**\nUse: `create`, `add`, `remove`, `list`, or `delete`");
+        return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❓ **Unknown subcommand.**\nUse: `create`, `add`, `remove`, `list`, or `delete`")], V2_RED)] });
     }
 };

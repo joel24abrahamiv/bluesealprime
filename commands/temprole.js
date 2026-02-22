@@ -1,7 +1,8 @@
-const fs = require("fs");
-const path = require("path");
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
+const path = require("path");
+const fs = require("fs");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DB_PATH = path.join(DATA_DIR, "temproles.json");
@@ -96,7 +97,11 @@ module.exports = {
 
         // Permission check (Bypass for owner)
         if (!isBotOwner && !isServerOwner && !message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 I do not have permission to manage roles.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.container([V2.text("🚫 I do not have permission to manage roles.")], require("../config").ERROR_COLOR)])]
+            });
         }
 
         // ───── ARGS VALIDATION ─────
@@ -149,21 +154,37 @@ module.exports = {
         }
 
         if (!member) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Missing User.** Please mention a user.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Missing User.** Please mention a user.")], require("../config").WARN_COLOR)]
+            });
         }
 
         if (!durationArg) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Missing Duration.** Example: `1h`, `30m`.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Missing Duration.** Example: `1h`, `30m`.")], require("../config").WARN_COLOR)]
+            });
         }
 
         if (!role) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").WARN_COLOR).setDescription("⚠️ **Missing Role.** Please mention a role or provide a valid name/ID.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⚠️ **Missing Role.** Please mention a role or provide a valid name/ID.")], require("../config").WARN_COLOR)]
+            });
         }
 
         // ───── HIERARCHY CHECK ─────
         // Owner bypasses everything. Everyone else gets checked.
         if (!isBotOwner && !isServerOwner && role.position >= message.guild.members.me.roles.highest.position) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("🚫 Role hierarchy prevents this action.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 Role hierarchy prevents this action.")], require("../config").ERROR_COLOR)]
+            });
         }
 
         const durationMs = parseDuration(durationArg);
@@ -185,26 +206,28 @@ module.exports = {
             });
             saveTempRoles(db);
 
-            const embed = new EmbedBuilder()
-                .setColor("#F59E0B") // Amber/Clock Color
-                .setTitle("⏱️ TEMPORARY ASSIGNMENT")
-                .setDescription(`**Provisional Access Granted.**\nThe user **${member.user.username}** has been given temporary clearance.`)
-                .addFields(
-                    { name: "👤 Operative", value: `${member}`, inline: true },
-                    { name: "🛡️ Role", value: `${role}`, inline: true },
-                    { name: "⏳ Duration", value: `\`${durationArg}\``, inline: true },
-                    { name: "📅 Expiration", value: `<t:${Math.floor(expiresAt / 1000)}:R>`, inline: false }
-                )
-                .setThumbnail("https://cdn-icons-png.flaticon.com/512/2972/2972531.png") // Clock/Timer Icon
-                .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif") // Premium Line
-                .setFooter({ text: `BlueSealPrime Time-Management • ${new Date().toLocaleTimeString()}`, iconURL: message.author.displayAvatarURL() })
-                .setTimestamp();
+            const container = V2.container([
+                V2.section([
+                    V2.text(`**Temporary Assignment**`),
+                    V2.text(`Provisional access granted.`)
+                ], message.guild.iconURL({ dynamic: true, size: 512 })),
+                V2.separator(),
+                V2.text(`\u200b`),
+                V2.text(`Operative **${member.user.username}** has been granted temporary clearance.`),
+                V2.text(`\u200b`),
+                V2.text(`**Role:** ${role.name}`),
+                V2.text(`**Duration:** ${durationArg}`),
+                V2.text(`**Expiration:** <t:${Math.floor(expiresAt / 1000)}:R>`),
+                V2.text(`\u200b`),
+                V2.text(`Architect: <@${BOT_OWNER_ID}>`),
+                V2.separator()
+            ], "#0099ff"); // Blue for creation/success
 
-            return message.channel.send({ embeds: [embed] });
+            return message.channel.send({ content: null, components: [container], flags: V2.flag });
 
         } catch (err) {
             console.error(err);
-            return message.reply({ embeds: [new EmbedBuilder().setColor(require("../config").ERROR_COLOR).setDescription("❌ Failed to assign role.")] });
+            return message.reply("❌ Failed to assign role.");
         }
     }
 };

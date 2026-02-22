@@ -1,7 +1,8 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { EmbedBuilder, PermissionsBitField, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR, BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "autorole",
@@ -41,14 +42,20 @@ module.exports = {
             data[message.guild.id] = role.id;
             fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setAuthor({ name: "⚡ AUTOROLE ACTIVATED", iconURL: message.client.user.displayAvatarURL() })
-                .setDescription(`**Automatic Onboarding Stream Synchronized.**\nNew members will now be granted the **${role.name}** role upon entry.`)
-                .setFooter({ text: "BlueSealPrime • Priority Onboarding" })
-                .setTimestamp();
+            const container = V2.container([
+                V2.section([
+                    V2.text(`**Autorole Activated**`),
+                    V2.text(`Automatic onboarding sequence synchronized.`)
+                ], message.guild.iconURL({ dynamic: true, size: 512 })),
+                V2.separator(),
+                V2.text(`\u200b`),
+                V2.text(`New members will be granted the **${role.name}** role upon entry.`),
+                V2.text(`\u200b`),
+                V2.text(`Architect: <@${BOT_OWNER_ID}>`),
+                V2.separator()
+            ], "#00EEFF");
 
-            return message.channel.send({ embeds: [embed] });
+            return message.channel.send({ content: null, components: [container], flags: V2.flag });
         }
 
         if (sub === "off" || sub === "disable") {
@@ -59,21 +66,39 @@ module.exports = {
             delete data[message.guild.id];
             fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 
-            return message.reply({ embeds: [new EmbedBuilder().setColor(SUCCESS_COLOR).setDescription("🛑 **Autorole Deactivated.** Automation has been cut.")] });
+            const container = V2.container([
+                V2.text(`\u200b`),
+                V2.text(`**Autorole Deactivated**`),
+                V2.text(`Automation has been terminated for this sector.`),
+                V2.text(`\u200b`)
+            ], "#FF4500");
+
+            return message.reply({ content: null, components: [container], flags: V2.flag });
         }
 
         if (sub === "status" || !sub) {
             const roleId = data[message.guild.id];
             const role = roleId ? message.guild.roles.cache.get(roleId) : null;
 
-            const embed = new EmbedBuilder()
-                .setColor(EMBED_COLOR)
-                .setAuthor({ name: "📊 AUTOROLE TELEMETRY", iconURL: message.client.user.displayAvatarURL() })
-                .setDescription(role ? `> **Status:** \`ACTIVE\`\n> **Target Role:** ${role} (\`${role.id}\`)` : `> **Status:** \`INACTIVE\`\n> **Target Role:** \`None Set\``)
-                .addFields({ name: "💡 Usage", value: "`.autorole set @role` • Assign role on join\n`.autorole off` • Cut automation" })
-                .setFooter({ text: "BlueSealPrime • System Diagnostics" });
+            const container = V2.container([
+                V2.section([
+                    V2.text(`**Autorole Status**`),
+                    V2.text(`System Telemetry Logged`)
+                ], message.guild.iconURL({ dynamic: true, size: 512 })),
+                V2.separator(),
+                V2.text(`\u200b`),
+                V2.text(`**Status:** ${role ? "Active" : "Inactive"}`),
+                V2.text(`**Target:** ${role ? `${role.name} (${role.id})` : "None Set"}`),
+                V2.text(`\u200b`),
+                V2.text(`**Protocol Usage:**`),
+                V2.text(`!autorole set @role`),
+                V2.text(`!autorole off`),
+                V2.text(`\u200b`),
+                V2.text(`Architect: <@${BOT_OWNER_ID}>`),
+                V2.separator()
+            ], "#00EEFF");
 
-            return message.channel.send({ embeds: [embed] });
+            return message.channel.send({ content: null, components: [container], flags: V2.flag });
         }
     }
 };

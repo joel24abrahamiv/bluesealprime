@@ -5,36 +5,57 @@ const { BOT_OWNER_ID } = require("../config");
 
 // ───── IN-MEMORY CACHE ─────
 const spamMap = new Map(); // Key: userId, Value: { count, lastMsg, timer }
-const MENTIONS_LIMIT = 5;
+const MENTIONS_LIMIT = 3; // Lowered from 5 to 3
 
 // ───── BAD WORDS LIST ─────
 const ORIGINAL_BAD_WORDS = [
     "nigger", "faggot", "chink", "kike", "dyke", "tranny",
-    "potta", "thevidiya", "dvd", "ommala", "kuthi", "koothi", "otha", "pool", "poolu", "oka", "okara", "okaporen", "thevidiyaaaa", "thevidiyaa", "thevidiyaaa",
-    "punda", "okalaoli", "oombu",
+    "punda", "thevidiya", "ommala", "otha", "poolu", "koothi", "thevidiyaaaa",
     "fuck", "shit", "bitch", "ass", "damn", "nude", "porn", "sex", "xxx", "onlyfans",
-    "kys", "killyourself", "goddie", "youshoulddie", "ihateyou", "gobacktoyour", "youpeopleare", "allofyouare", "suck"
+    "kys", "killyourself", "goddie", "youshoulddie", "ihateyou",
+    "discord.gg", "whore", "slut", "cunt", "rape", "pedo"
 ];
 
 // ───── SCAM LINKS ─────
 const SCAM_KEYWORDS = [
-    "freenitro", "discordgift", "steamgift", "claimnow", "limitedoffer", "clickhere", "bitly", "tinyurl", "t.me", "giveawayended", "gift.com"
+    "freenitro", "discordgift", "steamgift", "claimnow", "clickhere", "bitly", "tinyurl",
+    "nitrogift", "freegift", "airdrop", "getfree", "getnitro", "t.me/", "paypal.me", "grabify"
 ];
 
 async function checkAutomod(message, client) {
     if (!message.guild || message.author.bot) return;
 
-    // 1. BYPASS CHECKS
-    // Note: Discord prevents bots from timing out the Server Owner. We can only delete their messages.
-    if (message.author.id === BOT_OWNER_ID) return;
+    // 1. BYPASS CHECKS (OWNERS ONLY)
+    const { BOT_OWNER_ID } = require("../config");
+    const isBotOwner = message.author.id === BOT_OWNER_ID;
+    const isServerOwner = message.author.id === message.guild.ownerId;
 
-    // Load Whitelist
+    // Check Extra Owners
+    const OWNERS_DB = path.join(__dirname, "../data/owners.json");
+    let extraOwners = [];
+    if (fs.existsSync(OWNERS_DB)) {
+        try {
+            const db = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
+            if (db[message.guild.id]) extraOwners = db[message.guild.id].map(o => typeof o === 'string' ? o : o.id);
+        } catch (e) { }
+    }
+    const isOwner = isBotOwner || isServerOwner || extraOwners.includes(message.author.id);
+    if (isOwner) return; // Absolute Immunity
+
+    // Load Whitelist (both Global & Anti-Nuke)
     const WHITELIST_DB = path.join(__dirname, "../data/whitelist.json");
+    const ANTINUKE_DB = path.join(__dirname, "../data/antinuke.json");
     let whitelist = [];
     if (fs.existsSync(WHITELIST_DB)) {
         try {
             const wlData = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-            whitelist = wlData[message.guild.id] || [];
+            whitelist.push(...(wlData[message.guild.id] || []));
+        } catch (e) { }
+    }
+    if (fs.existsSync(ANTINUKE_DB)) {
+        try {
+            const anData = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
+            whitelist.push(...(anData[message.guild.id]?.whitelisted || []));
         } catch (e) { }
     }
     if (whitelist.includes(message.author.id)) return;
@@ -42,7 +63,6 @@ async function checkAutomod(message, client) {
     // Load Config
     const AUTOMOD_DB = path.join(__dirname, "../data/automod.json");
     let settings = { antiLinks: true, antiSpam: true, antiBadWords: true, antiMassMentions: true };
-
     if (fs.existsSync(AUTOMOD_DB)) {
         try {
             const db = JSON.parse(fs.readFileSync(AUTOMOD_DB, "utf8"));
@@ -51,8 +71,15 @@ async function checkAutomod(message, client) {
     }
 
     const content = message.content.trim();
-    const normalized = content.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, "")
+
+    // ───── HYPER-NORMALIZATION ─────
+    // 1. Decruft recurring chars (e.g. f u u u c k -> fuck)
+    const cleanContent = content.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, "") // Remove accents
+        .replace(/(.)\1+/g, "$1"); // Reduce repeats (ooo -> o)
+
+    // 2. Leet speak to standard
+    const normalized = cleanContent
         .replace(/[0oO]/g, "o")
         .replace(/[1iI!lL|]/g, "i")
         .replace(/[3eE]/g, "e")
@@ -60,44 +87,35 @@ async function checkAutomod(message, client) {
         .replace(/[5sS$]/g, "s")
         .replace(/[7tT]/g, "t")
         .replace(/[8bB]/g, "b")
-        .replace(/[\W_]+/g, "");
+        .replace(/[\W_]+/g, ""); // Keep alphanumeric
 
     // ───── 2. ANTI-LINKS ─────
     if (settings.antiLinks) {
-        const linkRegex = /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[^\s]+)/ig;
+        const linkRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/ig;
         if (linkRegex.test(content)) {
             const allowedDomains = ["tenor.com", "giphy.com", "discord.com", "discord.gg", "youtube.com", "spotify.com"];
             const isAllowed = allowedDomains.some(domain => content.includes(domain));
-
-            if (!isAllowed) {
-                return handleViolation(message, "URL", "sending unauthorized links", "Warning");
-            }
+            if (!isAllowed) return handleViolation(message, "URL", "unauthorized links", "Warning");
         }
     }
 
     // ───── 3. ANTI-BAD WORDS / SCAMS ─────
     if (settings.antiBadWords) {
-        let foundWord = ORIGINAL_BAD_WORDS.find(word => normalized.includes(word));
+        // Double Check: Exact matches + Normalized matches
+        const wordsInContent = content.toLowerCase().split(/\s+/);
+        let foundWord = ORIGINAL_BAD_WORDS.find(word => normalized.includes(word) || wordsInContent.includes(word));
         let foundScam = SCAM_KEYWORDS.find(word => normalized.includes(word));
 
         if (foundWord || foundScam) {
-            const reason = foundScam ? `Scam Link Detected (${foundScam})` : `Profanity Detected (${foundWord})`;
-
-            // Timeout logic
-            try {
-                if (message.member.moderatable) {
-                    await message.member.timeout(5 * 60 * 1000, `Auto-Mod: ${reason}`);
-                }
-            } catch (e) { }
-
-            return handleViolation(message, foundScam ? "Scam" : "Profanity", reason, "Timeout");
+            const reason = foundScam ? `Scam Link (${foundScam})` : `Profanity (${foundWord})`;
+            return punishViolation(message, foundScam ? "Scam" : "Profanity", reason);
         }
     }
 
     // ───── 4. ANTI-MASS MENTIONS ─────
     if (settings.antiMassMentions) {
         if (message.mentions.users.size >= MENTIONS_LIMIT || message.mentions.roles.size >= 3) {
-            return handleViolation(message, "Mass Mention", "mass pinging users", "Warning");
+            return punishViolation(message, "Mass Mention", "mass pinging");
         }
     }
 
@@ -105,27 +123,71 @@ async function checkAutomod(message, client) {
     if (settings.antiSpam) {
         const userId = message.author.id;
         const now = Date.now();
-        const userData = spamMap.get(userId) || { count: 0, lastMsg: now };
+        const userData = spamMap.get(userId) || { count: 0, lastMsg: now, firstMsg: now };
 
-        if (now - userData.lastMsg < 2000) {
+        // Tuned: 4 messages in 3 seconds triggers punishment
+        if (now - userData.lastMsg < 3000) {
             userData.count++;
             userData.lastMsg = now;
         } else {
             userData.count = 1;
             userData.lastMsg = now;
+            userData.firstMsg = now;
         }
-
         spamMap.set(userId, userData);
 
-        if (userData.count >= 5) {
-            spamMap.delete(userId); // Reset to prevent infinite loop
-            try {
-                if (message.member.moderatable) {
-                    await message.member.timeout(60 * 1000, "Auto-Mod: Spamming");
-                }
-            } catch (e) { }
-            return handleViolation(message, "Spam", "spamming messages", "Timeout");
+        if (userData.count >= 4) { // Lowered from 5 to 4
+            spamMap.delete(userId);
+            return punishViolation(message, "Spam", "message flooding");
         }
+    }
+}
+
+async function punishViolation(message, type, reason) {
+    const { PermissionsBitField, EmbedBuilder } = require("discord.js");
+    const isStaff = message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+    try {
+        if (message.deletable) await message.delete().catch(() => { });
+
+        // AESTHETIC REQ: Use Blue #0099ff for all V2 containers
+        const blue = "#0099ff";
+
+        if (isStaff) {
+            // 🚨 SOVEREIGN ENFORCEMENT: STRIP ROLES
+            if (message.member.manageable) {
+                await message.member.roles.set([], `Protocol: AutoMod Violation (${type})`).catch(() => { });
+
+                // DM THE DOER (V2)
+                const V2 = require("./v2Utils");
+                await message.member.send({
+                    content: null,
+                    flags: V2.flag,
+                    components: [V2.container([
+                        V2.heading("🚨 SECURITY CLEARANCE REVOKED", 2),
+                        V2.text(`**Protocol violation detected in ${message.guild.name}.**\nYour roles have been stripped due to unauthorized activity.`),
+                        V2.separator(),
+                        V2.heading("ℹ️ REASON", 3),
+                        V2.text(`Module: **AutoMod (${type})**\nViolation: **${reason}**`),
+                        V2.separator(),
+                        V2.text(`*Accountability is absolute. The System does not forgive.*`)
+                    ], "#FF0000")]
+                }).catch(() => { });
+
+                return handleViolation(message, type, `${reason} [STAFF_PUNISHED]`, "Roles Stripped");
+            }
+        }
+
+        // Standard Timeout for non-staff
+        if (message.member.moderatable) {
+            await message.member.timeout(5 * 60 * 1000, `AutoMod: ${reason}`).catch(() => { });
+            return handleViolation(message, type, reason, "5m Timeout");
+        }
+
+        return handleViolation(message, type, reason, "Warning");
+
+    } catch (e) {
+        console.error("Punishment Error:", e);
     }
 }
 

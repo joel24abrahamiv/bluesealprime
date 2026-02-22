@@ -1,76 +1,55 @@
-const { PermissionsBitField, EmbedBuilder } = require("discord.js");
-const { EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "roleperm",
-    description: "Modify role permissions (Admin/Whitelist Only)",
+    description: "Modify role permissions (add/remove)",
     aliases: ["rperm", "editrole"],
+    usage: "!roleperm <@role/ID> <add|remove> <Permission>",
     permissions: [PermissionsBitField.Flags.Administrator],
 
     async execute(message, args) {
-        // Usage: !roleperm <role> <add|remove> <permission>
-        if (args.length < 3) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor(ERROR_COLOR)
-                    .setTitle("⚠️ Inspect Syntax")
-                    .setDescription("Usage: `!roleperm <@role/ID> <add|remove> <Permission>`\nExample: `!roleperm @Mods add BanMembers`")
-                ]
-            });
-        }
+        if (args.length < 3)
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!roleperm <@role/ID> <add|remove> <Permission>`\n**Example:** `!roleperm @Mods add BanMembers`")], V2_RED)] });
 
         const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[0]);
-        if (!role) return message.reply("❌ **Role not found.**");
+        if (!role) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ **Role not found.**")], V2_RED)] });
 
         const action = args[1].toLowerCase();
         const permString = args[2];
         const targetPerm = PermissionsBitField.Flags[permString];
 
-        if (!targetPerm) {
-            return message.reply(`❌ **Invalid Permission.**\nAvailable examples: \`BanMembers\`, \`KickMembers\`, \`Administrator\`, \`ManageChannels\`.`);
-        }
+        if (!targetPerm)
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text(`❌ **Invalid Permission:** \`${permString}\`\nExamples: \`BanMembers\`, \`KickMembers\`, \`Administrator\`, \`ManageChannels\``)], V2_RED)] });
 
-        // High level safety check - prevent modifying bot's own highest role or roles higher than bot
-        if (role.position >= message.guild.members.me.roles.highest.position) {
-            return message.reply("❌ **I cannot modify this role** because it is higher than or equal to my highest role.");
-        }
+        if (role.position >= message.guild.members.me.roles.highest.position)
+            return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ I cannot modify this role — it's above my highest role.")], V2_RED)] });
 
         try {
             const currentPerms = new PermissionsBitField(role.permissions);
             let newPerms;
 
             if (action === "add" || action === "+") {
-                if (currentPerms.has(targetPerm)) {
-                    return message.reply("⚠️ This role **already has** that permission.");
-                }
+                if (currentPerms.has(targetPerm)) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ This role **already has** that permission.")], V2_RED)] });
                 newPerms = currentPerms.add(targetPerm);
             } else if (action === "remove" || action === "-") {
-                if (!currentPerms.has(targetPerm)) {
-                    return message.reply("⚠️ This role **does not have** that permission.");
-                }
+                if (!currentPerms.has(targetPerm)) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ This role **does not have** that permission.")], V2_RED)] });
                 newPerms = currentPerms.remove(targetPerm);
             } else {
-                return message.reply("❌ Invalid action. Use `add` or `remove`.");
+                return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Invalid action. Use `add` or `remove`.")], V2_RED)] });
             }
 
             await role.setPermissions(newPerms);
-
-            const successEmbed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("💎 ROLE PERMISSIONS UPDATED")
-                .setDescription(
-                    `**Role:** ${role}\n` +
-                    `**Action:** ${action === "add" ? "✅ Added" : "🔻 Removed"}\n` +
-                    `**Permission:** \`${permString}\``
-                )
-                .setFooter({ text: `Updated by ${message.author.tag}` })
-                .setTimestamp();
-
-            message.reply({ embeds: [successEmbed] });
-
+            message.reply({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.heading("💎 ROLE PERMISSIONS UPDATED", 2),
+                    V2.text(`> **Role:** ${role}\n> **Action:** ${action === "add" ? "✅ Added" : "🔻 Removed"}\n> **Permission:** \`${permString}\`\n> **By:** ${message.author.tag}`)
+                ], V2_BLUE)]
+            });
         } catch (err) {
-            console.error(err);
-            message.reply("❌ **Failed to update permissions.** Check my role hierarchy.");
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ **Failed to update permissions.** Check my role hierarchy.")], V2_RED)] });
         }
     }
 };

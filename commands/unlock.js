@@ -1,5 +1,5 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, EMBED_COLOR, ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const { PermissionsBitField } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "unlock",
@@ -8,48 +8,54 @@ module.exports = {
     permissions: [PermissionsBitField.Flags.ManageChannels],
 
     async execute(message, args) {
+        const V2 = require("../utils/v2Utils");
         const isBotOwner = message.author.id === BOT_OWNER_ID;
         const isServerOwner = message.guild.ownerId === message.author.id;
         const reason = args.join(" ") || "No reason provided";
 
-        // Permission Check (Owner Bypass)
+        // Permission Check
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 You do not have permission to use this command.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **Access Denied:** You need `Manage Channels` permission.")], V2_RED)]
+            });
         }
 
         if (!message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("🚫 I do not have permission to manage channels.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **System Error:** I (Bot) need `Manage Channels` permission.")], V2_RED)]
+            });
         }
 
         try {
-            // Unlock channel for @everyone (reset to null or true)
-            await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, {
+            const everyoneRoleId = message.guild.id;
+
+            // UNLOCK: Reset SendMessages for @everyone (null)
+            await message.channel.permissionOverwrites.edit(everyoneRoleId, {
                 SendMessages: null
             }, { reason: `Unlocked by ${message.author.tag}: ${reason}` });
 
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("🔓 CHANNEL UNLOCKED")
-                .setDescription(
-                    "```diff\n" +
-                    "+ STATUS:  UNLOCKED\n" +
-                    "+ TARGET:  @everyone\n" +
-                    "+ ACCESS:  Restored\n" +
-                    "```\n" +
-                    `**Reason:** ${reason}`
-                )
-                .setThumbnail("https://cdn-icons-png.flaticon.com/512/3064/3064197.png") // Unlock Icon
-                .addFields(
-                    { name: "🛡️ Authorized By", value: `> ${message.author}`, inline: true },
-                    { name: "⏱️ Time", value: `> <t:${Math.floor(Date.now() / 1000)}:f>`, inline: true }
-                )
-                .setFooter({ text: "BlueSealPrime • Moderation System", iconURL: message.client.user.displayAvatarURL() });
+            const container = V2.container([
+                V2.section([
+                    V2.heading("🔓 CHANNEL UNLOCKED", 2),
+                    V2.text(`**Status:** Access Restored\n**Sector:** ${message.channel.name}\n**Reason:** ${reason}`)
+                ], "https://i.ibb.co/j65q3X4/unlock-icon.png"), // User provided unlock icon
+                V2.separator(),
+                V2.text(`*BlueSealPrime Security Systems • ${new Date().toLocaleTimeString()}*`)
+            ], "#0099ff");
 
-            await message.channel.send({ embeds: [embed] });
+            await message.channel.send({ content: null, flags: V2.flag, components: [container] });
 
         } catch (err) {
             console.error(err);
-            return message.reply({ embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ Failed to unlock the channel.")] });
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("❌ **Unlock Failed:** Check bot permissions hierarchy.")], V2_RED)]
+            });
         }
     }
 };

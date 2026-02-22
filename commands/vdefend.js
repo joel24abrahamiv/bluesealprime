@@ -1,7 +1,7 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID, SUCCESS_COLOR } = require("../config");
+const { BOT_OWNER_ID, SUCCESS_COLOR, V2_BLUE } = require("../config");
 
 const DB_PATH = path.join(__dirname, "../data/vdefend.json");
 
@@ -37,11 +37,16 @@ module.exports = {
         data[message.guild.id].push(target.id);
         saveDB(data);
 
-        message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setDescription(`🛡️ **${target.user.tag}** is now protected (vdefend active).`)
-            ]
+        const V2 = require("../utils/v2Utils");
+        message.channel.send({
+            content: null,
+            flags: V2.flag,
+            components: [V2.container([
+                V2.heading("🛡️ DEFENSE PROTOCOL ACTIVE", 2),
+                V2.text(`**Target:** ${target}\n**Status:** \`Protected\`\n\n> *User protection barrier engaged.*`),
+                V2.separator(),
+                V2.text(`*BlueSealPrime • Anti-Move System*`)
+            ], V2_BLUE)]
         });
     }
 };

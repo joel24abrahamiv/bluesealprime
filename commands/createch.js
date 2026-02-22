@@ -1,5 +1,6 @@
-const { EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
-const { EMBED_COLOR, SUCCESS_COLOR, ERROR_COLOR } = require("../config");
+const { PermissionsBitField, ChannelType } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
+const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "createch",
@@ -9,41 +10,42 @@ module.exports = {
     aliases: ["createchannel", "cc"],
 
     async execute(message, args) {
+        const botAvatar = V2.botAvatar(message);
         if (!args[0]) {
             return message.reply({
-                embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("⚠️ **Usage:** `!createch <name> [text/voice]`")]
+                flags: V2.flag,
+                components: [V2.container([V2.heading("⚠️ MISSING ARGUMENTS", 3), V2.text("> Usage: `!createch <name> [text/voice]`")], V2_RED)]
             });
         }
 
         const name = args[0];
         const typeArg = args[1]?.toLowerCase() || "text";
-        let type = ChannelType.GuildText;
-
-        if (typeArg === "voice" || typeArg === "vc") type = ChannelType.GuildVoice;
+        const type = (typeArg === "voice" || typeArg === "vc") ? ChannelType.GuildVoice : ChannelType.GuildText;
+        const typeLabel = type === ChannelType.GuildVoice ? "🔊 Voice Channel" : "💬 Text Channel";
 
         try {
             const channel = await message.guild.channels.create({
-                name: name,
-                type: type,
+                name,
+                type,
                 reason: `Created by ${message.author.tag}`
             });
 
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("✅ Channel Created")
-                .setDescription(`Successfully created **${channel}** (ID: \`${channel.id}\`)`)
-                .addFields(
-                    { name: "📁 Type", value: typeArg === "voice" ? "Voice Channel" : "Text Channel", inline: true },
-                    { name: "👤 Creator", value: `${message.author}`, inline: true }
-                )
-                .setTimestamp();
-
-            message.channel.send({ embeds: [embed] });
-
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([
+                    V2.section([
+                        V2.heading("✅ CHANNEL DEPLOYED", 2),
+                        V2.text(`**${typeLabel}** \`${channel.name}\` is now live.`)
+                    ], botAvatar),
+                    V2.separator(),
+                    V2.text(`> **Type:** ${typeLabel}\n> **ID:** \`${channel.id}\`\n> **Created by:** ${message.author}`),
+                ], V2_BLUE)]
+            });
         } catch (err) {
             console.error(err);
-            message.reply({
-                embeds: [new EmbedBuilder().setColor(ERROR_COLOR).setDescription("❌ **Error:** Failed to create channel.")]
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text("❌ **Failed to create channel.** Check my permissions.")], V2_RED)]
             });
         }
     }

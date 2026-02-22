@@ -1,37 +1,18 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { ERROR_COLOR, SUCCESS_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField } = require("discord.js");
+const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "unlocksound",
     description: "Unlock the soundboard in the current channel",
     usage: "!unlocksound",
     permissions: [PermissionsBitField.Flags.ManageChannels],
-    async execute(message, args) {
-        const channel = message.channel;
-
+    async execute(message) {
         try {
-            // Setting to null removes the overwrite, returning to default permissions
-            // Or true to forcefully allow it. Let's use true to be explicit "Unlock".
-            await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-                UseSoundboard: true,
-                UseExternalSounds: true
-            });
-
-            const embed = new EmbedBuilder()
-                .setColor(SUCCESS_COLOR)
-                .setTitle("🔊 Soundboard Unlocked")
-                .setDescription(`The soundboard has been **UNLOCKED** for this channel.\nMembers can now play sounds.`)
-                .setFooter({ text: "BlueSealPrime • Security" })
-                .setTimestamp();
-
-            await message.reply({ embeds: [embed] });
-
+            await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { UseSoundboard: true, UseExternalSounds: true });
+            await message.reply({ flags: V2.flag, components: [V2.container([V2.text(`🔊 **Soundboard Unlocked** in ${message.channel}.\nMembers can now play sounds again.`)], V2_BLUE)] });
         } catch (err) {
-            console.error(err);
-            const errorEmbed = new EmbedBuilder()
-                .setColor(ERROR_COLOR)
-                .setDescription("❌ Failed to unlock soundboard. I may check my permissions.");
-            message.reply({ embeds: [errorEmbed] });
+            message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Failed to unlock soundboard. Check my permissions.")], V2_RED)] });
         }
     }
 };

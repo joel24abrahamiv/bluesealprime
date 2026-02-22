@@ -1,7 +1,8 @@
-const { EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
+const V2 = require("../utils/v2Utils");
+const { PermissionsBitField, ChannelType } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const { BOT_OWNER_ID, EMBED_COLOR } = require("../config");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 const BACKUP_DIR = path.join(__dirname, "../data/backups");
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -16,31 +17,41 @@ module.exports = {
 
     async execute(message, args) {
         if (message.author.id !== BOT_OWNER_ID && message.author.id !== message.guild.ownerId) {
-            return message.reply("🚫 **Access Denied:** Only the Server or Bot Owner can manage archives.");
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text("🚫 **Access Denied:** Only the Server or Bot Owner can manage archives.")], V2_RED)]
+            });
         }
 
         const sub = args[0]?.toLowerCase();
+        const botAvatar = V2.botAvatar(message);
 
         if (sub === "create") {
-            const initEmbed = new EmbedBuilder()
-                .setColor("#00FFFF") // Cyan Pulse
-                .setTitle("📡 INITIALIZING SERVER SCAN")
-                .setDescription("```diff\n+ Accessing Discord API Matrix\n+ Analyzing Structural DNA\n+ Serializing Sector Permissions\n```")
-                .setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934983938068/line-blue.gif")
-                .setFooter({ text: "BlueSealPrime • Priority Alpha Archive" });
+            const initContainer = V2.container([
+                V2.section([
+                    V2.heading("📡 INITIALIZING SERVER SCAN", 2),
+                    V2.text("```diff\n+ Accessing Discord API Matrix\n+ Analyzing Structural DNA\n+ Serializing Sector Permissions\n```")
+                ], botAvatar),
+                V2.separator(),
+                V2.text("*BlueSealPrime • Priority Alpha Archive*")
+            ], "#00FFFF");
 
-            const status = await message.channel.send({ embeds: [initEmbed] });
+            const status = await message.channel.send({ content: null, flags: V2.flag, components: [initContainer] });
 
             try {
                 // Generate a readable ID: ServerName_DDMM_HHMM
                 const date = new Date();
-                const timestamp = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
-                const backupId = `${message.guild.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10)}_${timestamp}`;
+                // Generate a 13-digit numeric ID based on timestamp + random padding
+                const backupId = Date.now().toString() + Math.floor(Math.random() * 9).toString();
 
                 const backupData = {
                     id: backupId,
                     guildName: message.guild.name,
                     guildId: message.guild.id,
+                    createdBy: {
+                        tag: message.author.tag,
+                        id: message.author.id
+                    },
                     createdAt: date.toISOString(),
                     settings: {
                         verificationLevel: message.guild.verificationLevel,
@@ -138,98 +149,111 @@ module.exports = {
                 const filePath = path.join(BACKUP_DIR, `${backupId}.json`);
                 fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
 
-                const successEmbed = new EmbedBuilder()
-                    .setColor("#2F3136") // Dark Neutral
-                    .setAuthor({ name: "SYSTEM SNAPSHOT SECURED", iconURL: "https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif" })
-                    .setThumbnail(message.guild.iconURL({ dynamic: true }) || message.client.user.displayAvatarURL())
-                    .setDescription(
-                        `# 📂 ARCHIVE STORED\n` +
-                        `> **Target Server:** ${message.guild.name}\n` +
-                        `> **Authorization:** ${message.author}\n\n` +
-                        `**🆔 SNAPSHOT IDENTIFIER**\n` +
-                        `\`\`\`bash\n${backupId}\n\`\`\``
-                    )
-                    .addFields(
-                        {
-                            name: "📦 DATA MANIFEST",
-                            value: `\`\`\`yaml\nRoles     : ${backupData.roles.length}\nChannels  : ${backupData.channels.length}\nEmojis    : ${backupData.emojis.length}\nStickers  : ${backupData.stickers.length}\n\`\`\``,
-                            inline: false
-                        },
-                        {
-                            name: "📅 TIME STAMP",
-                            value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
-                            inline: false
-                        }
-                    )
-                    .setFooter({ text: "Use !restore <ID> to deploy this matrix.", iconURL: message.client.user.displayAvatarURL() });
+                const successContainer = V2.container([
+                    V2.section([
+                        V2.heading("📂 ARCHIVE STORED", 2),
+                        V2.text(`### **[ SNAPSHOT_SECURED ]**\n> **Target Server:** ${message.guild.name}\n> **Authorization:** ${message.author}\n\n**🆔 SNAPSHOT IDENTIFIER**\n\`\`\`bash\n${backupId}\n\`\`\``)
+                    ], message.guild.iconURL({ extension: 'png' }) || botAvatar),
+                    V2.separator(),
+                    V2.heading("📦 DATA MANIFEST", 3),
+                    V2.text(`\`\`\`yaml\nRoles     : ${backupData.roles.length}\nChannels  : ${backupData.channels.length}\nEmojis    : ${backupData.emojis.length}\nStickers  : ${backupData.stickers.length}\n\`\`\``),
+                    V2.separator(),
+                    V2.text(`📅 **Time Stamp:** <t:${Math.floor(Date.now() / 1000)}:F>`),
+                    V2.separator(),
+                    V2.text(`*Use !restore <ID> to deploy this matrix.*`)
+                ], V2_BLUE);
 
-                await status.edit({ embeds: [successEmbed] });
+                await status.edit({ content: null, components: [successContainer] });
 
             } catch (err) {
                 console.error(err);
-                status.edit(`❌ **Critical Failure:** Internal error during serialization.`);
+                const errorContainer = V2.container([V2.text("❌ **Critical Failure:** Internal error during serialization.")], V2_RED);
+                status.edit({ content: null, components: [errorContainer] });
             }
 
         } else if (sub === "list") {
             const files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
 
             if (files.length === 0) {
-                return message.reply("📁 **Archive Vault is Empty.** No backups found.");
+                return message.reply({
+                    flags: V2.flag,
+                    components: [V2.container([V2.text("📁 **Archive Vault is Empty.** No backups found.")], V2_BLUE)]
+                });
             }
 
-            const listEmbed = new EmbedBuilder()
-                .setColor("#00FFFF")
-                .setTitle("📂 CENTRAL ARCHIVE VAULT")
-                .setDescription("```fix\n[ ACCESSING ENCRYPTED SNAPSHOTS ]\n```")
-                .setTimestamp()
-                .setFooter({ text: "BlueSealPrime • Archive Registry" });
+            const listComponents = [
+                V2.section([
+                    V2.heading("📂 CENTRAL ARCHIVE VAULT", 2),
+                    V2.text("```fix\n[ ACCESSING ENCRYPTED SNAPSHOTS ]\n```")
+                ], botAvatar),
+                V2.separator()
+            ];
 
-            files.slice(0, 10).forEach(file => {
+            files.slice(0, 5).forEach(file => {
                 try {
                     const filePath = path.join(BACKUP_DIR, file);
                     const stats = fs.statSync(filePath);
                     const fileSize = (stats.size / 1024).toFixed(2); // KB
-
                     const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
                     const createdTimestamp = Math.floor(new Date(data.createdAt).getTime() / 1000);
+                    const creator = data.createdBy ? data.createdBy.tag : "Unknown Architect";
 
-                    listEmbed.addFields({
-                        name: `📦 SNAPSHOT: \`${data.id}\``,
-                        value:
-                            `> **🏷️ Name:** ${data.guildName}\n` +
-                            `> **📅 Date:** <t:${createdTimestamp}:F> (<t:${createdTimestamp}:R>)\n` +
-                            `> **📊 Stats:** ${data.roles.length} Roles • ${data.channels.length} Channels • ${data.emojis.length} Emojis\n` +
-                            `> **💾 Size:** ${fileSize} KB`,
-                        inline: false
-                    });
-
-                    // Add visual separator
-                    listEmbed.addFields({ name: "\u200b", value: "\u200b", inline: false });
-
+                    listComponents.push(
+                        V2.heading(`🆔 ID: ${data.id}`, 3),
+                        V2.text(
+                            `> **🏛️ Server:** ${data.guildName}\n` +
+                            `> **👑 Creator:** ${creator}\n` +
+                            `> **📅 Created:** <t:${createdTimestamp}:F>\n` +
+                            `> **📊 Stats:** \`${data.roles.length} Roles • ${data.channels.length} Channels\``
+                        ),
+                        V2.separator()
+                    );
                 } catch (e) { }
             });
 
-            message.reply({ embeds: [listEmbed] });
+            listComponents.push(V2.text("*BlueSealPrime • Archive Registry • Global*"));
+
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container(listComponents, V2_BLUE)]
+            });
 
         } else if (sub === "delete") {
             const targetId = args[1];
-            if (!targetId) return message.reply("⚠️ Specify an archive ID to delete.");
+            if (!targetId) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify an archive ID to delete.")], V2_RED)] });
 
             const targetPath = path.join(BACKUP_DIR, `${targetId}.json`);
-            if (!fs.existsSync(targetPath)) return message.reply("❌ Archive ID not found in vault.");
+            if (!fs.existsSync(targetPath)) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ Archive ID not found in vault.")], V2_RED)] });
 
             fs.unlinkSync(targetPath);
-            message.reply(`🗑️ **Archive Purged:** Snapshot \`${targetId}\` has been deleted.`);
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text(`🗑️ **Archive Purged:** Snapshot \`${targetId}\` has been deleted.`)], V2_RED)]
+            });
 
         } else if (sub === "clear") {
             const files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
-            if (files.length === 0) return message.reply("📭 **The Vault is already empty.**");
+            if (files.length === 0) return message.reply({ flags: V2.flag, components: [V2.container([V2.text("📭 **The Vault is already empty.**")], V2_BLUE)] });
 
             files.forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
-            message.reply(`🧹 **Vault Cleared:** Total of **${files.length}** archives have been permanently deleted.`);
+            return message.reply({
+                flags: V2.flag,
+                components: [V2.container([V2.text(` sweep **Vault Cleared:** Total of **${files.length}** archives have been permanently deleted.`)], V2_RED)]
+            });
 
         } else {
-            message.reply("💡 **Backup Manual:**\n`!backup create` - Save current server state\n`!backup list` - View all snapshots\n`!backup delete <ID>` - Remove a snapshot\n`!backup clear` - Wipe the entire vault");
+            const helpContainer = V2.container([
+                V2.section([
+                    V2.heading("💡 BACKUP PROTOCOL MANUAL", 2),
+                    V2.text(
+                        "🔹 `!backup create` - Save current server state\n" +
+                        "🔹 `!backup list` - View all snapshots\n" +
+                        "🔹 `!backup delete <ID>` - Remove a snapshot\n" +
+                        "🔹 `!backup clear` - Wipe the entire vault"
+                    )
+                ], botAvatar)
+            ], V2_BLUE);
+            return message.reply({ flags: V2.flag, components: [helpContainer] });
         }
     }
 };

@@ -1,5 +1,5 @@
-const { EmbedBuilder } = require("discord.js");
-const { BOT_OWNER_ID } = require("../config");
+const V2 = require("../utils/v2Utils");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const fs = require('fs');
 const path = require('path');
 
@@ -14,7 +14,8 @@ module.exports = {
         const commandsPath = path.join(__dirname, '../commands');
         const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-        const statusMsg = await message.reply("🛰️ **Initializing Deep System Diagnostic...** Scanning command kernel.");
+        const authContainer = V2.container([V2.text("🛰️ **Initializing Deep System Diagnostic...** Scanning command kernel.")], V2_BLUE);
+        const statusMsg = await message.reply({ content: null, flags: V2.flag, components: [authContainer] });
 
         let passed = 0;
         let failed = 0;
@@ -34,23 +35,28 @@ module.exports = {
                 }
             } catch (error) {
                 failed++;
-                errors.push(`\`${file}\`: Critical Load Failure`);
+                errors.push(`\`${file}\`: Load Failure`);
             }
         }
 
-        const diagEmbed = new EmbedBuilder()
-            .setColor(failed > 0 ? "#FF0000" : "#00FF00")
-            .setTitle("🛡️ SYSTEM DIAGNOSTIC REPORT")
-            .setThumbnail(message.client.user.displayAvatarURL())
-            .setDescription(
-                `### **[ KERNEL_INTEGRITY ]**\n` +
-                `> ✅ **Modules Passed:** \`${passed}\` / \`${commandFiles.length}\`\n` +
-                `> ❌ **Modules Failed:** \`${failed}\`\n\n` +
-                (failed > 0 ? `### **[ ERROR_LOG ]**\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n*+ ${errors.length - 5} more...*` : ''}` : `> 💎 **Status:** *All systems operational. Command hierarchy intact.*`)
-            )
-            .setFooter({ text: "BlueSealPrime • Kernel Diagnostics" })
-            .setTimestamp();
+        const errorLog = failed > 0
+            ? `### **[ ERROR_LOG ]**\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n*+ ${errors.length - 5} more...*` : ''}`
+            : `> 💎 **Status:** *All systems operational. Command hierarchy intact.*`;
 
-        return statusMsg.edit({ content: null, embeds: [diagEmbed] });
+        const diagContainer = V2.container([
+            V2.section([
+                V2.heading("🛡️ SYSTEM DIAGNOSTIC REPORT", 2),
+                V2.text(
+                    `### **[ KERNEL_INTEGRITY ]**\n` +
+                    `> ✅ **Modules Passed:** \`${passed}\` / \`${commandFiles.length}\`\n` +
+                    `> ❌ **Modules Failed:** \`${failed}\`\n\n` +
+                    errorLog
+                )
+            ], V2.botAvatar(message)),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Kernel Diagnostics Synced*")
+        ], failed > 0 ? V2_RED : "#00FF7F");
+
+        return statusMsg.edit({ content: null, components: [diagContainer] });
     }
 };
