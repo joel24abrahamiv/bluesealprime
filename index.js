@@ -540,7 +540,7 @@ async function updateDashboard(bot) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} online and stable`);
   // ───── UPDATE DASHBOARD ─────
   updateDashboard(client);
@@ -1988,6 +1988,7 @@ client.on("roleUpdate", async (oldRole, newRole) => {
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
+  const oldRoles = oldMember.roles.cache;
   const newRoles = newMember.roles.cache;
 
   // Roles Added
