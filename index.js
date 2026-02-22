@@ -1,24 +1,17 @@
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get("*", (req, res) => res.status(200).send("Sovereign OS Online"));
+app.listen(PORT, "0.0.0.0", () => console.log(`🌐 [Railway] Heartbeat established on port ${PORT}`));
+
 process.env.NODE_NO_WARNINGS = "1";
-process.removeAllListeners('warning'); // Surgical strike against red deprecation logs
+process.removeAllListeners('warning');
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { BOT_OWNER_ID } = require("./config");
 const V2 = require("./utils/v2Utils");
-
-// 👇 KEEP RAILWAY ALIVE (STABILIZED)
-const http = require("http");
-const PORT = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("Sovereign OS Online");
-});
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 [Railway] Global Heartbeat active on port ${PORT}`);
-});
-server.on('error', (err) => console.error('🌐 [HttpError]', err.message));
 
 const PREFIX = "!";
 
