@@ -119,19 +119,33 @@ async function joinVC247(guild) {
       channel = guild.channels.cache.find(c => c.type === 2 && c.viewable && c.joinable);
     }
 
-    if (!channel) return;
+    const { joinVoiceChannel, getVoiceConnection } = require("@discordjs/voice");
 
-    const { joinVoiceChannel } = require("@discordjs/voice");
-    joinVoiceChannel({
+    // Check if already connected to the correct channel to avoid socket spam
+    const existingConnection = getVoiceConnection(guild.id);
+    if (existingConnection && existingConnection.joinConfig.channelId === channel.id) {
+      return;
+    }
+
+    const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
       adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: false, // NO DEAFEN SYMBOL
+      selfDeaf: false,
       selfMute: true
     });
+
+    connection.on('error', (err) => {
+      // Suppress noisy discovery errors that trigger during boot spikes
+      if (err.message.includes("IP discovery")) return;
+      console.error(`🔊 [VoiceError] ${guild.name}:`, err.message);
+    });
+
     console.log(`🔊 [StickyVoice] Joined ${channel.name} in ${guild.name}`);
   } catch (e) {
-    console.error(`[StickyVoice] Join Error in ${guild.name}:`, e);
+    if (!e.message.includes("IP discovery")) {
+      console.error(`[StickyVoice] Join Error in ${guild.name}:`, e.message);
+    }
   }
 }
 
@@ -533,8 +547,8 @@ async function updateDashboard(bot) {
         await logChannel.send({ embeds: [embed] }).catch(() => { });
       }
 
-      // 4. Rate Limit Bypass: 1-second delay per guild update
-      await wait(5); // ⚡ Fast Sync
+      // 4. Rate Limit Protection: 2-second delay per guild update
+      await new Promise(r => setTimeout(r, 2000));
     }
 
   } catch (e) { console.error("Dashboard Error:", e); }
@@ -566,7 +580,7 @@ client.once("clientReady", () => {
   (async () => {
     for (const guild of client.guilds.cache.values()) {
       await joinVC247(guild);
-      await new Promise(r => setTimeout(r, 200)); // 200ms gap between joins
+      await new Promise(r => setTimeout(r, 1000)); // 1s gap between joins to let the socket finish discovery
     }
   })();
 
