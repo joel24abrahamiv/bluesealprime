@@ -541,10 +541,24 @@ async function updateDashboard(bot) {
         m.embeds[0]?.title === embed.data.title
       );
 
+      // 3. Create CV2 Container
+      const botAvatar = V2.botAvatar({ guild: dashGuild, client: bot });
+      const statsSection = V2.section([
+        V2.heading("📊 SYSTEM ANALYTICS", 2),
+        V2.text(`**Gateway:** \`CONNECTED\`\n**Nodes:** \`${bot.guilds.cache.size}\`\n**Users:** \`${bot.users.cache.size}\``)
+      ], botAvatar);
+
+      const latencySection = V2.section([
+        V2.heading("📡 NETWORK TRAFFIC", 3),
+        V2.text(`**API Latency:** \`${Math.round(bot.ws.ping)}ms\`\n**Response Time:** \`STABLE\``)
+      ]);
+
+      const container = V2.container([statsSection, new SeparatorBuilder(), latencySection]);
+
       if (existingMsg) {
-        await existingMsg.edit({ embeds: [embed] }).catch(() => { });
+        await existingMsg.edit({ flags: V2.flag, components: [container] }).catch(() => { });
       } else {
-        await logChannel.send({ embeds: [embed] }).catch(() => { });
+        await logChannel.send({ flags: V2.flag, components: [container] }).catch(() => { });
       }
 
       // 4. Rate Limit Protection: 1-second delay is enough if we don't fetch every time
@@ -2777,20 +2791,25 @@ client.on("interactionCreate", async interaction => {
       const ticketLogEmbed = new EmbedBuilder()
         .setColor("#2ECC71")
         .setTitle("🎫 TICKET CREATED")
-        .addFields({ name: "👤 User", value: `${user} (\`${user.id}\`)`, inline: true }, { name: "📂 Channel", value: `${channel}`, inline: true })
-        .setTimestamp()
-        .setFooter({ text: "BlueSealPrime • Ticket Log" });
+        .addFields({ name: "👤 User", value: `${user} (\`${user.id}\`)`, inline: true }, { name: "📂 Channel", value: `${channel}`, inline: true });
       logToChannel(guild, "ticket", ticketLogEmbed);
 
-      const ticketEmbed = new EmbedBuilder()
-        .setColor("#2B2D31")
-        .setTitle(`📂 TICKET #${channel.name.split("-")[1]}`)
-        .setDescription(`**Secure Channel Established.**\nWelcome ${user}, support will be with you shortly.\n\n🔒 *Authorized Personnel Only*`)
-        .setThumbnail(user.displayAvatarURL())
-        .setFooter({ text: "BlueSealPrime • Secure Communication Line" });
+      const botAvatar = V2.botAvatar({ guild, client });
+      const mainSection = V2.section([
+        V2.heading(`📂 TICKET #${channel.name.split("-")[2] || "OPEN"}`, 2),
+        V2.text(`**Secure Channel Established.**\nWelcome ${user}, support will be with you shortly.\n\n🔒 *Authorized Personnel Only*`)
+      ], botAvatar);
 
-      const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
-      await channel.send({ content: `${user} | <@${BOT_OWNER_ID}>`, embeds: [ticketEmbed], components: [row] });
+      const closeButton = new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger);
+      const actionSection = V2.section([V2.text("Channel Controls:")], closeButton);
+
+      const container = V2.container([mainSection, new SeparatorBuilder(), actionSection]);
+
+      await channel.send({
+        content: `${user} | <@${BOT_OWNER_ID}>`,
+        flags: V2.flag,
+        components: [container]
+      });
       await interaction.editReply(`✅ **Secure Channel Created:** ${channel}`);
     } catch (err) {
       console.error(err);
@@ -2799,8 +2818,17 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (customId === "close_ticket") {
-    await interaction.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("🔒 **Closing Secure Channel NOW.**")] });
-    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 5);
+    const botAvatar = V2.botAvatar({ guild, client });
+    const closeSection = V2.section([
+      V2.heading("🔒 SECURE CHANNEL CLOSING", 3),
+      V2.text("The session has been terminated. This channel will be purged immediately.")
+    ], botAvatar);
+
+    await interaction.reply({
+      flags: V2.flag,
+      components: [V2.container([closeSection])]
+    });
+    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 1500);
   }
 
   // ───── TEMP VC BUTTON HANDLER ─────
@@ -3161,8 +3189,35 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
 
 // ───── LOGGING EVENT HANDLER ─────
+// ───── LOGGING EVENT HANDLER (MIGRATED TO CV2) ─────
 async function logToChannel(guild, type, payload) {
   if (!guild) return;
+
+  const botAvatar = V2.botAvatar({ guild, client });
+  let container;
+
+  // Transform payload into CV2 if it's an embed
+  if (payload instanceof EmbedBuilder || payload.data) {
+    const sections = V2.fromEmbed(payload);
+
+    // Add bot pfp to the first section or as a new section
+    if (sections.length > 0) {
+      // If the first section is just text, we can swap it or inject thumbnail
+      // But for "Every log has bot pfp", we ensure a dedicated branding section
+      const brandingSection = V2.section([
+        V2.heading("System Intelligence", 3),
+        V2.text(`Sector: ${type.toUpperCase()}`)
+      ], botAvatar);
+
+      container = V2.container([brandingSection, new SeparatorBuilder(), ...sections]);
+    } else {
+      container = V2.container([V2.section("Log data missing.", botAvatar)]);
+    }
+  } else if (payload.constructor.name === 'ContainerBuilder') {
+    container = payload;
+  } else {
+    container = V2.container([V2.section(String(payload), botAvatar)]);
+  }
 
   // 0. UNIVERSAL LOGGING (ELOGS)
   const ELOGS_DB = path.join(__dirname, "data/elogs.json");
@@ -3174,31 +3229,17 @@ async function logToChannel(guild, type, payload) {
       if (eChannelId) {
         const eChannel = await client.channels.fetch(eChannelId).catch(() => null);
         if (eChannel) {
-          // Send as V2 if it is a container, otherwise standard embed
-          if (payload && payload.constructor.name === 'ContainerBuilder') {
-            await eChannel.send({
-              content: `🌐 **GLOBAL LOG: ${guild.name.toUpperCase()}**`,
-              flags: V2.flag,
-              components: [payload]
-            }).catch(() => { });
-          } else {
-            const uEmbed = EmbedBuilder.from(payload.data);
-            uEmbed.setDescription("\u200b\n" + (uEmbed.data.description || "") + "\n\u200b");
-            uEmbed.setAuthor({ name: `🌐 GLOBAL LOG: ${guild.name.toUpperCase()}`, iconURL: guild.iconURL() || client.user.displayAvatarURL() });
-            if ((uEmbed.data.fields?.length || 0) < 23) {
-              uEmbed.spliceFields(0, 0, { name: "\u200b", value: "┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┑", inline: false });
-              uEmbed.addFields({ name: "\u200b", value: "┕━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┙", inline: false });
-            }
-            uEmbed.setImage("https://media.discordapp.net/attachments/1093150036663308318/1113885934572900454/line-red.gif");
-            uEmbed.setFooter({ text: `Universal Intelligence • Sector: ${type.toUpperCase()} • ID: ${guild.id} • ${new Date().toLocaleString()}` });
-            await eChannel.send({ embeds: [uEmbed] }).catch(() => { });
-          }
+          await eChannel.send({
+            content: `🌐 **GLOBAL LOG: ${guild.name.toUpperCase()}**`,
+            flags: V2.flag,
+            components: [container]
+          }).catch(() => { });
         }
       }
     } catch (e) { console.error("[LOG] Global Error:", e); }
   }
 
-  // 2. LOCAL LOGGING
+  // 1. LOCAL LOGGING
   const LOGS_DB = path.join(__dirname, "data/logs.json");
   if (!fs.existsSync(LOGS_DB)) return;
 
@@ -3212,18 +3253,10 @@ async function logToChannel(guild, type, payload) {
 
     const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (channel) {
-      if (payload && payload.constructor.name === 'ContainerBuilder') {
-        await channel.send({ flags: V2.flag, components: [payload] }).catch(() => { });
-      } else {
-        const lEmbed = EmbedBuilder.from(payload.data);
-        lEmbed.setDescription("\u200b\n" + (lEmbed.data.description || "") + "\n\u200b");
-        if ((lEmbed.data.fields?.length || 0) < 23) {
-          lEmbed.spliceFields(0, 0, { name: "\u200b", value: "─".repeat(35), inline: false });
-          lEmbed.addFields({ name: "\u200b", value: "─".repeat(35), inline: false });
-        }
-        lEmbed.setTimestamp();
-        await channel.send({ embeds: [lEmbed] }).catch(() => { });
-      }
+      await channel.send({
+        flags: V2.flag,
+        components: [container]
+      }).catch(() => { });
     }
   } catch (e) { console.error("[LOG] Local Error:", e); }
 }
