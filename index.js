@@ -1,17 +1,18 @@
-// 1. IMMEDIATE HEARTBEAT (Before anything else to satisfy Railway)
+// 1. ABSOLUTE PRIORITY Heartbeat (Bound before ANY module loading)
 const http = require("http");
-const PORT = process.env.PORT || 8080;
-const server = http.createServer((req, res) => {
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Sovereign OS Online");
-});
-server.listen(PORT, "0.0.0.0", () => {
+}).listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 [Railway] Heartbeat synchronized on port ${PORT}`);
 });
-server.on('error', (err) => console.error('🌐 [HttpError]', err.message));
 
-// 2. ENVIRONMENT & REQUIRES
+// 2. SUPPRESS NOISY LOGS
 process.env.NODE_NO_WARNINGS = "1";
+process.removeAllListeners('warning');
+
+// 3. CORE REQUIRES
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -20,7 +21,6 @@ const { BOT_OWNER_ID } = require("./config");
 const V2 = require("./utils/v2Utils");
 
 const PREFIX = "!";
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -88,9 +88,9 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('SIGTERM', () => {
   global.isShuttingDown = true;
-  console.log('🛑 [System] SIGTERM received. Preparing for transition...');
+  console.log('🛑 [System] SIGTERM received. Graceful transition enabled.');
   try { client.destroy(); } catch (e) { }
-  // Removed process.exit to let Railway finish the lifecycle
+  process.nextTick(() => process.exit(0));
 });
 process.on('SIGINT', () => {
   client.destroy();
@@ -425,28 +425,21 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 // ... (Rest of Index Code) ...
 
 
-// ───── ASYNC COMMAND LOADER (Event Loop Protection) ─────
+// ───── COMMAND COLLECTION (Standard Sync Load) ─────
 client.commands = new Collection();
-(async () => {
-  const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
-  console.log(`📦 Initializing load sequence for ${commandFiles.length} modules...`);
-
-  for (const file of commandFiles) {
-    try {
-      const command = require(`./commands/${file}`);
-      if (command.name) {
-        client.commands.set(command.name.toLowerCase(), command);
-        if (command.aliases && Array.isArray(command.aliases)) {
-          command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
-        }
+const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+for (const file of commandFiles) {
+  try {
+    const command = require(`./commands/${file}`);
+    if (command.name) {
+      client.commands.set(command.name.toLowerCase(), command);
+      if (command.aliases && Array.isArray(command.aliases)) {
+        command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
       }
-    } catch (e) { console.error(`❌ Load Error [${file}]:`, e.message); }
-
-    // Give the Heartbeat server a 5ms window to breathe between every command load
-    await new Promise(r => setTimeout(r, 5));
-  }
-  console.log(`✅ Binary sequence complete. ${client.commands.size} commands indexed.`);
-})();
+    }
+  } catch (e) { }
+}
+console.log(`✅ Binary sequence complete. ${client.commands.size} commands indexed.`);
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
