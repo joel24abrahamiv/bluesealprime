@@ -428,25 +428,23 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 // ───── COMMAND COLLECTION ─────
 client.commands = new Collection();
 
-// ───── LOAD COMMANDS ─────
-const commandFiles = fs
-  .readdirSync("./commands")
-  .filter(file => file.endsWith(".js"));
-
-for (const file of commandFiles) {
-  try {
-    const command = require(`./commands/${file}`);
-    if (command.name) {
-      client.commands.set(command.name.toLowerCase(), command);
-      if (command.aliases && Array.isArray(command.aliases)) {
-        command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+function loadCommandsAsync() {
+  const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+  for (const file of commandFiles) {
+    try {
+      const command = require(`./commands/${file}`);
+      if (command.name) {
+        client.commands.set(command.name.toLowerCase(), command);
+        if (command.aliases && Array.isArray(command.aliases)) {
+          command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+        }
       }
+    } catch (e) {
+      console.error(`❌ Failed to load command ${file}:`, e);
     }
-  } catch (e) {
-    console.error(`❌ Failed to load command ${file}:`, e);
   }
+  console.log(`📦 Registry: ${client.commands.size} commands / aliases authorized.`);
 }
-console.log(`📦 Loaded ${client.commands.size} commands / aliases.`);
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
@@ -558,16 +556,20 @@ client.once("clientReady", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
+  // ───── DEFERRED REGISTRY LOAD (Non-Blocking Startup) ─────
+  loadCommandsAsync();
   client.nukingGuilds = new Set();
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 
+  // ───── STAGGERED BACKGROUND TASKS ─────
   setTimeout(async () => {
     if (global.isShuttingDown) return;
     updateDashboard(client).catch(() => { });
+
     for (const guild of client.guilds.cache.values()) {
       if (global.isShuttingDown) break;
       await joinVC247(guild);
-      await wait(1500);
+      await wait(3000); // 3s gap for ultimate stability
     }
   }, 10000);
 
