@@ -1,16 +1,17 @@
-// 1. ABSOLUTE PRIORITY Heartbeat (Bound before ANY module loading)
+// 1. ABSOLUTE PRIORITY Heartbeat
 const http = require("http");
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Sovereign OS Online");
-}).listen(PORT, "0.0.0.0", () => {
+});
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 [Railway] Heartbeat synchronized on port ${PORT}`);
 });
 
 // 2. SUPPRESS NOISY LOGS
 process.env.NODE_NO_WARNINGS = "1";
-process.removeAllListeners('warning');
+if (process.removeAllListeners) process.removeAllListeners('warning');
 
 // 3. CORE REQUIRES
 require("dotenv").config();
@@ -88,12 +89,15 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('SIGTERM', () => {
   global.isShuttingDown = true;
-  console.log('🛑 [System] SIGTERM received. Graceful transition enabled.');
+  console.log('🛑 [System] Transitioning out...');
+  // Force a clean exit without the red SIGTERM boxes
+  process.exitCode = 0;
+  try { server.close(); } catch (e) { }
   try { client.destroy(); } catch (e) { }
-  process.nextTick(() => process.exit(0));
+  // Simulated SIGINT to allow npm to close naturally
+  process.nextTick(() => process.kill(process.pid, 'SIGINT'));
 });
 process.on('SIGINT', () => {
-  client.destroy();
   process.exit(0);
 });
 
@@ -425,21 +429,24 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 // ... (Rest of Index Code) ...
 
 
-// ───── COMMAND COLLECTION (Standard Sync Load) ─────
+// ───── COMMAND COLLECTION (Delayed Loading to Protect Heartbeat) ─────
 client.commands = new Collection();
-const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
-for (const file of commandFiles) {
-  try {
-    const command = require(`./commands/${file}`);
-    if (command.name) {
-      client.commands.set(command.name.toLowerCase(), command);
-      if (command.aliases && Array.isArray(command.aliases)) {
-        command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+setTimeout(() => {
+  const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+  console.log(`📦 [System] Initializing load sequence for ${commandFiles.length} modules...`);
+  for (const file of commandFiles) {
+    try {
+      const command = require(`./commands/${file}`);
+      if (command.name) {
+        client.commands.set(command.name.toLowerCase(), command);
+        if (command.aliases && Array.isArray(command.aliases)) {
+          command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
+        }
       }
-    }
-  } catch (e) { }
-}
-console.log(`✅ Binary sequence complete. ${client.commands.size} commands indexed.`);
+    } catch (e) { }
+  }
+  console.log(`✅ [System] Binary sequence complete. ${client.commands.size} commands indexed.`);
+}, 2000); // 2s delay gives the Heartbeat absolute priority on boot
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
