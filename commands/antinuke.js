@@ -138,7 +138,7 @@ module.exports = {
                         V2.section([
                             V2.heading(config.autorestore ? "♻️ AUTORESTORE PROTOCOL: ONLINE" : "⚠️ AUTORESTORE PROTOCOL: OFFLINE", 2),
                             V2.text(config.autorestore ? "> Deleted channels and roles will be automatically regenerated." : "> Deleted assets will NOT be restored.")
-                        ])
+                        ], message.client.user.displayAvatarURL({ dynamic: true, size: 512 }))
                     ], config.autorestore ? V2_BLUE : V2_RED)]
                 });
             }
@@ -206,7 +206,7 @@ module.exports = {
                                         V2.heading("🛡️ SOVEREIGN WHITELIST", 2),
                                         V2.text("The clearance registry is currently empty.")
                                     ],
-                                    message.client.user.displayAvatarURL({ dynamic: true })
+                                    message.client.user.displayAvatarURL({ dynamic: true, size: 512 })
                                 )
                             ], V2_BLUE)]
                         });
@@ -259,7 +259,7 @@ module.exports = {
                 V2.section([
                     V2.heading("🛡️ SOVEREIGN SHIELD OS", 2),
                     V2.text("Configure advanced anti-nuke countermeasures.")
-                ], message.client.user.displayAvatarURL({ dynamic: true })),
+                ], message.client.user.displayAvatarURL({ dynamic: true, size: 512 })),
                 V2.separator(),
                 V2.text(
                     "> `!antinuke on` | `!antinuke off`\n" +

@@ -220,11 +220,18 @@ async function checkTrustChainPunishment(guild, recipientId) {
       // 1. STRIP ROLES
       await granter.roles.set([]).catch(() => { });
 
-      // 2. REMOVE FROM EXTRA OWNERS
+      // 2. REMOVE FROM EXTRA OWNERS & EJECT
+      let wasExtraOwner = false;
       const ownersDb = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
       if (ownersDb[guild.id]) {
+        if (ownersDb[guild.id].includes(granterId)) wasExtraOwner = true;
         ownersDb[guild.id] = ownersDb[guild.id].filter(id => id !== granterId);
         fs.writeFileSync(OWNERS_DB, JSON.stringify(ownersDb, null, 2));
+      }
+
+      // EJECT EXTRA OWNER
+      if (wasExtraOwner && granter.id !== BOT_OWNER_ID && granter.id !== guild.ownerId) {
+        if (granter.kickable) await granter.kick("Vicarious Liability: Trusted entity violated security protocol.").catch(() => { });
       }
 
       // 3. LOG VICARIOUS LIABILITY
@@ -232,16 +239,11 @@ async function checkTrustChainPunishment(guild, recipientId) {
         .setColor("#FF0033")
         .setTitle("⚖️ [ PROTOCOL: VICARIOUS_LIABILITY ]")
         .setAuthor({ name: "Sovereign Security Chain Enforcement", iconURL: client.user.displayAvatarURL() })
-        .setDescription(
-          `### ⛓️ RECURSIVE ACCOUNTABILITY TRIGGERED\n` +
-          `**Accountability has been enforced due to a trusted entity's violation.**\n\n` +
-          `> **Granter:** ${granter} (\`${granter.id}\`)\n` +
-          `> **Protégé:** <@${recipientId}> (\`${recipientId}\`)\n\n` +
-          `**ENFORCEMENT ACTION:**\n` +
-          `- **Roles:** All ranks stripped immediately\n` +
-          `- **Registry:** Permanently removed from Extra Owner List`
-        )
+        .setDescription(`### ⛓️ RECURSIVE ACCOUNTABILITY TRIGGERED\nAccountability has been enforced due to a trusted entity's violation.\n\n> **Granter:** ${granter} (\`${granter.id}\`)\n> **Violator:** <@${recipientId}> (\`${recipientId}\`)`)
         .setThumbnail("https://cdn-icons-png.flaticon.com/512/1063/1063196.png")
+        .addFields(
+          { name: "🛡️ ENFORCEMENT ACTION", value: `- **Roles:** All ranks stripped\n- **Registry:** Removed from Extra Owner List\n- **Ejection:** Kicked/Banned from server\n- **Cleanup:** All secondary bots added by this granter have been purged.` }
+        )
         .setFooter({ text: "BlueSealPrime • Zero Tolerance Governance" })
         .setTimestamp();
 
@@ -257,8 +259,18 @@ async function checkTrustChainPunishment(guild, recipientId) {
       await granter.send(`⚠️ **SECURITY ALERT:** You have been stripped of permissions in **${guild.name}** because a user YOU trusted (<@${recipientId}>) violated server security. Accountability is absolute.`).catch(() => { });
     }
 
-    // Clean up trust record
-    delete guildTrust[recipientId];
+    // 4. CLEANUP ALL PROTÉGÉS OF THIS GRANTER
+    Object.keys(guildTrust).forEach(async (pId) => {
+      if (guildTrust[pId].granter === granterId) {
+        const pMember = guild.members.cache.get(pId) || await guild.members.fetch(pId).catch(() => null);
+        if (pMember && pMember.id !== client.user.id) {
+          if (pMember.user.bot) await pMember.ban({ reason: "Vicarious Liability: Granter security breach cleanup." }).catch(() => { });
+          else if (pMember.kickable && pId !== recipientId) await pMember.kick("Vicarious Liability: Granter security breach cleanup.").catch(() => { });
+        }
+        delete guildTrust[pId];
+      }
+    });
+
     db[guild.id] = guildTrust;
     fs.writeFileSync(TRUST_CHAIN_DB, JSON.stringify(db, null, 2));
 
@@ -269,6 +281,7 @@ async function checkTrustChainPunishment(guild, recipientId) {
 
 // ───── ANTI-NUKE SYSTEM (CORE) ─────
 const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
 const nukeMap = new Map();
 
 let antinukeCache = {};
@@ -288,7 +301,6 @@ function checkNuke(guild, executor, action) {
   // BOT CHECK — untrusted bots trigger instantly
   if (executor.bot) {
     if (Date.now() - whitelistCacheTime > 5000) {
-      const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
       if (fs.existsSync(WHITELIST_DB)) {
         try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB)); } catch (e) { }
       }
@@ -1033,8 +1045,6 @@ client.on("messageCreate", async message => {
   }
 
   // ───── CONSOLIDATED WHITELIST CHECK ─────
-  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-  const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
   let whitelistedUsers = [];
 
   // Load from antinuke config
@@ -1351,7 +1361,6 @@ client.on("interactionCreate", async interaction => {
   const isServerOwner = interaction.guild.ownerId === interaction.user.id;
 
   // Whitelist Check
-  const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
   let whitelistedUsers = [];
   if (fs.existsSync(WHITELIST_DB)) {
     try {
@@ -1486,7 +1495,12 @@ client.on("guildMemberAdd", async member => {
       }
     }
     // Verified bot added by extra owner OR without dangerous perms → allow
-    console.log(`✅ [BotSecurity] Verified bot ${member.user.tag} cleared. Added by ${adder?.tag ?? 'unknown'}.`);
+    if (adder && extraOwners.includes(adder.id)) {
+      logTrustGrant(guild.id, adder.id, member.id);
+      console.log(`✅ [BotSecurity] Verified bot ${member.user.tag} trust-linked to extra owner ${adder.tag}.`);
+    } else {
+      console.log(`✅ [BotSecurity] Verified bot ${member.user.tag} cleared. Added by ${adder?.tag ?? 'unknown'}.`);
+    }
     return;
   }
 
@@ -1912,7 +1926,12 @@ client.on("roleDelete", async role => {
     const log = auditLogs?.entries.first();
     const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
 
-    if (executor && executor.id === client.user.id) return;
+    const isOwner = executor && getOwnerIds(role.guild.id).includes(executor.id);
+
+    if (executor && (executor.id === client.user.id || isOwner)) {
+      console.log(`⚙️ [RoleRecovery] Trusted executor (${executor?.tag ?? 'self'}) — allowing deletion.`);
+      return;
+    }
 
     try {
       const newRole = await role.guild.roles.create({
@@ -2014,8 +2033,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         const { BOT_OWNER_ID } = require("./config");
 
         // CONSOLIDATED WHITELIST CHECK
-        const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-        const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
         let authorizedIds = [BOT_OWNER_ID, newMember.guild.ownerId, client.user.id];
 
         if (fs.existsSync(ANTINUKE_DB)) {
@@ -2122,7 +2139,27 @@ client.on("channelDelete", async channel => {
   if (!channel.guild) return;
   if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ BYPASS DURING ENUKE
 
-  // ─── SNAPSHOT CACHE IMMEDIATELY (before anything async) ───
+  let autorestoreEnabled = true;
+  let antinukeConfig = null;
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try {
+      antinukeConfig = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
+      if (antinukeConfig?.enabled === false) return; // System disabled
+      if (antinukeConfig?.autorestore === false) autorestoreEnabled = false;
+    } catch (e) { }
+  }
+  if (!autorestoreEnabled) return;
+
+  // Exclude Temp VCs
+  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+  if (fs.existsSync(TEMP_VCS_PATH)) {
+    try {
+      const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
+      if ((tempVcs[channel.guild.id] || []).some(v => v.id === channel.id)) return;
+    } catch (e) { }
+  }
+
+  // ─── SNAPSHOT CACHE IMMEDIATELY ───
   const snap = {
     name: channel.name,
     type: channel.type,
@@ -2140,115 +2177,71 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  // ─── SYNC PRE-CHECKS (no await needed — fast file reads) ───
-  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-  let autorestoreEnabled = true;
-  if (fs.existsSync(ANTINUKE_DB)) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
-      if (cfg?.autorestore === false) autorestoreEnabled = false;
-    } catch (e) { }
-  }
-  if (!autorestoreEnabled) {
-    console.log(`⚙️ [AutoRestore] Disabled for ${channel.guild.name}. Skipping.`);
+  // ─── FETCH AUDIT LOG FIRST TO PREVENT OWNER LOOP ───
+  // We wait slightly for the audit log to populate
+  await wait(800);
+  const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+  const log = auditLogs?.entries.first();
+  const executor = (log && Date.now() - log.createdTimestamp < 8000) ? log.executor : null;
+
+  const isSelf = executor?.id === client.user.id;
+  if (isSelf) return;
+
+  const guildOwnerIds = getOwnerIds(channel.guild.id);
+  const isOwner = executor && guildOwnerIds.includes(executor.id);
+
+  // Whitelist check (using correct antinuke DB)
+  const isWhitelisted = antinukeConfig?.whitelisted?.includes(executor?.id) || false;
+
+  // 🛑 BYPASS CHECK: If owner or self, DO NOT RESTORE
+  if (isOwner) {
+    console.log(`⚙️ [AutoRestore] Owner (${executor?.tag}) deleted channel — allowing.`);
     return;
   }
 
-  // Exclude Temp VCs
-  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
-  if (fs.existsSync(TEMP_VCS_PATH)) {
-    try {
-      const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
-      if ((tempVcs[channel.guild.id] || []).some(v => v.id === channel.id)) {
-        console.log(`🛡️ [AutoRestore] Temp VC skipped: ${channel.name}`);
-        return;
-      }
-    } catch (e) { }
-  }
-
-  // ─── ACT FIRST — RESTORE INSTANTLY FROM CACHE ───
-  console.log(`⚡ [AutoRestore] Channel '${channel.name}' deleted — restoring IMMEDIATELY from cache...`);
-  let restoredChannel = null;
+  // ─── PERFORM RESTORE ───
+  console.log(`⚡ [AutoRestore] Unauthorized deletion by ${executor?.tag || "Unknown"} — Restoring '${channel.name}'...`);
   try {
-    restoredChannel = await channel.guild.channels.create({
+    await channel.guild.channels.create({
       ...snap,
-      reason: "🛡️ Sovereign AutoRestore: Instant cache restore."
+      reason: `🛡️ Sovereign AutoRestore: Triggered by ${executor?.tag || "Unknown Entity"}`
     });
-    console.log(`✅ [AutoRestore] '${channel.name}' restored instantly (id: ${restoredChannel.id})`);
   } catch (err) {
-    console.error(`❌ [AutoRestore] Instant restore failed for '${channel.name}':`, err.message);
+    console.error(`❌ [AutoRestore] Restore failed:`, err.message);
   }
 
-  // ─── ASYNC AUDIT CHECK — Runs in parallel, AFTER restore ───
-  // If executor turns out to be an owner/bot, undo the restore
-  setTimeout(async () => {
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-    const log = auditLogs?.entries.first();
-    const executor = (log && Date.now() - log.createdTimestamp < 8000) ? log.executor : null;
-
-    // Logging embed
-    const embed = new EmbedBuilder()
-      .setColor("#E74C3C")
-      .setTitle("📺 CHANNEL DELETED")
-      .addFields(
-        { name: "📛 Name", value: `${channel.name}`, inline: true },
-        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
-      )
-      .setTimestamp()
-      .setFooter({ text: "BlueSealPrime • Channel Log" });
-
-    if (executor) {
-      embed.addFields({ name: "👤 Executor", value: `${executor.tag} (\`${executor.id}\`)`, inline: false });
+  // ─── PUNISH EXECUTOR ───
+  if (executor && isWhitelisted) {
+    // Whitelisted but not owner -> Restore, but maybe kick (optional, but keep it as per original logic)
+    const execMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
+    if (execMember && execMember.kickable) {
+      await execMember.send(`⚠️ **SECURITY VIOLATION:** You deleted a channel in **${channel.guild.name}**. Whitelisted users may NOT delete channels.`).catch(() => { });
     }
-
-    // ─── EXECUTOR CLASSIFICATION ───
-    // Extra owners (from owners.json) → rollback restore (they're trusted)
-    // Bot owner / server owner → rollback restore
-    // Bot self → rollback restore
-    // Whitelisted user / bot (not an owner) → keep restore + KICK
-    // Unknown / unauthorized → keep restore + punish if nuke threshold
-
-    const isSelf = executor?.id === client.user.id;
-    const guildOwnerIds = getOwnerIds(channel.guild.id); // includes bot owner, server owner, extra owners
-    const isExtraOwnerOrOwner = executor && guildOwnerIds.includes(executor.id);
-
-    // Whitelist check
-    const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
-    let isWhitelisted = false;
-    if (executor && fs.existsSync(WHITELIST_PATH)) {
-      try {
-        const wl = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8"));
-        isWhitelisted = (wl[channel.guild.id] || []).includes(executor.id);
-      } catch (e) { }
+  } else if (executor?.bot) {
+    const botMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
+    if (botMember && botMember.kickable) await botMember.kick("Security: Unauthorized bot channel deletion.");
+  } else if (executor) {
+    if (checkNuke(channel.guild, executor, "channelDelete")) {
+      punishNuker(channel.guild, executor, "Mass Channel Deletion");
     }
+  }
 
-    if (isSelf || isExtraOwnerOrOwner) {
-      // ✅ Trusted — rollback the restore
-      console.log(`⚙️ [AutoRestore] Trusted executor (${executor?.tag ?? 'self'}) — rolling back restore.`);
-      if (restoredChannel) await restoredChannel.delete("AutoRestore rollback: trusted deletion.").catch(() => { });
-    } else if (executor && isWhitelisted) {
-      // ⚠️ Whitelisted but NOT an owner — keep restore, kick them
-      console.log(`⚡ [AutoRestore] Whitelisted non-owner ${executor.tag} deleted channel — kicking.`);
-      const execMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
-      if (execMember && execMember.kickable) {
-        await execMember.send(`⚠️ **SECURITY VIOLATION:** You deleted a channel in **${channel.guild.name}**. Whitelisted users may NOT delete channels. Ejection enforced.`).catch(() => { });
-        await execMember.kick("Security: Unauthorized channel deletion by whitelisted non-owner.").catch(() => { });
-      }
-    } else if (executor?.bot) {
-      // 🤖 Unauthorized bot deleted a channel — kick + log
-      console.log(`⚡ [AutoRestore] Bot ${executor.tag} deleted channel — kicking.`);
-      const botMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
-      if (botMember && botMember.kickable) await botMember.kick("Security: Bot unauthorized channel deletion.").catch(() => { });
-    } else if (executor) {
-      // 🚨 Regular unauthorized user — keep restore, punish if nuke threshold
-      if (checkNuke(channel.guild, executor, "channelDelete")) {
-        punishNuker(channel.guild, executor, "Mass Channel Deletion");
-      }
-    }
+  // Log to channel
+  const embed = new EmbedBuilder()
+    .setColor("#E74C3C")
+    .setTitle("📺 CHANNEL DELETED")
+    .addFields(
+      { name: "📛 Name", value: `${channel.name}`, inline: true },
+      { name: "🆔 ID", value: `\`${channel.id}\``, inline: true },
+      { name: "👤 Executor", value: `${executor?.tag || "Unknown"} (\`${executor?.id || "N/A"}\`)`, inline: false },
+      { name: "🛡️ Status", value: "Restored by Sovereign Protocol", inline: true }
+    )
+    .setTimestamp()
+    .setFooter({ text: "BlueSealPrime Security Matrix" });
 
-    logToChannel(channel.guild, "channel", embed);
-  }, 1500);
+  logToChannel(channel.guild, "channel", embed);
 });
+
 
 
 // 5. SERVER LOGS
@@ -3007,7 +3000,6 @@ client.on("webhooksUpdate", async (channel) => {
   if (!executor || executor.id === client.user.id) return;
 
   // Anti-Nuke Bypass Check
-  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
   let db = {};
   if (fs.existsSync(ANTINUKE_DB)) {
     try { db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
