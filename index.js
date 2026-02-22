@@ -84,9 +84,10 @@ process.on('unhandledRejection', (reason) => {
   console.error('💥 [CrashRecovery] Unhandled Rejection — bot continuing:', reason?.message || reason);
 });
 process.on('SIGTERM', () => {
+  global.isShuttingDown = true;
   console.log('🛑 [System] SIGTERM received. Shutting down gracefully...');
-  client.destroy();
-  setTimeout(() => process.exit(0), 500); // Allow logs to flush
+  try { client.destroy(); } catch (e) { }
+  process.exit(0);
 });
 process.on('SIGINT', () => {
   client.destroy();
@@ -564,6 +565,7 @@ client.once("clientReady", () => {
   // ───── 24/7 VC INITIAL JOIN (STAGGERED TO PREVENT CRASH) ─────
   (async () => {
     for (const guild of client.guilds.cache.values()) {
+      if (global.isShuttingDown) break;
       await joinVC247(guild);
       await new Promise(r => setTimeout(r, 1000)); // 1s gap between joins to let the socket finish discovery
     }
