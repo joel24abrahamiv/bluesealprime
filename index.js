@@ -120,6 +120,8 @@ async function joinVC247(guild) {
       channel = guild.channels.cache.find(c => c.type === 2 && c.viewable && c.joinable);
     }
 
+    if (!channel) return;
+
     const { joinVoiceChannel, getVoiceConnection } = require("@discordjs/voice");
 
     // Check if already connected to the correct channel to avoid socket spam
