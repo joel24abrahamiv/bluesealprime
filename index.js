@@ -540,7 +540,7 @@ async function updateDashboard(bot) {
   } catch (e) { console.error("Dashboard Error:", e); }
 }
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} online and stable`);
   // ───── UPDATE DASHBOARD ─────
   updateDashboard(client);
@@ -562,8 +562,13 @@ client.once("clientReady", () => {
     i = (i + 1) % activities.length;
   }, 10000);
 
-  // ───── 24/7 VC INITIAL JOIN ─────
-  client.guilds.cache.forEach(guild => joinVC247(guild));
+  // ───── 24/7 VC INITIAL JOIN (STAGGERED TO PREVENT CRASH) ─────
+  (async () => {
+    for (const guild of client.guilds.cache.values()) {
+      await joinVC247(guild);
+      await new Promise(r => setTimeout(r, 200)); // 200ms gap between joins
+    }
+  })();
 
   // ───── INIT COMMANDS ─────
   client.nukingGuilds = new Set(); // Global Set for active nukes
