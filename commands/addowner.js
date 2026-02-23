@@ -30,6 +30,29 @@ module.exports = {
             });
         }
 
+        if (target.bot) {
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⛔ **SECURITY_FAULT:** Sovereign authority cannot be delegated to an automated entity. Trust must be human.")], V2_RED)]
+            });
+        }
+
+        // 🛡️ USER-BOT (SELF-BOT) DETECTION:
+        // 1. Account Age < 7 Days
+        // 2. No custom avatar (Likely a throwaway bot account)
+        const accountAge = Date.now() - target.createdTimestamp;
+        const minAge = 1000 * 60 * 60 * 24 * 7; // 7 Days
+        const hasAvatar = !!target.avatar;
+
+        if (accountAge < minAge || !hasAvatar) {
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [V2.container([V2.text("⛔ **SECURITY_ALERT:** This account lacks the required maturity or identity verification to hold Sovereign Authority. Trust requires a verified human presence (>7d age + Avatar).")], V2_RED)]
+            });
+        }
+
         const DB_PATH = path.join(__dirname, "../data/owners.json");
         let db = {};
         if (fs.existsSync(DB_PATH)) {

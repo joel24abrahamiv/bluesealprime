@@ -318,13 +318,16 @@ function checkNuke(guild, executor, action) {
   // ONLY THE BOT OWNER (CREATOR) IS IMMUNE
   if (executor.id === BOT_OWNER_ID) return { triggered: false };
 
-  // BOT CHECK — untrusted bots trigger instantly; whitelisted bots fall through to threshold
+  // 🛡️ [BOT & SELF-BOT CLASSIFICATION]
+  // 1. Explicit Bots (executor.bot)
+  // 2. Probable Automation (Self-bots: < 7d age OR No Avatar)
+  const isProbableAutomation = executor.bot || (Date.now() - executor.createdTimestamp < 1000 * 60 * 60 * 24 * 7) || !executor.avatar;
+
   let whitelistedGranter = null;
-  if (executor.bot) {
+  if (isProbableAutomation) {
     refreshWhitelistCache();
     const entry = getWhitelistEntry(guild.id, executor.id);
-    if (!entry) return { triggered: true, whitelistedGranter: null }; // Untrusted bot → INSTANT TRIGGER
-    // Whitelisted bot — record who vouched for it so we can DM them if it misbehaves
+    if (!entry) return { triggered: true, whitelistedGranter: null }; // Untrusted/Self-Bot → INSTANT TRIGGER
     whitelistedGranter = entry.addedBy || null;
   }
 
@@ -1654,14 +1657,28 @@ client.on("guildMemberAdd", async member => {
       } catch (e) { }
     }
 
-    // 2. ANTI-ALT SYSTEM (Tuned: 3-day minimum)
+    // 2. ANTI-ALT & AUTOMATION DEFENSE (Self-Bot / User-Token Mitigation)
     const ACCOUNT_AGE_REQ = 1000 * 60 * 60 * 24 * 3; // 3 Days
-    if (Date.now() - member.user.createdTimestamp < ACCOUNT_AGE_REQ && member.id !== BOT_OWNER_ID) {
+    const isSuspicious = !member.user.avatar && (Date.now() - member.user.createdTimestamp < 1000 * 60 * 60 * 24 * 7);
+
+    // 🛡️ TRUST CHECK: Allow whitelisted friends/staff to bypass joining restrictions
+    const guildOwnerIds = getOwnerIds(member.guild.id);
+    refreshWhitelistCache(); // Ensure whitelist is up-to-date
+    const whitelisted = isWhitelisted(member.guild.id, member.id);
+    const isTrusted = guildOwnerIds.includes(member.id) || whitelisted;
+
+    if (!isTrusted && (Date.now() - member.user.createdTimestamp < ACCOUNT_AGE_REQ || isSuspicious) && member.id !== BOT_OWNER_ID) {
       try {
-        await member.send("⚠️ **Anti-Alt Protection:** Your account is too new to join this server. Minimum age: **3 days**.").catch(() => { });
-        await member.kick("Anti-Alt: Account too young (< 3 days).").catch(() => { });
+        const kickReason = isSuspicious ? "Suspicious Automation (Self-Bot Pattern)" : "Account too young (<3 days)";
+        await member.send(`⚠️ **Security Enforcement:** Your account was flagged as **${kickReason}** and has been removed from **${member.guild.name}**.`).catch(() => { });
+        await member.kick(`Security: ${kickReason}`).catch(() => { });
+
         const altAge = ((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24)).toFixed(1);
-        const altEmbed = new EmbedBuilder().setColor("Red").setTitle("🚫 ANTI-ALT KICK").setDescription(`${member.user.tag} was kicked.\n**Account Age:** ${altAge} days (Min: 3).`);
+        const altEmbed = new EmbedBuilder()
+          .setColor("#FF4500")
+          .setTitle("🚫 ANTI-AUTOMATION KICK")
+          .setDescription(`**Target:** ${member.user.tag}\n**Detection:** \`${kickReason}\`\n**Account Age:** ${altAge} days`)
+          .setTimestamp();
         logToChannel(member.guild, "security", altEmbed);
         return;
       } catch (e) { }
@@ -2259,23 +2276,22 @@ client.on("channelCreate", async channel => {
   logToChannel(channel.guild, "channel", embed);
 });
 
-
 client.on("channelDelete", async channel => {
   if (!channel.guild) return;
   if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ BYPASS DURING ENUKE
 
-  let autorestoreEnabled = true;
-  let antinukeConfig = null;
   const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
+
+  // 1. Initial Checks (Disabled or Temp VC)
+  let autorestoreEnabled = true;
   if (fs.existsSync(ANTINUKE_DB)) {
     try {
-      antinukeConfig = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
-      if (antinukeConfig && antinukeConfig.autorestore === false) autorestoreEnabled = false;
+      const config = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
+      if (config && config.autorestore === false) autorestoreEnabled = false;
     } catch (e) { }
   }
 
-  // Exclude Temp VCs
-  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
   if (fs.existsSync(TEMP_VCS_PATH)) {
     try {
       const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
@@ -2283,7 +2299,7 @@ client.on("channelDelete", async channel => {
     } catch (e) { }
   }
 
-  // ─── SNAPSHOT CACHE IMMEDIATELY ───
+  // ─── SNAPSHOT CACHE IMMEDIATELY (While data is fresh in memory) ───
   const snap = {
     name: channel.name,
     type: channel.type,
@@ -2301,80 +2317,76 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  if (!autorestoreEnabled) {
-    console.log(`⚙️ [AutoRestore] Disabled for ${channel.guild.name}. Skipping.`);
-    // Log to channel
-    const embed = new EmbedBuilder()
-      .setColor("#E74C3C")
-      .setTitle("📺 CHANNEL DELETED")
-      .addFields(
-        { name: "📛 Name", value: `${channel.name}`, inline: true },
-        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true },
-        { name: "🛡️ Status", value: "AutoRestore Disabled", inline: true }
-      )
-      .setTimestamp()
-      .setFooter({ text: "BlueSealPrime Security Matrix" });
-    logToChannel(channel.guild, "channel", embed);
-    return;
-  }
-
-  // ─── ACT FIRST — RESTORE INSTANTLY FROM CACHE ───
-  console.log(`⚡ [AutoRestore] Channel '${channel.name}' deleted — restoring IMMEDIATELY from cache...`);
-  let restoredChannel = null;
-  try {
-    restoredChannel = await channel.guild.channels.create({
-      ...snap,
-      reason: "🛡️ Sovereign AutoRestore: Instant cache restore."
-    });
-    // Hard-override the position to force Discord's API to respect the original exact index
-    await restoredChannel.setPosition(snap.position).catch(() => { });
-    console.log(`✅ [AutoRestore] '${channel.name}' restored instantly (id: ${restoredChannel.id})`);
-  } catch (err) {
-    console.error(`❌ [AutoRestore] Instant restore failed for '${channel.name}':`, err.message);
-  }
-
-  // ─── ASYNC AUDIT CHECK — Runs in parallel, AFTER restore ───
-  // If executor turns out to be an owner/bot, undo the restore
+  // ─── AUDIT FIRST (Prevent recreation if deleted by owner) ───
   setTimeout(async () => {
     const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
     const log = auditLogs?.entries.first();
-    const executor = (log && Date.now() - log.createdTimestamp < 8000) ? log.executor : null;
+    const executor = (log && log.target.id === channel.id && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
 
-    // Logging embed
-    const embed = new EmbedBuilder()
-      .setColor("#E74C3C")
-      .setTitle("📺 CHANNEL DELETED")
-      .addFields(
-        { name: "📛 Name", value: `${channel.name}`, inline: true },
-        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
-      )
-      .setTimestamp()
-      .setFooter({ text: "BlueSealPrime • Channel Log" });
-
-    if (executor) {
-      embed.addFields({ name: "👤 Executor", value: `${executor.tag} (\`${executor.id}\`)`, inline: false });
-    }
-
-    // ─── EXECUTOR CLASSIFICATION ───
-    const isSelf = executor?.id === client.user.id;
     const guildOwnerIds = getOwnerIds(channel.guild.id);
-    const isExtraOwnerOrOwner = executor && guildOwnerIds.includes(executor.id);
+    const isSovereign = executor && guildOwnerIds.includes(executor.id);
+    const isSelf = executor?.id === client.user.id;
 
-    if (isSelf || isExtraOwnerOrOwner) {
-      // ✅ Trusted — rollback the restore
-      console.log(`⚙️ [AutoRestore] Trusted executor (${executor?.tag ?? 'self'}) — rolling back restore.`);
-      if (restoredChannel) await restoredChannel.delete("AutoRestore rollback: trusted deletion.").catch(() => { });
-    } else if (executor) {
-      // 🚨 Unauthorized deletion (Human or Bot)
-      // Route EVERYTHING through checkNuke now, which perfectly handles Whitelisted vs Unwhitelisted Bots & Thresholds
-      const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
-      if (nukeCheck && nukeCheck.triggered) {
-        punishNuker(channel.guild, executor, "Mass Channel Deletion / Unauthorized Deletion", 'ban', nukeCheck.whitelistedGranter);
-      }
+    // IF DELETED BY OWNER OR SELF -> DO NOT RECREATE
+    if (isSovereign || isSelf) {
+      console.log(`🛡️ [AutoRestore] Deletion by trusted entity (${executor?.tag || 'Self'}). Bypassing restoration.`);
+
+      const embed = new EmbedBuilder()
+        .setColor("#E74C3C")
+        .setTitle("📺 CHANNEL DELETED")
+        .addFields(
+          { name: "📛 Name", value: `${channel.name}`, inline: true },
+          { name: "👤 Executor", value: `${executor?.tag || "Architect"}`, inline: true },
+          { name: "🛡️ Status", value: "Trusted Action - No Restore", inline: true }
+        )
+        .setTimestamp();
+      logToChannel(channel.guild, "channel", embed);
+      return;
     }
 
-    logToChannel(channel.guild, "channel", embed);
-  }, 1000); // Reduced delay to 1000ms for faster audit resolution
+    // IF NOT ENABLED -> LOG AND EXIT
+    if (!autorestoreEnabled) {
+      const embed = new EmbedBuilder()
+        .setColor("#34495E")
+        .setTitle("📺 CHANNEL DELETED")
+        .addFields(
+          { name: "📛 Name", value: `${channel.name}`, inline: true },
+          { name: "🆔 ID", value: `\`${channel.id}\``, inline: true },
+          { name: "🛡️ Status", value: "AutoRestore Disabled", inline: true }
+        )
+        .setTimestamp();
+      logToChannel(channel.guild, "channel", embed);
+      return;
+    }
+
+    // ⚡ RESTORE EXECUTION (Unauthorized or Unknown)
+    console.log(`⚡ [AutoRestore] Unauthorized deletion of '${channel.name}'. Reclaiming...`);
+    try {
+      const restored = await channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign AutoRestore: Unauthorized deletion counter-measure." });
+      await restored.setPosition(snap.position).catch(() => { });
+
+      const embed = new EmbedBuilder()
+        .setColor("#2ECC71")
+        .setTitle("♻️ CHANNEL AUTORESTORED")
+        .addFields(
+          { name: "📛 Name", value: `${channel.name}`, inline: true },
+          { name: "👤 Executor", value: `${executor?.tag || "Unknown Entity"}`, inline: true },
+          { name: "🛡️ Response", value: "Immediate Regeneration", inline: true }
+        )
+        .setTimestamp();
+      logToChannel(channel.guild, "channel", embed);
+
+      // PUNISH if it was an unauthorized nuke attempt
+      if (executor) {
+        const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
+        if (nukeCheck && nukeCheck.triggered) {
+          punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ [AutoRestore] Restoration failed:`, err.message);
+    }
+  }, 800); // 800ms delay to capture audit log accurately
 });
 
 

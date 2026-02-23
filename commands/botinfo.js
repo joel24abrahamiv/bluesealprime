@@ -2,6 +2,97 @@ const V2 = require("../utils/v2Utils");
 const { BOT_OWNER_ID, V2_BLUE } = require("../config");
 const os = require("os");
 
+module.exports = {
+    name: "botinfo",
+    description: "Display sovereign node intelligence and system status.",
+    aliases: ["bi", "about", "binfo"],
+
+    async execute(message) {
+        const { client, guild } = message;
+        const botUser = client.user;
+
+        // ── SYNC STATS ──
+        const uptime = formatUptime(client.uptime);
+        const guilds = client.guilds.cache.size;
+        const users = client.guilds.cache.reduce((a, g) => a + (g.memberCount || 0), 0);
+        const channels = client.channels.cache.size;
+        const commands = client.commands?.size || 0;
+
+        // ── SYSTEM METER ──
+        const memUsed = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const memTotal = (process.memoryUsage().heapTotal / 1024 / 1024).toFixed(2);
+        const cpuModel = os.cpus().length > 0 ? os.cpus()[0].model.split(" ").slice(0, 3).join(" ") : "Virtual Node";
+        const ping = client.ws.ping;
+        const pingIndicator = ping < 150 ? "🟢" : ping < 300 ? "🟡" : "🔴";
+
+        // ── IDENTITY ──
+        const avatar = V2.botAvatar(message);
+
+        // ── CONSTRUCT SOVEREIGN DASHBOARD ──
+        try {
+            const dashboard = V2.container([
+                // Header: Identity Primary
+                V2.separator(),
+                V2.section([
+                    V2.heading("🛡️ BLUESEALPRIME: SOVEREIGN NODE", 1),
+                    V2.text(`**V2 Internal Intelligence Feed**\n> **Architect:** <@${BOT_OWNER_ID}>\n> **Version:** \`2.1.0-Ω\``)
+                ], avatar),
+                V2.separator(),
+
+                // Section 1: Network Metrics
+                V2.heading("📊 NETWORK ANALYTICS", 2),
+                V2.text(
+                    `> 🏛️ **Total Nodes:** \`${guilds}\`\n` +
+                    `> 👥 **Known Entities:** \`${users.toLocaleString()}\`\n` +
+                    `> 📺 **Active Matrix:** \`${channels}\` Channels\n` +
+                    `> ⚙️ **Indexed Logic:** \`${commands}\` Modules`
+                ),
+                V2.separator(),
+
+                // Section 2: Core Performance
+                V2.heading("⚡ HEARTBEAT & CORE", 2),
+                V2.text(
+                    `> ${pingIndicator} **Sync Latency:** \`${ping}ms\`\n` +
+                    `> ⏱️ **Node Uptime:** \`${uptime}\`\n` +
+                    `> 🧠 **Memory Heap:** \`${memUsed} MB / ${memTotal} MB\``
+                ),
+                V2.separator(),
+
+                // Section 3: Hardware Signature
+                V2.heading("🖥️ HARDWARE SIGNATURE", 2),
+                V2.text(
+                    `> 🧩 **Engine:** \`Node ${process.version}\`\n` +
+                    `> 💎 **Interface:** \`DJS v${require("discord.js").version}\`\n` +
+                    `> 🔧 **Processor:** \`${cpuModel}\`\n` +
+                    `> 💠 **OS Platform:** \`${os.platform().toUpperCase()}\``
+                ),
+                V2.separator(),
+
+                // Footer: Integrity
+                V2.text(`*Security Integrity: VERIFIED • Node ID: ${botUser.id}*\n*BlueSealPrime © 2026 Sovereign Systems*`)
+            ], V2_BLUE);
+
+            return message.reply({
+                content: null,
+                flags: V2.flag,
+                components: [dashboard]
+            });
+
+        } catch (error) {
+            console.error("[BotInfo Error]:", error);
+            // Fallback to basic embed if V2 components fail (Safety for non-V2 environments)
+            const { EmbedBuilder } = require("discord.js");
+            const fallback = new EmbedBuilder()
+                .setColor(V2_BLUE || "#5DADE2")
+                .setTitle("🛡️ Bot Information (Legacy Mode)")
+                .setDescription(`Sovereign V2 Interface encountered a rendering fault.\n\n**Uptime:** ${uptime}\n**Latency:** ${ping}ms\n**Servers:** ${guilds}`)
+                .setFooter({ text: "Error: Components V2 rendering failure on this build." });
+
+            return message.reply({ embeds: [fallback] });
+        }
+    }
+};
+
 function formatUptime(ms) {
     const days = Math.floor(ms / 86400000);
     const hours = Math.floor((ms % 86400000) / 3600000);
@@ -9,90 +100,3 @@ function formatUptime(ms) {
     const seconds = Math.floor((ms % 60000) / 1000);
     return `${days}d ${hours}h ${minutes}m ${seconds}s`;
 }
-
-function formatBytes(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(2)} MB`;
-}
-
-module.exports = {
-    name: "botinfo",
-    description: "Comprehensive bot information dashboard",
-    aliases: ["binfo", "about", "bi"],
-
-    async execute(message) {
-        const client = message.client;
-        const botUser = client.user;
-        const botMember = message.guild.members.me;
-
-        // ── Stats ──
-        const uptime = formatUptime(client.uptime);
-        const guildCount = client.guilds.cache.size;
-        const userCount = client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0);
-        const chanCount = client.channels.cache.size;
-        const cmdCount = client.commands.size;
-        const apiPing = client.ws.ping;
-        const memUsed = formatBytes(process.memoryUsage().heapUsed);
-        const memTotal = formatBytes(process.memoryUsage().heapTotal);
-        const nodeVer = process.version;
-        const djsVer = require("discord.js").version;
-        const platform = os.platform() === "win32" ? "Windows" : os.platform() === "linux" ? "Linux" : os.platform();
-        const cpuModel = os.cpus()[0]?.model?.split(" ").slice(0, 4).join(" ") || "Unknown";
-
-        // ── Latency colour ──
-        const pingColor = apiPing < 100 ? "🟢" : apiPing < 250 ? "🟡" : "🔴";
-
-        // ── BUILD V2 UI ──
-        const botPfp = V2.botAvatar(message);
-
-        const container = V2.container([
-            // Header
-            V2.separator(),
-            V2.section([
-                V2.heading("🛡️ BLUESEALPRIME", 1),
-                V2.text(`*Advanced Security & Moderation Bot*\n` +
-                    `> **Version:** \`2.1.0\`   **Build:** \`Sovereign\`\n` +
-                    `> **Developer:** <@${BOT_OWNER_ID}>`)
-            ], botPfp),
-            V2.separator(),
-
-            // Stats
-            V2.heading("📊 CLIENT STATISTICS", 2),
-            V2.text(`> 🏠 **Servers:** \`${guildCount}\`\n` +
-                `> 👥 **Total Users:** \`${userCount.toLocaleString()}\`\n` +
-                `> 📺 **Channels:** \`${chanCount}\`\n` +
-                `> ⚙️ **Commands Loaded:** \`${cmdCount}\``),
-            V2.separator(),
-
-            // Performance
-            V2.heading("⚡ PERFORMANCE", 2),
-            V2.text(`> ${pingColor} **API Latency:** \`${apiPing}ms\`\n` +
-                `> ⏱️ **Uptime:** \`${uptime}\`\n` +
-                `> 🧠 **Memory:** \`${memUsed} / ${memTotal}\``),
-            V2.separator(),
-
-            // System
-            V2.heading("🖥️ SYSTEM INFO", 2),
-            V2.text(`> 🟩 **Node.js:** \`${nodeVer}\`\n` +
-                `> 💎 **Discord.js:** \`v${djsVer}\`\n` +
-                `> 🖥️ **Platform:** \`${platform}\`\n` +
-                `> 🔧 **CPU:** \`${cpuModel}\``),
-            V2.separator(),
-
-            // Flags
-            V2.heading("🔰 BOT FLAGS", 2),
-            V2.text(`> ` + (botUser.flags?.has("VerifiedBot") ? "✅" : "⚪") + ` **Verified Bot**\n` +
-                `> ` + (botUser.flags?.has("GatewayGuildMembers") ? "✅" : "⚪") + ` **Members Intent**\n` +
-                `> ` + (botUser.flags?.has("GatewayMessageContent") ? "✅" : "⚪") + ` **Content Intent**\n` +
-                `> 🛡️ **Antinuke:** \`Active\`   🔒 **Security:** \`Sovereign Grade\``),
-            V2.separator(),
-
-            // Footer
-            V2.text(`> 🆔 **Bot ID:** \`${botUser.id}\`   📅 **Created:** <t:${Math.floor(botUser.createdTimestamp / 1000)}:D>\n` +
-                `*BlueSealPrime • Priority Alpha • Infinite Support*`)
-        ], V2_BLUE);
-
-        return message.reply({ flags: V2.flag, components: [container] });
-    }
-};
