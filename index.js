@@ -449,22 +449,39 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
           const isVerified = (executor.flags?.toArray() || []).includes('VerifiedBot');
           const botDisplay = `${executor.tag || executor.username}${isVerified ? ' [✔ Verified]' : ''}`;
 
-          await violator.send([
-            `⚠️ **[ SECURITY PROTOCOL: BOT VIOLATION ]** ⚠️`,
-            ``,
-            `Accountability Enforcement has been triggered in **${guild.name}**.`,
-            `A bot you are responsible for has been **banned** for violating security thresholds.`,
-            ``,
-            `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)`,
-            `> 🏛️ **Server:** ${guild.name}`,
-            `> 📋 **Violation:** ${reason}`,
-            `> 🚩 **Context:** ${violationType}`,
-            `> ⚡ **Action:** Instant Ejection & Permanent Ban`,
-            ``,
-            `**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`,
-            ``,
-            `— *BlueSealPrime Security Matrix*`
-          ].join('\n')).catch(() => { });
+          const V2 = require("./utils/v2Utils");
+          const { ERROR_COLOR } = require("./config");
+
+          const container = V2.container([
+            V2.section([
+              V2.heading("⚠️ SECURITY PROTOCOL: BOT VIOLATION", 2),
+              V2.text(`Accountability Enforcement has been triggered in **${guild.name}**.\nA bot you are responsible for has been **banned** for violating security thresholds.`)
+            ], guild.iconURL({ dynamic: true })),
+            V2.separator(),
+            V2.section([
+              V2.text(
+                `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n` +
+                `> 🏛️ **Server:** ${guild.name}\n` +
+                `> 📋 **Violation:** ${reason}\n` +
+                `> 🚩 **Context:** ${violationType}\n` +
+                `> ⚡ **Action:** Instant Ejection & Permanent Ban`
+              )
+            ]),
+            V2.section([
+              V2.text(`**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`)
+            ]),
+            V2.separator(),
+            V2.section([
+              V2.heading("📢 MESSAGE FROM SYSTEM", 3),
+              V2.text(`kiruku koodhi ya da nee>? , Menatl Punda--------!`)
+            ])
+          ], ERROR_COLOR || "#FF0000");
+
+          await violator.send({
+            content: null,
+            flags: V2.flag,
+            components: [container]
+          }).catch(() => { });
         }
       } catch (e) { }
 
