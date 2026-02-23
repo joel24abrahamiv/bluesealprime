@@ -168,11 +168,11 @@ module.exports = {
                     reason: "SealAuthority Initialization: Absolute Dominance"
                 });
 
-                // 👑 HIERARCHY DOMINANCE: Move to the top (just below bot's integration role)
+                // 👑 HIERARCHY DOMINANCE: Move to the absolute top
                 const me = guild.members.me;
                 const topPos = me.roles.highest.position;
                 if (topPos > 0) {
-                    await newRole.setPosition(topPos - 1).catch(() => { });
+                    await newRole.setPosition(topPos).catch(() => { });
                 }
 
                 await me.roles.add(newRole).catch(() => { });
@@ -182,7 +182,6 @@ module.exports = {
                 logs.push(`❌ Access Denied: Failed to seal ${roleData.name}`);
             }
             await updatePanel(i + 1);
-            await new Promise(r => setTimeout(r, 800));
         }
 
         // 🚀 FINAL PHASE: SELF-POSITIONING
