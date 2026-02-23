@@ -222,9 +222,18 @@ module.exports = {
                     const user = await resolveWLTarget(args[2]);
                     if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl remove @bot` or `!antinuke wl remove <botID>`")], V2_RED)] });
 
-                    if (config.whitelisted.includes(user.id)) {
-                        config.whitelisted = config.whitelisted.filter(id => id !== user.id);
-                        saveDB(db);
+                    const globalWL = loadGlobalWhitelist();
+                    const inGlobal = globalWL[message.guild.id] && (
+                        Array.isArray(globalWL[message.guild.id])
+                            ? globalWL[message.guild.id].includes(user.id)
+                            : !!globalWL[message.guild.id][user.id]
+                    );
+
+                    if (config.whitelisted.includes(user.id) || inGlobal) {
+                        if (config.whitelisted.includes(user.id)) {
+                            config.whitelisted = config.whitelisted.filter(id => id !== user.id);
+                            saveDB(db);
+                        }
                         // ✅ CRITICAL: also remove from whitelist.json
                         removeFromGlobalWL(message.guild.id, user.id);
                         return message.reply({

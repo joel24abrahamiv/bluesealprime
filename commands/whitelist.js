@@ -174,7 +174,7 @@ module.exports = {
         });
       }
 
-      if (whitelist[guildId].includes(target.id)) {
+      if (getIds(whitelist, guildId).includes(target.id)) {
         return message.reply({
           content: null,
           flags: V2.flag,
@@ -232,7 +232,7 @@ module.exports = {
         });
       }
 
-      if (!whitelist[guildId].includes(target.id)) {
+      if (!getIds(whitelist, guildId).includes(target.id)) {
         return message.reply({
           content: null,
           flags: V2.flag,
