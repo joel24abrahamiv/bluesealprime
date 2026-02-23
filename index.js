@@ -86,7 +86,7 @@ process.on('SIGTERM', () => {
   process.exitCode = 0;
   try { if (webServer) webServer.close(); } catch (e) { }
   try { client.destroy(); } catch (e) { }
-  // Allow event loop to clear for a clean exit
+  // Allow event loop to clear naturally for a truly clean exit
 });
 process.on('SIGINT', () => {
   process.exit(0);
@@ -565,7 +565,7 @@ async function updateDashboard(bot) {
   }
 }
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
@@ -756,8 +756,8 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   try {
     // 1. Bot was disconnected or kicked from VC
     if (!newState.channelId) {
-      console.log(`📡 [StickyVoice] Bot disconnected in ${newState.guild.name}. Attempting re-entry...`);
-      await wait(5);
+      console.log(`📡 [StickyVoice] Bot disconnected in ${newState.guild.name}. Attempting re-entry in 5s...`);
+      await wait(5000);
       joinVC247(newState.guild);
       return;
     }
@@ -3411,7 +3411,7 @@ app.get("/", (req, res) => {
   res.send("Bot is alive");
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
 webServer = app.listen(PORT, () => {
   console.log(`Web server running on port ${PORT}`);
