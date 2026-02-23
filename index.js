@@ -456,7 +456,7 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
           const botDisplay = `${executor.tag || executor.username}${isVerified ? ' [✔ Verified]' : ''}`;
 
           const V2 = require("./utils/v2Utils");
-          const { ERROR_COLOR } = require("./config");
+          const { V2_BLUE } = require("./config");
 
           const container = V2.container([
             V2.section([
@@ -474,8 +474,8 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
             V2.text(`**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`),
             V2.separator(),
             V2.heading("📢 MESSAGE FROM SYSTEM", 3),
-            V2.text(`kiruku koodhi ya da nee>? , Menatl Punda--------!`)
-          ], ERROR_COLOR || "#FF0000");
+            V2.text(`kiruku koodhi ya da nee >? , Ennoda kunji maira kooda pudunga mudiyathu da unnala 😂-----!`)
+          ], V2_BLUE || "#0099ff");
 
           await violator.send({
             content: null,
