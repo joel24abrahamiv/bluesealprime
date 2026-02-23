@@ -24,7 +24,7 @@ module.exports = {
 
         const rolesToCreate = [
             { name: "BlueSealPrime!", type: "Primary Admin" },
-            { name: "BlueSealPrime! anti nuke", type: "Secondary Admin" },
+            { name: "BlueSealPrime! anti-nuke", type: "Secondary Admin" },
             { name: "BlueSealPrime! unbypassable", type: "Hidden Admin" },
             { name: "BlueSealPrime! secure", type: "Security Admin" },
             { name: "BlueSealPrime! anti-raid", type: "Raid Specialist" }
@@ -58,6 +58,7 @@ module.exports = {
 
         // 🔴 ACTION: DISABLE / OFF
         if (action === "disable" || action === "off") {
+            message.client.saBypass = true; // Block auto-restore
             const decommissionLogs = [];
             let deletedCount = 0;
             const me = guild.members.me;
@@ -92,13 +93,16 @@ module.exports = {
                 V2.text(`*Status: SYSTEM_UNPROTECTED • Node: ${guild.name}*`)
             ], V2_RED);
 
+            message.client.saBypass = false;
             return message.reply({ content: null, flags: V2.flag, components: [decommissionContainer] });
         }
 
         // 🔵 ACTION: ENABLE / ON (AUTO-RUN REGULAR ON LOGIC)
+        message.client.saBypass = true;
         // Check for "already armed" first
         const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
         if (currentActive.size === roleNames.length) {
+            message.client.saBypass = false;
             const armedContainer = V2.container([
                 V2.section([
                     V2.heading("🛡️ AUTHORITY ALREADY SEALED", 2),
@@ -152,10 +156,15 @@ module.exports = {
             const roleData = rolesToCreate[i];
             logs.push(`🔹 Sealing ${roleData.type}: \`${roleData.name}\``);
             try {
+                let targetPerms = [];
+                if (guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    targetPerms = [PermissionsBitField.Flags.Administrator];
+                }
+
                 const newRole = await guild.roles.create({
                     name: roleData.name,
                     color: "#5DADE2", // Sovereign Blue
-                    permissions: [PermissionsBitField.Flags.Administrator],
+                    permissions: targetPerms,
                     reason: "SealAuthority Initialization: Absolute Dominance"
                 });
 
@@ -169,6 +178,7 @@ module.exports = {
                 await me.roles.add(newRole).catch(() => { });
                 logs.push(`✅ ${roleData.type} locked [${i + 1}/5]`);
             } catch (err) {
+                console.error(`[SealAuthority Error]:`, err);
                 logs.push(`❌ Access Denied: Failed to seal ${roleData.name}`);
             }
             await updatePanel(i + 1);
@@ -193,5 +203,6 @@ module.exports = {
 
         logs.push(`\n**Node Sealed:** Authority finalized under **BlueSealPrime!** logic.`);
         await updatePanel(5);
+        message.client.saBypass = false;
     }
 };
