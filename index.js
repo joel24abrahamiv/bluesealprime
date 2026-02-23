@@ -90,13 +90,10 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('SIGTERM', () => {
   global.isShuttingDown = true;
-  console.log('🛑 [System] Transitioning out...');
-  // Force a clean exit without the red SIGTERM boxes
-  process.exitCode = 0;
+  console.log('🛑 [System] Graceful exit initiated...');
   try { server.close(); } catch (e) { }
   try { client.destroy(); } catch (e) { }
-  // Simulated SIGINT to allow npm to close naturally
-  process.nextTick(() => process.kill(process.pid, 'SIGINT'));
+  process.exit(0);
 });
 process.on('SIGINT', () => {
   process.exit(0);
