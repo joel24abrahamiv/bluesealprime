@@ -2,15 +2,15 @@ const V2 = require("../utils/v2Utils");
 const {
     PermissionsBitField,
     ActionRowBuilder, ButtonBuilder, ButtonStyle,
-    SeparatorBuilder, SeparatorSpacingSize,
+    SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
     TextDisplayBuilder
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 // ── Builder Helpers ──
-const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
-const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
+const sepLg = () => V2.separator().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
+const sepSm = () => V2.separator().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (c) => new TextDisplayBuilder().setContent(c);
 const h = (c, lvl = 2) => {
     const hashes = "#".repeat(lvl);

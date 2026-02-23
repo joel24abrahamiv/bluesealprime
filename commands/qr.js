@@ -1,7 +1,7 @@
 const V2 = require("../utils/v2Utils");
 const {
     PermissionsBitField, ChannelType,
-    SeparatorBuilder, SeparatorSpacingSize
+    SeparatorSpacingSize
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_RED, V2_BLUE } = require("../config");
 const fs = require("fs");
@@ -19,7 +19,7 @@ function saveRoles(guildId, userId, roles) {
 
 // ─── SEPARATOR HELPER (explicit SeparatorBuilder) ───
 function sep(large = false) {
-    return new SeparatorBuilder()
+    return V2.separator()
         .setSpacing(large ? SeparatorSpacingSize.Large : SeparatorSpacingSize.Small)
         .setDivider(true);
 }

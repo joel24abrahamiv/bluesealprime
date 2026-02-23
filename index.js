@@ -554,7 +554,7 @@ async function updateDashboard(bot) {
         V2.text(`**API Latency:** \`${Math.round(bot.ws.ping)}ms\`\n**Response Time:** \`STABLE\``)
       ]);
 
-      const container = V2.container([statsSection, new SeparatorBuilder(), latencySection]);
+      const container = V2.container([statsSection, V2.separator(), latencySection]);
 
       if (existingMsg) {
         await existingMsg.edit({ flags: V2.flag, components: [container] }).catch(() => { });
@@ -2846,7 +2846,7 @@ client.on("interactionCreate", async interaction => {
       const closeButton = new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger);
       const actionSection = V2.section([V2.text("Channel Controls:")], closeButton);
 
-      const container = V2.container([mainSection, new SeparatorBuilder(), actionSection]);
+      const container = V2.container([mainSection, V2.separator(), actionSection]);
 
       await channel.send({
         content: `${user} | <@${BOT_OWNER_ID}>`,
@@ -3238,7 +3238,6 @@ async function logToChannel(guild, type, payload) {
   if (!guild) return;
 
   const V2 = require("./utils/v2Utils");
-  const { ContainerBuilder, SeparatorBuilder } = require("discord.js");
   const V2_FLAG = V2.flag; // 32768
 
   // Accent colors per log type
@@ -3324,7 +3323,7 @@ async function logToChannel(guild, type, payload) {
     return [headerCtr, existingContainer];
   }
 
-  const isV2Input = payload instanceof ContainerBuilder;
+  const isV2Input = payload && (payload.constructor?.name === "ContainerBuilder" || (payload.addSectionComponents && payload.toJSON));
 
   // 1. UNIVERSAL LOGGING (ELOGS)
   const ELOGS_DB = path.join(__dirname, "data/elogs.json");

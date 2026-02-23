@@ -1,7 +1,7 @@
 const V2 = require("../utils/v2Utils");
 const {
     PermissionsBitField,
-    SeparatorBuilder, SeparatorSpacingSize,
+    SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
     TextDisplayBuilder
 } = require("discord.js");
@@ -17,8 +17,8 @@ function getSavedRoles(guildId, userId) {
 }
 
 // ── Builder Helpers ──
-const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
-const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
+const sepLg = () => V2.separator().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
+const sepSm = () => V2.separator().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (content) => new TextDisplayBuilder().setContent(content);
 const h = (content, level = 2) => {
     const hashes = "#".repeat(level);
