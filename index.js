@@ -1529,6 +1529,15 @@ client.on("guildMemberAdd", async member => {
     }
     extraOwners = [...new Set(extraOwners)];
 
+    // ── WHITELIST CHECK (BYPASS AUTO-KICK) ──
+    refreshWhitelistCache();
+    if (isWhitelisted(guild.id, member.id)) {
+      console.log(`✅ [BotSecurity] Whitelisted bot joined: ${member.user.tag} — bypassing auto-kick.`);
+      // Whitelisted bots bypass join checks completely.
+      // They are still subject to anti-nuke thresholds later.
+      return;
+    }
+
     // Check if bot is verified (has VERIFIED_BOT flag)
     const isVerified = member.user.flags?.has('VerifiedBot') ?? false;
 
