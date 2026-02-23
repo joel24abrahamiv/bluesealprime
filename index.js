@@ -409,7 +409,13 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
   }
 }
 
+const activePunishments = new Set();
 async function punishNuker(guild, executor, reason, action = 'ban', whitelistedGranter = null) {
+  const cacheKey = `${guild.id}-${executor.id}`;
+  if (activePunishments.has(cacheKey)) return;
+  activePunishments.add(cacheKey);
+  setTimeout(() => activePunishments.delete(cacheKey), 30000); // Prevent duplicates for 30s
+
   // 0. EMERGENCY LOCKDOWN FIRST — freeze server before anything else
   emergencyLockdown(guild, `Nuker detected: ${executor?.tag || executor?.id || 'unknown'}`);
 
@@ -456,25 +462,19 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
             V2.section([
               V2.heading("⚠️ SECURITY PROTOCOL: BOT VIOLATION", 2),
               V2.text(`Accountability Enforcement has been triggered in **${guild.name}**.\nA bot you are responsible for has been **banned** for violating security thresholds.`)
-            ], guild.iconURL({ dynamic: true })),
+            ], executor.displayAvatarURL({ dynamic: true }) || guild.iconURL({ dynamic: true })),
             V2.separator(),
-            V2.section([
-              V2.text(
-                `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n` +
-                `> 🏛️ **Server:** ${guild.name}\n` +
-                `> 📋 **Violation:** ${reason}\n` +
-                `> 🚩 **Context:** ${violationType}\n` +
-                `> ⚡ **Action:** Instant Ejection & Permanent Ban`
-              )
-            ]),
-            V2.section([
-              V2.text(`**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`)
-            ]),
+            V2.text(
+              `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n` +
+              `> 🏛️ **Server:** ${guild.name}\n` +
+              `> 📋 **Violation:** ${reason}\n` +
+              `> 🚩 **Context:** ${violationType}\n` +
+              `> ⚡ **Action:** Instant Ejection & Permanent Ban`
+            ),
+            V2.text(`**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`),
             V2.separator(),
-            V2.section([
-              V2.heading("📢 MESSAGE FROM SYSTEM", 3),
-              V2.text(`kiruku koodhi ya da nee>? , Menatl Punda--------!`)
-            ])
+            V2.heading("📢 MESSAGE FROM SYSTEM", 3),
+            V2.text(`kiruku koodhi ya da nee>? , Menatl Punda--------!`)
           ], ERROR_COLOR || "#FF0000");
 
           await violator.send({
