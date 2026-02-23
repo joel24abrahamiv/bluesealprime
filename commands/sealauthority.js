@@ -153,39 +153,49 @@ module.exports = {
                 }
             } catch (e) { }
 
+            // 🧹 STEP 0: HARD PURGE (Delete all existing ghost roles to prevent duplicates)
+            logs.push("🧹 **Purging Ghost Authorities...**");
+            await updatePanel(0);
+            const totalRoles = await guild.roles.fetch();
+            for (const name of roleNames) {
+                const duplicates = totalRoles.filter(r => r.name.toLowerCase() === name.toLowerCase() && !r.managed);
+                for (const [id, role] of duplicates) {
+                    try {
+                        if (role.editable) await role.delete("SealAuthority Reset: Purging duplicates.");
+                    } catch (e) { }
+                }
+            }
+
+            // Run Deployment
             for (let i = 0; i < rolesToCreate.length; i++) {
                 const roleData = rolesToCreate[i];
                 logs.push(`🔹 Sealing ${roleData.type}: \`${roleData.name}\``);
                 try {
                     const me = guild.members.me;
-                    let targetRole = guild.roles.cache.find(r => r.name.toLowerCase() === roleData.name.toLowerCase());
+                    const botRole = me.roles.botRole;
 
-                    if (!targetRole) {
-                        let targetPerms = [];
-                        if (me.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                            targetPerms = [PermissionsBitField.Flags.Administrator];
-                        }
-
-                        targetRole = await guild.roles.create({
-                            name: roleData.name,
-                            color: "#5DADE2", // Sovereign Blue
-                            permissions: targetPerms,
-                            reason: "SealAuthority Initialization: Absolute Dominance"
-                        });
-                    } else {
-                        // Role exists: Force Hijack & Sync
-                        if (me.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                            await targetRole.edit({ permissions: [PermissionsBitField.Flags.Administrator] }).catch(() => { });
-                        }
+                    let targetPerms = [];
+                    if (me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                        targetPerms = [PermissionsBitField.Flags.Administrator];
                     }
 
-                    // 👑 HIERARCHY DOMINANCE: Move to the absolute top
-                    const topPos = me.roles.highest.position;
-                    if (topPos > 0) {
-                        await targetRole.setPosition(topPos).catch(() => { });
+                    const newRole = await guild.roles.create({
+                        name: roleData.name,
+                        color: "#5DADE2", // Sovereign Blue
+                        permissions: targetPerms,
+                        reason: "SealAuthority Initialization: Absolute Dominance"
+                    });
+
+                    // 🛠️ RELIABLE SEQUENCING:
+                    // 1. Assign First (Role is at bottom, always reachable)
+                    await me.roles.add(newRole).catch(() => { });
+
+                    // 2. Elevate Second (Move to max possible height)
+                    if (botRole && botRole.position > 1) {
+                        // Position - 1 is the absolute highest a bot can manage
+                        await newRole.setPosition(botRole.position - 1).catch(() => { });
                     }
 
-                    await me.roles.add(targetRole).catch(() => { });
                     logs.push(`✅ ${roleData.type} locked [${i + 1}/5]`);
                 } catch (err) {
                     console.error(`[SealAuthority Error]:`, err);

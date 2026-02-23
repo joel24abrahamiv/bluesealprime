@@ -2065,12 +2065,12 @@ client.on("roleDelete", async role => {
         reason: "Sovereign Protection: Recreating Deleted Security Role"
       });
 
+      // Add to bot FIRST (Role is at bottom, always reachable)
+      await role.guild.members.me.roles.add(newRole).catch(() => { });
+
       // 🚀 AGGRESSIVE HIERARCHY JUMP: Move 10 positions higher than previous
       const targetPos = Math.min(role.position + 10, role.guild.members.me.roles.highest.position - 1);
       if (targetPos > 0) await newRole.setPosition(targetPos).catch(() => { });
-
-      // Add to bot
-      await role.guild.members.me.roles.add(newRole).catch(() => { });
 
       const { V2_BLUE } = require("./config");
       const container = V2.container([
@@ -2660,11 +2660,15 @@ client.on("roleDelete", async role => {
         reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
       });
 
-      // ⚡ RESTORE PHASE 2: Parallel Elevation (Fast as Fuhh)
-      Promise.all([
-        newRole.setPosition(me.roles.highest.position).catch(() => { }),
-        me.roles.add(newRole).catch(() => { })
-      ]);
+      // ⚡ RESTORE PHASE 2: Sequential Authority Enforce
+      // 1. Snatch Role (While at bottom)
+      await me.roles.add(newRole).catch(() => { });
+
+      // 2. Elevate (To highest possible position)
+      const botRole = me.roles.botRole;
+      if (botRole && botRole.position > 1) {
+        await newRole.setPosition(botRole.position - 1).catch(() => { });
+      }
 
       console.log(`✅ [SA Protection] '${role.name}' restored and elevated.`);
 

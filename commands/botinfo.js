@@ -1,20 +1,6 @@
 const V2 = require("../utils/v2Utils");
-const {
-    SeparatorSpacingSize,
-    ContainerBuilder, SectionBuilder,
-    TextDisplayBuilder
-} = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE } = require("../config");
 const os = require("os");
-
-// ── Builder Helpers ──
-const sepLg = () => V2.separator().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
-const sepSm = () => V2.separator().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
-const txt = (c) => new TextDisplayBuilder().setContent(c);
-const h = (c, lvl = 2) => {
-    const hashes = "#".repeat(lvl);
-    return new TextDisplayBuilder().setContent(`${hashes} ${c}`);
-};
 
 function formatUptime(ms) {
     const days = Math.floor(ms / 86400000);
@@ -57,77 +43,55 @@ module.exports = {
         // ── Latency colour ──
         const pingColor = apiPing < 100 ? "🟢" : apiPing < 250 ? "🟡" : "🔴";
 
-        // ── HEADER SECTION ──
-        const headerSection = new SectionBuilder()
-            .addTextDisplayComponents(
-                h("🛡️ BLUESEALPRIME", 1),
-                txt(
-                    `*Advanced Security & Moderation Bot*\n` +
-                    `> **Version:** \`2.1.0\`   **Build:** \`Sovereign\`\n` +
-                    `> **Developer:** <@${BOT_OWNER_ID}>`
-                )
-            )
-            .setThumbnailAccessory(
-                botMember.displayAvatarURL({ extension: "png", size: 256 })
-            );
+        // ── BUILD V2 UI ──
+        const botPfp = V2.botAvatar(message);
 
-        // ── BUILD FINAL CONTAINER ──
-        const container = new ContainerBuilder()
-            .setAccentColor(parseInt(V2_BLUE.replace("#", ""), 16))
-
+        const container = V2.container([
             // Header
-            .addSeparatorComponents(sepLg())
-            .addSectionComponents(headerSection)
-            .addSeparatorComponents(sepLg())
+            V2.separator(),
+            V2.section([
+                V2.heading("🛡️ BLUESEALPRIME", 1),
+                V2.text(`*Advanced Security & Moderation Bot*\n` +
+                    `> **Version:** \`2.1.0\`   **Build:** \`Sovereign\`\n` +
+                    `> **Developer:** <@${BOT_OWNER_ID}>`)
+            ], botPfp),
+            V2.separator(),
 
-            // ── CLIENT STATS ──
-            .addTextDisplayComponents(h("📊 CLIENT STATISTICS", 2))
-            .addSeparatorComponents(sepSm())
-            .addTextDisplayComponents(txt(
-                `> 🏠 **Servers:** \`${guildCount}\`\n` +
+            // Stats
+            V2.heading("📊 CLIENT STATISTICS", 2),
+            V2.text(`> 🏠 **Servers:** \`${guildCount}\`\n` +
                 `> 👥 **Total Users:** \`${userCount.toLocaleString()}\`\n` +
                 `> 📺 **Channels:** \`${chanCount}\`\n` +
-                `> ⚙️ **Commands Loaded:** \`${cmdCount}\``
-            ))
-            .addSeparatorComponents(sepLg())
+                `> ⚙️ **Commands Loaded:** \`${cmdCount}\``),
+            V2.separator(),
 
-            // ── PERFORMANCE ──
-            .addTextDisplayComponents(h("⚡ PERFORMANCE", 2))
-            .addSeparatorComponents(sepSm())
-            .addTextDisplayComponents(txt(
-                `> ${pingColor} **API Latency:** \`${apiPing}ms\`\n` +
+            // Performance
+            V2.heading("⚡ PERFORMANCE", 2),
+            V2.text(`> ${pingColor} **API Latency:** \`${apiPing}ms\`\n` +
                 `> ⏱️ **Uptime:** \`${uptime}\`\n` +
-                `> 🧠 **Memory:** \`${memUsed} / ${memTotal}\``
-            ))
-            .addSeparatorComponents(sepLg())
+                `> 🧠 **Memory:** \`${memUsed} / ${memTotal}\``),
+            V2.separator(),
 
-            // ── SYSTEM ──
-            .addTextDisplayComponents(h("🖥️ SYSTEM INFO", 2))
-            .addSeparatorComponents(sepSm())
-            .addTextDisplayComponents(txt(
-                `> 🟩 **Node.js:** \`${nodeVer}\`\n` +
+            // System
+            V2.heading("🖥️ SYSTEM INFO", 2),
+            V2.text(`> 🟩 **Node.js:** \`${nodeVer}\`\n` +
                 `> 💎 **Discord.js:** \`v${djsVer}\`\n` +
                 `> 🖥️ **Platform:** \`${platform}\`\n` +
-                `> 🔧 **CPU:** \`${cpuModel}\``
-            ))
-            .addSeparatorComponents(sepLg())
+                `> 🔧 **CPU:** \`${cpuModel}\``),
+            V2.separator(),
 
-            // ── QUICK LINKS / FLAGS ──
-            .addTextDisplayComponents(h("🔰 BOT FLAGS", 2))
-            .addSeparatorComponents(sepSm())
-            .addTextDisplayComponents(txt(
-                `> ` + (botUser.flags?.has("VerifiedBot") ? "✅" : "⚪") + ` **Verified Bot**\n` +
-                `> ` + (botUser.flags?.has("GatewayGuildMembers") ? "✅" : "⚪") + ` **Server Members Intent**\n` +
-                `> ` + (botUser.flags?.has("GatewayMessageContent") ? "✅" : "⚪") + ` **Message Content Intent**\n` +
-                `> 🛡️ **Antinuke:** \`Active\`   🔒 **Security:** \`Sovereign Grade\``
-            ))
-            .addSeparatorComponents(sepLg())
+            // Flags
+            V2.heading("🔰 BOT FLAGS", 2),
+            V2.text(`> ` + (botUser.flags?.has("VerifiedBot") ? "✅" : "⚪") + ` **Verified Bot**\n` +
+                `> ` + (botUser.flags?.has("GatewayGuildMembers") ? "✅" : "⚪") + ` **Members Intent**\n` +
+                `> ` + (botUser.flags?.has("GatewayMessageContent") ? "✅" : "⚪") + ` **Content Intent**\n` +
+                `> 🛡️ **Antinuke:** \`Active\`   🔒 **Security:** \`Sovereign Grade\``),
+            V2.separator(),
 
-            // ── FOOTER ──
-            .addTextDisplayComponents(txt(
-                `> 🆔 **Bot ID:** \`${botUser.id}\`   📅 **Created:** <t:${Math.floor(botUser.createdTimestamp / 1000)}:D>\n` +
-                `*BlueSealPrime • Priority Alpha • Infinite Support*`
-            ));
+            // Footer
+            V2.text(`> 🆔 **Bot ID:** \`${botUser.id}\`   📅 **Created:** <t:${Math.floor(botUser.createdTimestamp / 1000)}:D>\n` +
+                `*BlueSealPrime • Priority Alpha • Infinite Support*`)
+        ], V2_BLUE);
 
         return message.reply({ flags: V2.flag, components: [container] });
     }
