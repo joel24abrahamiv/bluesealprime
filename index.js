@@ -88,15 +88,27 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('💥 [CrashRecovery] Unhandled Rejection — bot continuing:', reason?.message || reason);
 });
+const activeIntervals = [];
+
 process.on('SIGTERM', () => {
   global.isShuttingDown = true;
-  console.log('🛑 [System] Graceful exit initiated...');
+  console.log('🛑 [System] Transitioning to standby (SIGTERM received)...');
+
+  // 1. Clear all background tasks
+  activeIntervals.forEach(clearInterval);
+
+  // 2. Close servers and connections
   try { server.close(); } catch (e) { }
   try { client.destroy(); } catch (e) { }
-  process.exit(0);
+
+  // 3. Set successful exit code and allow event loop to drain
+  process.exitCode = 0;
+  console.log('✅ [System] Standby sequence complete.');
 });
+
 process.on('SIGINT', () => {
-  process.exit(0);
+  process.exitCode = 0;
+  process.kill(process.pid, 'SIGTERM');
 });
 
 // ─── PER-USER COMMAND COOLDOWN (Anti-Spam Bomb) ───
@@ -429,7 +441,7 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
 
 // ───── COMMAND COLLECTION (Delayed Loading to Protect Heartbeat) ─────
 client.commands = new Collection();
-setTimeout(() => {
+const loadCommandTimeout = setTimeout(() => {
   const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
   console.log(`📦 [System] Initializing load sequence for ${commandFiles.length} modules...`);
   for (const file of commandFiles) {
@@ -446,7 +458,8 @@ setTimeout(() => {
     }
   }
   console.log(`✅ [System] Binary sequence complete. ${client.commands.size} commands indexed.`);
-}, 2000); // 2s delay gives the Heartbeat absolute priority on boot
+}, 2000);
+activeIntervals.push(loadCommandTimeout); // 2s delay gives the Heartbeat absolute priority on boot
 
 // ───── READY ─────
 // 0. GLOBAL MONITOR DASHBOARD
@@ -581,7 +594,7 @@ client.once("ready", () => {
   client.nukingGuilds = new Set();
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 
-  setTimeout(async () => {
+  const startupTimeout = setTimeout(async () => {
     if (global.isShuttingDown) return;
     updateDashboard(client).catch(() => { });
     for (const guild of client.guilds.cache.values()) {
@@ -590,6 +603,7 @@ client.once("ready", () => {
       await wait(1500);
     }
   }, 10000);
+  activeIntervals.push(startupTimeout);
 
   // ───── IMMEDIATE TASKS ─────
   const activities = [
@@ -600,14 +614,14 @@ client.once("ready", () => {
   ];
 
   let i = 0;
-  setInterval(() => {
+  activeIntervals.push(setInterval(() => {
     if (global.isShuttingDown) return;
     client.user.setPresence({
       activities: [activities[i]],
       status: 'dnd',
     });
     i = (i + 1) % activities.length;
-  }, 10000);
+  }, 10000));
 });
 
 client.on("guildCreate", async (guild) => {
@@ -3367,7 +3381,7 @@ async function logToChannel(guild, type, payload) {
 }
 
 // ───── SERVER STATS UPDATER ─────
-setInterval(async () => {
+activeIntervals.push(setInterval(async () => {
 
   const STATS_DB = path.join(__dirname, "data/serverstats.json");
   if (!fs.existsSync(STATS_DB)) return;
@@ -3388,10 +3402,6 @@ setInterval(async () => {
       // Bots
       if (config.botsId) {
         const ch = guild.channels.cache.get(config.botsId);
-        // Need to ensure members are cached or fetch count? 
-        // guild.memberCount is accurate. Bot count might require fetch if not cached?
-        // For now rely on cache or just Total.
-        // Let's rely on cache for bots (usually fine for small/medium bots, larger bots use sharding/intents)
         const botCount = guild.members.cache.filter(m => m.user.bot).size;
         if (ch) await ch.setName(`Bots: ${botCount}`).catch(() => { });
       }
@@ -3399,7 +3409,7 @@ setInterval(async () => {
       console.error(`Failed to update stats for ${guild.name}:`, e);
     }
   }
-}, 600000); // 10 Minutes
+}, 600000)); // 10 Minutes
 
 // End of file
 
