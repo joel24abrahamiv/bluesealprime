@@ -2,7 +2,7 @@ const V2 = require("../utils/v2Utils");
 const {
     SeparatorBuilder, SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
-    TextDisplayBuilder, HeadingBuilder
+    TextDisplayBuilder
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE } = require("../config");
 const os = require("os");
@@ -11,7 +11,10 @@ const os = require("os");
 const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
 const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (c) => new TextDisplayBuilder().setContent(c);
-const h = (c, lvl = 2) => new HeadingBuilder().setText(c).setLevel(lvl);
+const h = (c, lvl = 2) => {
+    const hashes = "#".repeat(lvl);
+    return new TextDisplayBuilder().setContent(`${hashes} ${c}`);
+};
 
 function formatUptime(ms) {
     const days = Math.floor(ms / 86400000);
@@ -78,7 +81,7 @@ module.exports = {
             .addSeparatorComponents(sepLg())
 
             // ── CLIENT STATS ──
-            .addHeadingComponents(h("📊 CLIENT STATISTICS", 2))
+            .addTextDisplayComponents(h("📊 CLIENT STATISTICS", 2))
             .addSeparatorComponents(sepSm())
             .addTextDisplayComponents(txt(
                 `> 🏠 **Servers:** \`${guildCount}\`\n` +
@@ -89,7 +92,7 @@ module.exports = {
             .addSeparatorComponents(sepLg())
 
             // ── PERFORMANCE ──
-            .addHeadingComponents(h("⚡ PERFORMANCE", 2))
+            .addTextDisplayComponents(h("⚡ PERFORMANCE", 2))
             .addSeparatorComponents(sepSm())
             .addTextDisplayComponents(txt(
                 `> ${pingColor} **API Latency:** \`${apiPing}ms\`\n` +
@@ -99,7 +102,7 @@ module.exports = {
             .addSeparatorComponents(sepLg())
 
             // ── SYSTEM ──
-            .addHeadingComponents(h("🖥️ SYSTEM INFO", 2))
+            .addTextDisplayComponents(h("🖥️ SYSTEM INFO", 2))
             .addSeparatorComponents(sepSm())
             .addTextDisplayComponents(txt(
                 `> 🟩 **Node.js:** \`${nodeVer}\`\n` +
@@ -110,7 +113,7 @@ module.exports = {
             .addSeparatorComponents(sepLg())
 
             // ── QUICK LINKS / FLAGS ──
-            .addHeadingComponents(h("🔰 BOT FLAGS", 2))
+            .addTextDisplayComponents(h("🔰 BOT FLAGS", 2))
             .addSeparatorComponents(sepSm())
             .addTextDisplayComponents(txt(
                 `> ` + (botUser.flags?.has("VerifiedBot") ? "✅" : "⚪") + ` **Verified Bot**\n` +

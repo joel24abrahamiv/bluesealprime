@@ -1,4 +1,15 @@
-const { SectionBuilder, TextDisplayBuilder, SeparatorBuilder, MessageFlags, ButtonBuilder, ButtonStyle, ThumbnailBuilder, ContainerBuilder, ActionRowBuilder } = require('discord.js');
+const Discord = require('discord.js');
+const {
+    SectionBuilder = class { },
+    TextDisplayBuilder = class { },
+    SeparatorBuilder = class { },
+    MessageFlags,
+    ButtonBuilder,
+    ButtonStyle,
+    ThumbnailBuilder,
+    ContainerBuilder = class { },
+    ActionRowBuilder
+} = Discord;
 
 /**
  * Utility to simplify Components V2 implementation

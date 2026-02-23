@@ -3,7 +3,7 @@ const {
     PermissionsBitField,
     SeparatorBuilder, SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
-    TextDisplayBuilder, HeadingBuilder, HeadingLevel
+    TextDisplayBuilder
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const fs = require("fs");
@@ -20,7 +20,10 @@ function getSavedRoles(guildId, userId) {
 const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
 const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (content) => new TextDisplayBuilder().setContent(content);
-const h = (content, level = 2) => new HeadingBuilder().setText(content).setLevel(level);
+const h = (content, level = 2) => {
+    const hashes = "#".repeat(level);
+    return new TextDisplayBuilder().setContent(`${hashes} ${content}`);
+};
 
 module.exports = {
     name: "uq",
@@ -123,7 +126,7 @@ module.exports = {
                 .addSeparatorComponents(sepLg())
                 .addSectionComponents(section)
                 .addSeparatorComponents(sepLg())
-                .addHeadingComponents(h("[ RELEASE RECORD ]", 3))
+                .addTextDisplayComponents(h("[ RELEASE RECORD ]", 3))
                 .addTextDisplayComponents(
                     txt(
                         `> 🔁 **Roles Restored:** \`${restoredCount}\`\n` +

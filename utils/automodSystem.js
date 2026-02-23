@@ -195,38 +195,54 @@ async function handleViolation(message, type, reason, actionTaken) {
     try {
         if (message.deletable) await message.delete().catch(() => { });
 
-        const blueColor = "#0099FF";
+        const V2 = require("./v2Utils");
+        const V2_FLAG = V2.flag;
 
-        // 1. USER ALERT
-        const alertEmbed = new EmbedBuilder()
-            .setColor(blueColor)
-            .setTitle(`${type} Detected`)
-            .setDescription(
-                `🟦 **${message.author.username}**, please stop.\n` +
-                `> Reason: **${reason}**\n` +
-                `> Action: **${actionTaken}**`
-            )
-            .setFooter({ text: "BlueSealPrime • Auto-Mod" });
+        // Bot server PFP
+        const botMember = message.guild.members.cache.get(message.client.user.id);
+        const botPFP = botMember
+            ? botMember.displayAvatarURL({ forceStatic: false, size: 512 })
+            : message.client.user.displayAvatarURL({ forceStatic: false, size: 512 });
 
-        const alertMsg = await message.channel.send({ content: `${message.author}`, embeds: [alertEmbed] });
-        setTimeout(() => alertMsg.delete().catch(() => { }), 5);
+        // 1. USER ALERT (V2 — ephemeral container, auto-deleted)
+        const alertContainer = V2.container([
+            V2.section([
+                V2.heading(`⚠️ ${type} Detected`, 2),
+                V2.text(`**${message.author.username}**, please stop.\n> **Reason:** ${reason}\n> **Action:** ${actionTaken}`)
+            ], botPFP),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Auto-Mod System*")
+        ], "#0099FF");
 
-        // 2. LOG
-        const logEmbed = new EmbedBuilder()
-            .setColor(blueColor)
-            .setTitle("🛡️ AUTO-MOD INTERVENTION")
-            .addFields(
-                { name: "👤 User", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
-                { name: "📍 Channel", value: `${message.channel}`, inline: true },
-                { name: "⚖️ Violation", value: reason, inline: true },
-                { name: "🔨 Action", value: actionTaken, inline: true }
-            )
-            .setTimestamp();
+        await message.channel.send({
+            content: `${message.author}`,
+            flags: V2_FLAG,
+            components: [alertContainer]
+        }).catch(() => { });
 
-        // Helper to find log channel (basic implementation if logToChannel not available here)
-        // Ideally we pass the 'logToChannel' function or require it, but for now we look for '🛡-security-alerts'
+        // 2. LOG (V2 premium container to log channel)
+        const timestamp = Math.floor(Date.now() / 1000);
+        const logContainer = V2.container([
+            V2.section([
+                V2.heading("🛡️ AUTO-MOD INTERVENTION", 2),
+                V2.text(`> **Sector:** \`MOD\` • **Server:** ${message.guild.name} • <t:${timestamp}:T>`)
+            ], botPFP),
+            V2.separator(),
+            V2.section([
+                V2.text(`**👤 User**\n${message.author} (\`${message.author.id}\`)`),
+                V2.text(`**📍 Channel**\n${message.channel}`)
+            ]),
+            V2.separator(),
+            V2.section([
+                V2.text(`**⚖️ Violation**\n${reason}`),
+                V2.text(`**🔨 Action**\n${actionTaken}`)
+            ]),
+            V2.separator(),
+            V2.text("*BlueSealPrime • Auto-Mod Log*")
+        ], "#FF8C00");
+
         const logChannel = message.guild.channels.cache.find(c => c.name === "🛡-security-alerts" || c.name === "automod-logs");
-        if (logChannel) logChannel.send({ embeds: [logEmbed] }).catch(() => { });
+        if (logChannel) logChannel.send({ content: null, flags: V2_FLAG, components: [logContainer] }).catch(() => { });
 
     } catch (e) {
         console.error("AutoMod Violation Error:", e);

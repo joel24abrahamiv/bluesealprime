@@ -3,7 +3,7 @@ const {
     PermissionsBitField,
     SeparatorBuilder, SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
-    TextDisplayBuilder, HeadingBuilder
+    TextDisplayBuilder
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
@@ -11,7 +11,10 @@ const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
 const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (c) => new TextDisplayBuilder().setContent(c);
-const h = (c, lvl = 2) => new HeadingBuilder().setText(c).setLevel(lvl);
+const h = (c, lvl = 2) => {
+    const hashes = "#".repeat(lvl);
+    return new TextDisplayBuilder().setContent(`${hashes} ${c}`);
+};
 
 module.exports = {
     name: "unmute",
@@ -97,7 +100,7 @@ module.exports = {
                 .addSeparatorComponents(sepLg())
                 .addSectionComponents(section)
                 .addSeparatorComponents(sepLg())
-                .addHeadingComponents(h("[ RELEASE LOG ]", 3))
+                .addTextDisplayComponents(h("[ RELEASE LOG ]", 3))
                 .addTextDisplayComponents(txt(
                     `> 👮 **Released by:** ${message.author.tag}\n` +
                     `> 🕐 **At:** <t:${Math.floor(Date.now() / 1000)}:f>`

@@ -4,7 +4,7 @@ const {
     ActionRowBuilder, ButtonBuilder, ButtonStyle,
     SeparatorBuilder, SeparatorSpacingSize,
     ContainerBuilder, SectionBuilder,
-    TextDisplayBuilder, HeadingBuilder, HeadingLevel
+    TextDisplayBuilder
 } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
@@ -12,7 +12,10 @@ const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const sepLg = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true);
 const sepSm = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true);
 const txt = (c) => new TextDisplayBuilder().setContent(c);
-const h = (c, lvl = 2) => new HeadingBuilder().setText(c).setLevel(lvl);
+const h = (c, lvl = 2) => {
+    const hashes = "#".repeat(lvl);
+    return new TextDisplayBuilder().setContent(`${hashes} ${c}`);
+};
 
 function parseDuration(input) {
     const match = input?.match(/^(\d+)\s*(s|m|h|d)?$/i);
@@ -54,7 +57,7 @@ module.exports = {
             const c = new ContainerBuilder()
                 .setAccentColor(parseInt(V2_BLUE.replace("#", ""), 16))
                 .addSeparatorComponents(sepLg())
-                .addHeadingComponents(h("🔇 MUTE — USAGE", 2))
+                .addTextDisplayComponents(h("🔇 MUTE — USAGE", 2))
                 .addSeparatorComponents(sepSm())
                 .addTextDisplayComponents(txt(
                     "> `!mute @user [duration] [reason]`\n" +
@@ -176,7 +179,7 @@ module.exports = {
                     .addSeparatorComponents(sepLg())
                     .addSectionComponents(dmSection)
                     .addSeparatorComponents(sepLg())
-                    .addHeadingComponents(h("📋 SUSPENSION DETAILS", 3))
+                    .addTextDisplayComponents(h("📋 SUSPENSION DETAILS", 3))
                     .addTextDisplayComponents(txt(
                         `> ⏱️ **Duration:** ${durationFmt}\n` +
                         `> 📝 **Reason:** ${reason}\n` +
@@ -203,7 +206,7 @@ module.exports = {
                     .addSeparatorComponents(sepLg())
                     .addSectionComponents(verdictSection)
                     .addSeparatorComponents(sepLg())
-                    .addHeadingComponents(h("📜 INCIDENT LOG", 3))
+                    .addTextDisplayComponents(h("📜 INCIDENT LOG", 3))
                     .addTextDisplayComponents(txt(
                         `> ⏱️ **Duration:** \`${durationFmt}\`\n` +
                         `> 📝 **Reason:** ${reason}\n` +
