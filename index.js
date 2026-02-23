@@ -691,7 +691,7 @@ client.once("ready", () => {
     if (global.isShuttingDown) return;
     client.user.setPresence({
       activities: [activities[i]],
-      status: 'dnd',
+      status: 'online',
     });
     i = (i + 1) % activities.length;
   }, 10000);
