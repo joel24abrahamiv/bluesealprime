@@ -4,6 +4,41 @@ const path = require("path");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 const DB_PATH = path.join(__dirname, "../data/antinuke.json");
+const WHITELIST_PATH = path.join(__dirname, "../data/whitelist.json");
+
+// ── Shared whitelist.json helpers (this is what checkNuke reads) ──
+function loadGlobalWhitelist() {
+    if (!fs.existsSync(WHITELIST_PATH)) return {};
+    try { return JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8")); } catch { return {}; }
+}
+function saveGlobalWhitelist(data) {
+    if (!fs.existsSync(path.dirname(WHITELIST_PATH))) fs.mkdirSync(path.dirname(WHITELIST_PATH), { recursive: true });
+    fs.writeFileSync(WHITELIST_PATH, JSON.stringify(data, null, 2));
+}
+function addToGlobalWL(guildId, userId, addedBy) {
+    const wl = loadGlobalWhitelist();
+    if (!wl[guildId]) wl[guildId] = {};
+    // Migrate old array format
+    if (Array.isArray(wl[guildId])) {
+        const arr = wl[guildId];
+        wl[guildId] = {};
+        arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now() }; });
+    }
+    if (!wl[guildId][userId]) {
+        wl[guildId][userId] = { addedBy: addedBy || null, addedAt: Date.now() };
+        saveGlobalWhitelist(wl);
+    }
+}
+function removeFromGlobalWL(guildId, userId) {
+    const wl = loadGlobalWhitelist();
+    if (!wl[guildId]) return;
+    if (Array.isArray(wl[guildId])) {
+        wl[guildId] = wl[guildId].filter(id => id !== userId);
+    } else {
+        delete wl[guildId][userId];
+    }
+    saveGlobalWhitelist(wl);
+}
 
 function loadDB() {
     if (!fs.existsSync(DB_PATH)) return {};
@@ -147,51 +182,62 @@ module.exports = {
             if (sub === "wl" || sub === "whitelist") {
                 const action = args[1]?.toLowerCase();
 
+                // ── Resolve target: mention OR raw bot/user ID ──
+                async function resolveWLTarget(rawId) {
+                    const mentioned = message.mentions.users.first();
+                    if (mentioned) return mentioned;
+                    if (rawId && /^\d{17,20}$/.test(rawId)) {
+                        try { return await message.client.users.fetch(rawId); } catch { return null; }
+                    }
+                    return null;
+                }
+
                 // Add
-                if (action === "add" || (!action && sub === "whitelist")) {
-                    const targetArg = (sub === "whitelist" && !action) ? args[1] : args[2];
-                    const user = message.mentions.users.first() || message.client.users.cache.get(targetArg);
+                if (action === "add") {
+                    const user = await resolveWLTarget(args[2]);
+                    if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl add @bot` or `!antinuke wl add <botID>`")], V2_RED)] });
 
-                    if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user: `!antinuke wl add @user`")], V2_RED)] });
-
+                    const isBot = user.bot;
                     if (!config.whitelisted.includes(user.id)) {
                         config.whitelisted.push(user.id);
                         saveDB(db);
+                        // ✅ CRITICAL: also write to whitelist.json which checkNuke() reads
+                        addToGlobalWL(message.guild.id, user.id, message.author.id);
                         return message.reply({
                             content: null, flags: V2.flag,
                             components: [V2.container([
                                 V2.section([
                                     V2.heading("🔐 CLEARANCE GRANTED", 2),
-                                    V2.text(`**Target:** ${user.tag}\n**Status:** Whitelisted\n> Imperial Agent is now immune to Anti-Nuke countermeasures.`)
+                                    V2.text(`**${isBot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> ${isBot ? "Bot" : "User"} is now **immune** to Anti-Nuke countermeasures.`)
                                 ], user.displayAvatarURL({ dynamic: true }))
                             ], V2_BLUE)]
                         });
                     } else {
-                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ User is already whitelisted.")], "#FFCC00")] });
+                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Already whitelisted.")], "#FFCC00")] });
                     }
                 }
 
                 // Remove
                 if (action === "remove") {
-                    const targetArg = args[2];
-                    const user = message.mentions.users.first() || message.client.users.cache.get(targetArg);
-
-                    if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user: `!antinuke wl remove @user`")], V2_RED)] });
+                    const user = await resolveWLTarget(args[2]);
+                    if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl remove @bot` or `!antinuke wl remove <botID>`")], V2_RED)] });
 
                     if (config.whitelisted.includes(user.id)) {
                         config.whitelisted = config.whitelisted.filter(id => id !== user.id);
                         saveDB(db);
+                        // ✅ CRITICAL: also remove from whitelist.json
+                        removeFromGlobalWL(message.guild.id, user.id);
                         return message.reply({
                             content: null, flags: V2.flag,
                             components: [V2.container([
                                 V2.section([
                                     V2.heading("🗑️ CLEARANCE REVOKED", 2),
-                                    V2.text(`**Target:** ${user.tag}\n**Status:** Unwhitelisted\n> Standard security countermeasures now apply to this user.`)
+                                    V2.text(`**${user.bot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> Anti-Nuke will now monitor this ${user.bot ? "bot" : "user"} normally.`)
                                 ], user.displayAvatarURL({ dynamic: true }))
                             ], V2_RED)]
                         });
                     } else {
-                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ User is not currently whitelisted.")], "#FFCC00")] });
+                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Not currently whitelisted.")], "#FFCC00")] });
                     }
                 }
 
@@ -212,7 +258,11 @@ module.exports = {
                         });
                     }
 
-                    const wlList = config.whitelisted.map(id => `> <@${id}> (\`${id}\`)`).join("\n");
+                    const wlLines = await Promise.all(config.whitelisted.map(async (id, i) => {
+                        const u = message.client.users.cache.get(id) || await message.client.users.fetch(id).catch(() => null);
+                        if (u) return `> **${i + 1}.** ${u.bot ? "🤖 Bot" : "👤 User"} — ${u.tag || u.username} (\`${id}\`)`;
+                        return `> **${i + 1}.** ❓ Unknown — \`${id}\``;
+                    }));
 
                     return message.reply({
                         content: null, flags: V2.flag,
@@ -222,35 +272,42 @@ module.exports = {
                                 V2.text("**Authorized Personnel with Anti-Nuke Immunity:**")
                             ], message.guild.iconURL({ dynamic: true })),
                             V2.text("\u200b"),
-                            V2.text(wlList),
+                            V2.text(wlLines.join("\n")),
                             V2.separator(),
                             V2.text("*BlueSealPrime Identity Protocol*")
                         ], V2_BLUE)]
                     });
                 }
+
+                // Fallback usage hint for wl subcommand
+                return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("Usage: `!antinuke wl add @bot/ID` | `remove @bot/ID` | `list`")], "#FFCC00")] });
             }
 
             // ───── UNWHITELIST ALIAS ─────
             if (sub === "unwhitelist") {
                 const targetArg = args[1];
-                const user = message.mentions.users.first() || message.client.users.cache.get(targetArg);
+                let user = message.mentions.users.first();
+                if (!user && targetArg && /^\d{17,20}$/.test(targetArg)) {
+                    user = await message.client.users.fetch(targetArg).catch(() => null);
+                }
 
-                if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user: `!antinuke unwhitelist @user`")], V2_RED)] });
+                if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke unwhitelist @bot` or `!antinuke unwhitelist <botID>`")], V2_RED)] });
 
                 if (config.whitelisted.includes(user.id)) {
                     config.whitelisted = config.whitelisted.filter(id => id !== user.id);
                     saveDB(db);
+                    removeFromGlobalWL(message.guild.id, user.id);
                     return message.reply({
                         content: null, flags: V2.flag,
                         components: [V2.container([
                             V2.section([
                                 V2.heading("🗑️ CLEARANCE REVOKED", 2),
-                                V2.text(`**Target:** ${user.tag}\n**Status:** Unwhitelisted\n> Standard security countermeasures now apply to this user.`)
+                                V2.text(`**${user.bot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> Anti-Nuke will now monitor this ${user.bot ? "bot" : "user"} normally.`)
                             ], user.displayAvatarURL({ dynamic: true }))
                         ], V2_RED)]
                     });
                 } else {
-                    return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ User is not currently whitelisted.")], "#FFCC00")] });
+                    return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Not currently whitelisted.")], "#FFCC00")] });
                 }
             }
 
@@ -265,8 +322,8 @@ module.exports = {
                     "> `!antinuke on` | `!antinuke off`\n" +
                     "> `!antinuke status`\n" +
                     "> `!antinuke autorestore <on|off>`\n" +
-                    "> `!antinuke wl add @user`\n" +
-                    "> `!antinuke wl remove @user`\n" +
+                    "\n> `!antinuke wl add @bot` or `!antinuke wl add <botID>`\n" +
+                    "> `!antinuke wl remove @bot` or `!antinuke wl remove <botID>`\n" +
                     "> `!antinuke wl list`"
                 )
             ], V2_BLUE);

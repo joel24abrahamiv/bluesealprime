@@ -287,26 +287,45 @@ let antinukeCacheTime = 0;
 let whitelistCache = {};
 let whitelistCacheTime = 0;
 
-function checkNuke(guild, executor, action) {
-  if (!executor) return false;
-  if (executor.id === client.user.id) return false;
+// ─── WHITELIST HELPERS (new object format) ───
+// whitelist.json format: { guildId: { botId: { addedBy, addedAt } } }
+function getWhitelistEntry(guildId, userId) {
+  const guildWL = whitelistCache[guildId];
+  if (!guildWL) return null;
+  // Support both old array format and new object format
+  if (Array.isArray(guildWL)) return guildWL.includes(userId) ? { addedBy: null } : null;
+  return guildWL[userId] || null;
+}
+function isWhitelisted(guildId, userId) {
+  return getWhitelistEntry(guildId, userId) !== null;
+}
 
-  // ONLY THE BOT OWNER (CREATOR) IS IMMUNE — everyone else including server owner, extra owners, whitelisted users can be caught
-  const isBotOwner = executor.id === BOT_OWNER_ID;
-  if (isBotOwner) return false;
-
-  // ... (Rest of Nuke Logic) ...
-  // BOT CHECK — untrusted bots trigger instantly
-  if (executor.bot) {
-    if (Date.now() - whitelistCacheTime > 5000) {
-      if (fs.existsSync(WHITELIST_DB)) {
-        try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB)); } catch (e) { }
-      }
-      whitelistCacheTime = Date.now();
+// Refresh whitelist cache if stale (5s TTL)
+function refreshWhitelistCache() {
+  if (Date.now() - whitelistCacheTime > 5000) {
+    if (fs.existsSync(WHITELIST_DB)) {
+      try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB)); } catch (e) { }
     }
-    const whitelisted = whitelistCache[guild.id] || [];
-    if (!whitelisted.includes(executor.id)) return true; // Untrusted bot → INSTANT TRIGGER
-    // Whitelisted bots still fall through to threshold check below
+    whitelistCacheTime = Date.now();
+  }
+}
+
+// Returns: { triggered: boolean, whitelistedGranter: string|null }
+function checkNuke(guild, executor, action) {
+  if (!executor) return { triggered: false };
+  if (executor.id === client.user.id) return { triggered: false };
+
+  // ONLY THE BOT OWNER (CREATOR) IS IMMUNE
+  if (executor.id === BOT_OWNER_ID) return { triggered: false };
+
+  // BOT CHECK — untrusted bots trigger instantly; whitelisted bots fall through to threshold
+  let whitelistedGranter = null;
+  if (executor.bot) {
+    refreshWhitelistCache();
+    const entry = getWhitelistEntry(guild.id, executor.id);
+    if (!entry) return { triggered: true, whitelistedGranter: null }; // Untrusted bot → INSTANT TRIGGER
+    // Whitelisted bot — record who vouched for it so we can DM them if it misbehaves
+    whitelistedGranter = entry.addedBy || null;
   }
 
   // CONFIG & LIMITS (applies to everyone — humans, extra owners, server owners, whitelisted bots)
@@ -318,7 +337,7 @@ function checkNuke(guild, executor, action) {
   }
 
   const config = antinukeCache[guild.id];
-  if (config && config.enabled === false) return false;
+  if (config && config.enabled === false) return { triggered: false };
 
   const defaultLimits = { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, interval: 10 };
   const limits = config?.limits || defaultLimits;
@@ -328,7 +347,6 @@ function checkNuke(guild, executor, action) {
   const key = `${guild.id}-${executor.id}-${action}`;
   const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
 
-  // interval is stored in SECONDS in config — convert to ms for comparison
   if (Date.now() - data.startTime > interval * 1000) {
     data.count = 1;
     data.startTime = Date.now();
@@ -337,7 +355,7 @@ function checkNuke(guild, executor, action) {
   }
   nukeMap.set(key, data);
 
-  return data.count > limit;
+  return { triggered: data.count > limit, whitelistedGranter };
 }
 
 // ─── ⚡ EMERGENCY SERVER LOCKDOWN ───
@@ -391,7 +409,7 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
   }
 }
 
-async function punishNuker(guild, executor, reason, action = 'ban') {
+async function punishNuker(guild, executor, reason, action = 'ban', whitelistedGranter = null) {
   // 0. EMERGENCY LOCKDOWN FIRST — freeze server before anything else
   emergencyLockdown(guild, `Nuker detected: ${executor?.tag || executor?.id || 'unknown'}`);
 
@@ -407,8 +425,69 @@ async function punishNuker(guild, executor, reason, action = 'ban') {
     }
   } catch (e) { }
 
-  // 2. CHECK TRUST CHAIN (Punish Granter if applicable)
-  await checkTrustChainPunishment(guild, executor.id);
+  // 2. BOT VIOLATION ACCOUNTABILITY (Whitelisted or Invited)
+  if (executor.bot) {
+    let violatorId = whitelistedGranter;
+    let violationType = whitelistedGranter ? "WHITELISTED BOT" : "UNAUTHORIZED BOT";
+
+    // If not whitelisted, try to find who invited the bot via Audit Logs
+    if (!violatorId) {
+      try {
+        const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 10 }).catch(() => null); // 28 = BOT_ADD
+        const entry = auditLogs?.entries.find(e => e.target?.id === executor.id);
+        if (entry) {
+          violatorId = entry.executor?.id;
+          violationType = "INVITED BOT (RESTRICTED)";
+        }
+      } catch (e) { }
+    }
+
+    if (violatorId) {
+      try {
+        const violator = await client.users.fetch(violatorId).catch(() => null);
+        if (violator) {
+          const isVerified = (executor.flags?.toArray() || []).includes('VerifiedBot');
+          const botDisplay = `${executor.tag || executor.username}${isVerified ? ' [✔ Verified]' : ''}`;
+
+          await violator.send([
+            `⚠️ **[ SECURITY PROTOCOL: BOT VIOLATION ]** ⚠️`,
+            ``,
+            `Accountability Enforcement has been triggered in **${guild.name}**.`,
+            `A bot you are responsible for has been **banned** for violating security thresholds.`,
+            ``,
+            `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)`,
+            `> 🏛️ **Server:** ${guild.name}`,
+            `> 📋 **Violation:** ${reason}`,
+            `> 🚩 **Context:** ${violationType}`,
+            `> ⚡ **Action:** Instant Ejection & Permanent Ban`,
+            ``,
+            `**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`,
+            ``,
+            `— *BlueSealPrime Security Matrix*`
+          ].join('\n')).catch(() => { });
+        }
+      } catch (e) { }
+
+      // Also log to security channel
+      const violationEmbed = new EmbedBuilder()
+        .setColor('#FF3300')
+        .setTitle(`🚨 [ ${violationType} VIOLATION ]`)
+        .setDescription(
+          `A bot (Verified or not) exceeded security thresholds and was banned.\n\n` +
+          `> 🤖 **Bot:** ${executor.tag || executor.username} (\`${executor.id}\`)\n` +
+          `> 👤 **Responsible Party:** <@${violatorId}> (\`${violatorId}\`)\n` +
+          `> 📋 **Reason:** ${reason}`
+        )
+        .setFooter({ text: 'BlueSealPrime • Accountability Protocol' })
+        .setTimestamp();
+      logToChannel(guild, 'security', violationEmbed);
+    }
+  }
+
+  // 3. CHECK TRUST CHAIN (Punish Granter if applicable — for human nukers)
+  if (!executor.bot) {
+    await checkTrustChainPunishment(guild, executor.id);
+  }
 }
 
 // ───── CHANNEL RESTORATION (HYPER-SPEED) ─────
@@ -1769,8 +1848,9 @@ client.on("guildMemberRemove", async member => {
     const isKick = log && log.target.id === member.id && Date.now() - log.createdTimestamp < 5000;
 
     if (isKick) {
-      if (typeof checkNuke === "function" && checkNuke(member.guild, log.executor, "kick")) {
-        punishNuker(member.guild, log.executor, "Mass Kicking");
+      const nukeCheck = typeof checkNuke === "function" && checkNuke(member.guild, log.executor, "kick");
+      if (nukeCheck && nukeCheck.triggered) {
+        punishNuker(member.guild, log.executor, "Mass Kicking", 'ban', nukeCheck.whitelistedGranter);
       }
 
       const kickEmbed = new EmbedBuilder()
@@ -2275,8 +2355,9 @@ client.on("channelDelete", async channel => {
       if (botMember && botMember.kickable) await botMember.kick("Security: Bot unauthorized channel deletion.").catch(() => { });
     } else if (executor) {
       // 🚨 Regular unauthorized user — keep restore, punish if nuke threshold
-      if (checkNuke(channel.guild, executor, "channelDelete")) {
-        punishNuker(channel.guild, executor, "Mass Channel Deletion");
+      const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
+      if (nukeCheck && nukeCheck.triggered) {
+        punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
       }
     }
 
@@ -2444,8 +2525,9 @@ client.on("guildBanAdd", async ban => {
 
   // 3. Anti-Nuke Logic
   if (entry && Date.now() - entry.createdTimestamp < 5000) {
-    if (checkNuke(ban.guild, entry.executor, "ban")) {
-      punishNuker(ban.guild, entry.executor, "Mass Banning");
+    const nukeCheck = checkNuke(ban.guild, entry.executor, "ban");
+    if (nukeCheck && nukeCheck.triggered) {
+      punishNuker(ban.guild, entry.executor, "Mass Banning", 'ban', nukeCheck.whitelistedGranter);
     }
   }
 });
@@ -2457,8 +2539,9 @@ client.on("roleDelete", async role => {
   const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null); // 32 = ROLE_DELETE
   const log = auditLogs?.entries.first();
   if (log && Date.now() - log.createdTimestamp < 5000) {
-    if (checkNuke(role.guild, log.executor, "roleDelete")) {
-      punishNuker(role.guild, log.executor, "Mass Role Deletion");
+    const nukeCheck = checkNuke(role.guild, log.executor, "roleDelete");
+    if (nukeCheck && nukeCheck.triggered) {
+      punishNuker(role.guild, log.executor, "Mass Role Deletion", 'ban', nukeCheck.whitelistedGranter);
     }
   }
 
