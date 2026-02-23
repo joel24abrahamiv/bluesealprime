@@ -37,8 +37,23 @@ const v2Builders = [
 v2Builders.forEach(builder => {
     if (!Discord[builder]) {
         Discord[builder] = class {
-            constructor() { this.data = {}; this.components = []; }
-            toJSON() { return { type: 0 }; } // Generic fallback
+            constructor() {
+                this.data = {};
+                // Assign correct type IDs based on component name
+                const types = { 'ContainerBuilder': 1, 'SectionBuilder': 2, 'SeparatorBuilder': 3, 'TextDisplayBuilder': 4, 'ThumbnailBuilder': 5 };
+                this.data.type = types[builder] || 0;
+            }
+            addTextDisplayComponents() { return this; }
+            addSeparatorComponents() { return this; }
+            addSectionComponents() { return this; }
+            addActionRowComponents() { return this; }
+            setAccentColor() { return this; }
+            setSpacing() { return this; }
+            setDivider() { return this; }
+            setContent() { return this; }
+            setThumbnailAccessory() { return this; }
+            setURL() { return this; }
+            toJSON() { return this.data; }
         };
     }
 });

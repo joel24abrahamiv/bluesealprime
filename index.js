@@ -2,7 +2,7 @@
 const http = require("http");
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
-  res.writeHead(200);
+  res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("Sovereign OS Online");
 });
 server.listen(PORT, "0.0.0.0", () => {
@@ -444,7 +444,9 @@ setTimeout(() => {
           command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
         }
       }
-    } catch (e) { }
+    } catch (e) {
+      console.error(`❌ [System] Failed to load module ${file}:`, e.message);
+    }
   }
   console.log(`✅ [System] Binary sequence complete. ${client.commands.size} commands indexed.`);
 }, 2000); // 2s delay gives the Heartbeat absolute priority on boot
@@ -575,7 +577,7 @@ async function updateDashboard(bot) {
   }
 }
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
