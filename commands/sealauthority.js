@@ -16,7 +16,7 @@ module.exports = {
 
         const roleNames = [
             "BlueSealPrime!",
-            "BlueSealPrime! anti nuke",
+            "BlueSealPrime! anti-nuke",
             "BlueSealPrime! unbypassable",
             "BlueSealPrime! secure",
             "BlueSealPrime! anti-raid"
@@ -99,109 +99,121 @@ module.exports = {
 
         // 🔵 ACTION: ENABLE / ON (AUTO-RUN REGULAR ON LOGIC)
         message.client.saBypass = true;
-        // Check for "already armed" first
-        const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
-        if (currentActive.size === roleNames.length) {
-            message.client.saBypass = false;
-            const armedContainer = V2.container([
-                V2.section([
-                    V2.heading("🛡️ AUTHORITY ALREADY SEALED", 2),
-                    V2.text(`**Jurisdiction Confirmed.**\nThe 5-tier security matrix is already synchronized and assigned. Redundant initialization bypassed.`)
-                ], clientUser.displayAvatarURL()),
-                V2.separator(),
-                V2.text(`*Status: SYSTEM_PROTECTED • Priority: MAXIMUM*`)
-            ], V2_BLUE);
-            return message.reply({ content: null, flags: V2.flag, components: [armedContainer] });
-        }
-
-        // Run Deployment
-        let logs = [];
-        const updatePanel = async (currentStep) => {
-            const container = V2.container([
-                V2.section([
-                    V2.heading("⚡ SEALING NODE AUTHORITY", 2),
-                    V2.text(`\`\`\`yml\nTime: ${new Date().toLocaleTimeString()}\nExecuted by: @${message.author.username}\n\`\`\``)
-                ], clientUser.displayAvatarURL()),
-                V2.separator(),
-                V2.text(logs.join("\n")),
-                V2.separator(),
-                V2.text(`*Auth Sink: [${currentStep}/5] | ${currentStep === 5 ? "MAX_JURISDICTION" : "SEALING..."}*`)
-            ], V2_BLUE);
-
-            if (msg) await msg.edit({ content: null, components: [container] }).catch(() => { });
-            else msg = await message.reply({ content: null, flags: V2.flag, components: [container] });
-        };
-
-        let msg = null;
-        logs.push("🔵 **Synchronizing Sovereign Node...**");
-        await updatePanel(0);
-
-        // 🧹 PRE-CLEANSE
         try {
-            const allRoles = guild.roles.cache;
-            for (const name of roleNames) {
-                const matching = allRoles.filter(r => r.name === name);
-                if (matching.size > 0) {
-                    for (const [id, r] of matching) {
-                        try {
-                            await r.delete("Consolidating Security Matrix");
-                            await new Promise(r => setTimeout(r, 200));
-                        } catch (e) { }
+            // Check for "already armed" first
+            const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
+            if (currentActive.size === roleNames.length) {
+                message.client.saBypass = false;
+                const armedContainer = V2.container([
+                    V2.section([
+                        V2.heading("🛡️ AUTHORITY ALREADY SEALED", 2),
+                        V2.text(`**Jurisdiction Confirmed.**\nThe 5-tier security matrix is already synchronized and assigned. Redundant initialization bypassed.`)
+                    ], clientUser.displayAvatarURL()),
+                    V2.separator(),
+                    V2.text(`*Status: SYSTEM_PROTECTED • Priority: MAXIMUM*`)
+                ], V2_BLUE);
+                return message.reply({ content: null, flags: V2.flag, components: [armedContainer] });
+            }
+
+            // Run Deployment
+            let logs = [];
+            const updatePanel = async (currentStep) => {
+                const container = V2.container([
+                    V2.section([
+                        V2.heading("⚡ SEALING NODE AUTHORITY", 2),
+                        V2.text(`\`\`\`yml\nTime: ${new Date().toLocaleTimeString()}\nExecuted by: @${message.author.username}\n\`\`\``)
+                    ], clientUser.displayAvatarURL()),
+                    V2.separator(),
+                    V2.text(logs.join("\n")),
+                    V2.separator(),
+                    V2.text(`*Auth Sink: [${currentStep}/5] | ${currentStep === 5 ? "MAX_JURISDICTION" : "SEALING..."}*`)
+                ], V2_BLUE);
+
+                if (msg) await msg.edit({ content: null, components: [container] }).catch(() => { });
+                else msg = await message.reply({ content: null, flags: V2.flag, components: [container] });
+            };
+
+            let msg = null;
+            logs.push("🔵 **Synchronizing Sovereign Node...**");
+            await updatePanel(0);
+
+            // 🧹 PRE-CLEANSE
+            try {
+                const allRoles = guild.roles.cache;
+                for (const name of roleNames) {
+                    const matching = allRoles.filter(r => r.name === name);
+                    if (matching.size > 0) {
+                        for (const [id, r] of matching) {
+                            try {
+                                await r.delete("Consolidating Security Matrix");
+                                await new Promise(r => setTimeout(r, 200));
+                            } catch (e) { }
+                        }
                     }
                 }
-            }
-        } catch (e) { }
+            } catch (e) { }
 
-        for (let i = 0; i < rolesToCreate.length; i++) {
-            const roleData = rolesToCreate[i];
-            logs.push(`🔹 Sealing ${roleData.type}: \`${roleData.name}\``);
+            for (let i = 0; i < rolesToCreate.length; i++) {
+                const roleData = rolesToCreate[i];
+                logs.push(`🔹 Sealing ${roleData.type}: \`${roleData.name}\``);
+                try {
+                    const me = guild.members.me;
+                    let targetRole = guild.roles.cache.find(r => r.name.toLowerCase() === roleData.name.toLowerCase());
+
+                    if (!targetRole) {
+                        let targetPerms = [];
+                        if (me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                            targetPerms = [PermissionsBitField.Flags.Administrator];
+                        }
+
+                        targetRole = await guild.roles.create({
+                            name: roleData.name,
+                            color: "#5DADE2", // Sovereign Blue
+                            permissions: targetPerms,
+                            reason: "SealAuthority Initialization: Absolute Dominance"
+                        });
+                    } else {
+                        // Role exists: Force Hijack & Sync
+                        if (me.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                            await targetRole.edit({ permissions: [PermissionsBitField.Flags.Administrator] }).catch(() => { });
+                        }
+                    }
+
+                    // 👑 HIERARCHY DOMINANCE: Move to the absolute top
+                    const topPos = me.roles.highest.position;
+                    if (topPos > 0) {
+                        await targetRole.setPosition(topPos).catch(() => { });
+                    }
+
+                    await me.roles.add(targetRole).catch(() => { });
+                    logs.push(`✅ ${roleData.type} locked [${i + 1}/5]`);
+                } catch (err) {
+                    console.error(`[SealAuthority Error]:`, err);
+                    logs.push(`❌ Access Denied: Failed to seal ${roleData.name}`);
+                }
+                await updatePanel(i + 1);
+            }
+
+            // 🚀 FINAL PHASE: SELF-POSITIONING
+            logs.push(`\n🔱 **Enforcing Absolute Jurisdiction...**`);
+            await updatePanel(5);
             try {
-                let targetPerms = [];
-                if (guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                    targetPerms = [PermissionsBitField.Flags.Administrator];
-                }
-
-                const newRole = await guild.roles.create({
-                    name: roleData.name,
-                    color: "#5DADE2", // Sovereign Blue
-                    permissions: targetPerms,
-                    reason: "SealAuthority Initialization: Absolute Dominance"
-                });
-
-                // 👑 HIERARCHY DOMINANCE: Move to the absolute top
                 const me = guild.members.me;
-                const topPos = me.roles.highest.position;
-                if (topPos > 0) {
-                    await newRole.setPosition(topPos).catch(() => { });
+                const botRole = me.roles.botRole;
+                if (botRole) {
+                    // Fetch for latest positions
+                    const allRoles = await guild.roles.fetch();
+                    const maxPos = allRoles.size - 1;
+                    if (botRole.position < maxPos) {
+                        await botRole.setPosition(maxPos, { reason: "Sovereign Dominance: Manual Authority Enforced." }).catch(() => { });
+                    }
                 }
+            } catch (e) { }
 
-                await me.roles.add(newRole).catch(() => { });
-                logs.push(`✅ ${roleData.type} locked [${i + 1}/5]`);
-            } catch (err) {
-                console.error(`[SealAuthority Error]:`, err);
-                logs.push(`❌ Access Denied: Failed to seal ${roleData.name}`);
-            }
-            await updatePanel(i + 1);
+            logs.push(`\n**Node Sealed:** Authority finalized under **BlueSealPrime!** logic.`);
+            await updatePanel(5);
+        } finally {
+            message.client.saBypass = false;
         }
-
-        // 🚀 FINAL PHASE: SELF-POSITIONING
-        logs.push(`\n🔱 **Enforcing Absolute Jurisdiction...**`);
-        await updatePanel(5);
-        try {
-            const me = guild.members.me;
-            const botRole = me.roles.botRole;
-            if (botRole) {
-                // Fetch for latest positions
-                const allRoles = await guild.roles.fetch();
-                const maxPos = allRoles.size - 1;
-                if (botRole.position < maxPos) {
-                    await botRole.setPosition(maxPos, { reason: "Sovereign Dominance: Manual Authority Enforced." }).catch(() => { });
-                }
-            }
-        } catch (e) { }
-
-        logs.push(`\n**Node Sealed:** Authority finalized under **BlueSealPrime!** logic.`);
-        await updatePanel(5);
-        message.client.saBypass = false;
     }
 };
