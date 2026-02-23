@@ -462,7 +462,7 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
             V2.section([
               V2.heading("⚠️ SECURITY PROTOCOL: BOT VIOLATION", 2),
               V2.text(`Accountability Enforcement has been triggered in **${guild.name}**.\nA bot you are responsible for has been **banned** for violating security thresholds.`)
-            ], executor.displayAvatarURL({ dynamic: true }) || guild.iconURL({ dynamic: true })),
+            ], client.user.displayAvatarURL({ extension: 'png', size: 512 })),
             V2.separator(),
             V2.text(
               `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n` +
