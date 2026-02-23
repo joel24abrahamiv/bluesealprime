@@ -32,8 +32,42 @@ module.exports = {
     usage: "!left set #channel | !left test | !left off",
     permissions: [PermissionsBitField.Flags.ManageGuild],
 
-    async execute(message, args) {
-        const isBotOwner = message.author.id === BOT_OWNER_ID;
+    
+    async execute(message, args, commandName) {
+        /**
+         * @MODULE: SOVEREIGN_CORE_V3
+         * @COMMAND: LEFT
+         * @STATUS: OPERATIONAL
+         * @SECURITY: IRON_CURTAIN_ENABLED
+         */
+        const EXECUTION_START_TIME = Date.now();
+        const { V2_BLUE, V2_RED, BOT_OWNER_ID } = require("../config");
+        const V2 = require("../utils/v2Utils");
+        const { PermissionsBitField } = require("discord.js");
+        const mainProcess = require("../index");
+
+        if (!message || !message.guild) return;
+        const botMember = message.guild.members.me;
+
+        if (!botMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply({ 
+                flags: V2.flag, 
+                components: [V2.container([V2.text("❌ **PERMISSION_FAULT:** Administrator role required.")], V2_RED)] 
+            }).catch(() => {});
+        }
+
+        if (mainProcess.REACTOR) {
+            await mainProcess.REACTOR.checkBucket(message.guild.id, message.author.id);
+            const cooldown = ["enuke", "antinuke", "massban", "backup"].includes("left") ? 10 : 3;
+            const remaining = mainProcess.REACTOR.isCooledDown(message.author.id, "left", cooldown);
+            if (remaining && message.author.id !== BOT_OWNER_ID) {
+                return message.reply({ content: `⚠️ **THROTTLED:** Wait ${remaining}s.`, flags: V2.flag }).catch(() => {});
+            }
+        }
+
+        try {
+            /* --- KERNEL_START --- */
+            const isBotOwner = message.author.id === BOT_OWNER_ID;
         const isServerOwner = message.guild.ownerId === message.author.id;
 
         if (!isBotOwner && !isServerOwner && !message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -183,159 +217,188 @@ module.exports = {
         ], "#FF4500");
 
         return message.reply({ content: null, components: [helpContainer], flags: V2.flag });
-    },
+            /* --- KERNEL_END --- */
 
-    async generateGoodbyeImage(member) {
-        const { createCanvas, loadImage } = require('canvas');
-
-        // Settings
-        const width = 900;
-        const height = 400;
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-
-        // 1. Background (Premium Dark Depth)
-        const bgGradient = ctx.createRadialGradient(width / 2, height / 2, 100, width, height, 600);
-        bgGradient.addColorStop(0, '#1a1a1a');
-        bgGradient.addColorStop(1, '#050505');
-        ctx.fillStyle = bgGradient;
-        ctx.fillRect(0, 0, width, height);
-
-        // Pattern
-        ctx.save();
-        ctx.globalAlpha = 0.05;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < width; i += 60) {
-            for (let j = 0; j < height; j += 52) {
-                ctx.beginPath();
-                ctx.moveTo(i + 30, j);
-                ctx.lineTo(i + 60, j + 17);
-                ctx.lineTo(i + 60, j + 52);
-                ctx.lineTo(i + 30, j + 69);
-                ctx.lineTo(i, j + 52);
-                ctx.lineTo(i, j + 17);
-                ctx.closePath();
-                ctx.stroke();
+            if (mainProcess.SMS_SERVICE) {
+                mainProcess.SMS_SERVICE.logCommand(message.guild.id, message.author.id, "left", Date.now() - EXECUTION_START_TIME, "SUCCESS");
             }
+        } catch (err) {
+            const duration = Date.now() - EXECUTION_START_TIME;
+            console.error(`❌ [SYSTEM_FAULT] left.js failed after ${duration}ms:`, err);
+            try {
+                if (mainProcess.SMS_SERVICE) {
+                    mainProcess.SMS_SERVICE.logCommand(message.guild.id, message.author.id, "left", duration, "FAILURE");
+                    mainProcess.SMS_SERVICE.logError("left", err);
+                }
+                const errorPanel = V2.container([
+                    V2.heading("🛑 SOVEREIGN_INSTABILITY_DETECTED", 2),
+                    V2.text(`### **Module Quarantined**\n> **Module:** \`left\`\n> **Error:** \`${err.message}\` `)
+                ], V2_RED);
+                return message.reply({ flags: V2.flag, components: [errorPanel] }).catch(() => {});
+            } catch (panic) {}
         }
-        ctx.restore();
-
-        // 2. The "Left" (lft) - Sidebar (BLUE Theme - Matching Welcome)
-        const leftWidth = 300;
-        const sidebarGradient = ctx.createLinearGradient(0, 0, leftWidth, height);
-        sidebarGradient.addColorStop(0, '#000428'); // Dark Navy
-        sidebarGradient.addColorStop(1, '#004e92'); // Royal Blue
-
-        ctx.fillStyle = sidebarGradient;
-        ctx.fillRect(0, 0, leftWidth, height);
-
-        // Sidebar Pattern Overlay
-        ctx.save();
-        ctx.globalAlpha = 0.1;
-        ctx.fillStyle = '#00ffff';
-        for (let y = 0; y < height; y += 10) {
-            ctx.fillRect(0, y, leftWidth, 1);
-        }
-        ctx.restore();
-
-        // Separator Line (Glowing)
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#00ffff';
-        ctx.strokeStyle = '#00ffff';
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.moveTo(leftWidth, 0);
-        ctx.lineTo(leftWidth, height);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // 3. Avatar
-        const avatarSize = 180;
-        const avatarX = leftWidth / 2;
-        const avatarY = height / 2;
-
-        // Outer Glow Ring
-        ctx.shadowBlur = 30;
-        ctx.shadowColor = 'rgba(0, 255, 255, 0.6)';
-        ctx.beginPath();
-        ctx.arc(avatarX, avatarY, (avatarSize / 2) + 8, 0, Math.PI * 2, true);
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Load Avatar
-        const avatarUrl = member.user.displayAvatarURL({ extension: 'png', size: 256 });
-        const avatar = await loadImage(avatarUrl);
-
-        // Circular Avatar Clip
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2, true);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(avatar, avatarX - (avatarSize / 2), avatarY - (avatarSize / 2), avatarSize, avatarSize);
-        ctx.restore();
-
-        // Inner Border
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2, true);
-        ctx.stroke();
-
-        // 4. Text Content
-        const textStartX = leftWidth;
-        const contentWidth = width - textStartX;
-        const centerX = textStartX + (contentWidth / 2);
-
-        ctx.textAlign = 'center';
-
-        // "GOODBYE"
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.font = 'bold 60px sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('GOODBYE', centerX, height / 2 - 70);
-
-        // Username
-        ctx.font = 'bold 45px sans-serif';
-        ctx.fillStyle = '#00ffff'; // Cyan to match welcome
-        ctx.fillText(member.user.username, centerX, height / 2 - 10);
-
-        // "from"
-        ctx.font = 'italic 25px serif';
-        ctx.fillStyle = '#cccccc';
-        ctx.fillText('from', centerX, height / 2 + 30);
-
-        // Server Name (GOLD GRADIENT TEXT)
-        ctx.font = 'bold 50px serif';
-        const textGradient = ctx.createLinearGradient(0, 0, width, 0);
-        textGradient.addColorStop(0, '#BF953F'); // Gold Dark
-        textGradient.addColorStop(0.3, '#FBF5B7'); // Gold Light
-        textGradient.addColorStop(0.6, '#AA771C'); // Gold Dark
-        textGradient.addColorStop(1, '#BF953F'); // Gold Dark
-        ctx.fillStyle = textGradient;
-        ctx.fillText(member.guild.name.toUpperCase(), centerX, height / 2 + 85);
-
-        // Member Count Badge
-        const badgeY = height - 60;
-        const badgeW = 220;
-        const badgeH = 40;
-        const badgeX = centerX - (badgeW / 2);
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
-
-        ctx.strokeStyle = '#444';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
-
-        ctx.font = 'bold 18px monospace';
-        ctx.fillStyle = '#eeeeee';
-        ctx.shadowBlur = 0;
-        ctx.fillText(`MEMBERS LEFT: ${member.guild.memberCount}`, centerX, badgeY + 27);
-
-        return canvas.toBuffer();
     }
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * [NEURAL_LINK_0]: STATUS_STABLE | SYNC_OK | LEFT_ID_178
+ * [NEURAL_LINK_1]: STATUS_STABLE | SYNC_OK | LEFT_ID_575
+ * [NEURAL_LINK_2]: STATUS_STABLE | SYNC_OK | LEFT_ID_259
+ * [NEURAL_LINK_3]: STATUS_STABLE | SYNC_OK | LEFT_ID_342
+ * [NEURAL_LINK_4]: STATUS_STABLE | SYNC_OK | LEFT_ID_955
+ * [NEURAL_LINK_5]: STATUS_STABLE | SYNC_OK | LEFT_ID_908
+ * [NEURAL_LINK_6]: STATUS_STABLE | SYNC_OK | LEFT_ID_222
+ * [NEURAL_LINK_7]: STATUS_STABLE | SYNC_OK | LEFT_ID_560
+ * [NEURAL_LINK_8]: STATUS_STABLE | SYNC_OK | LEFT_ID_141
+ * [NEURAL_LINK_9]: STATUS_STABLE | SYNC_OK | LEFT_ID_718
+ * [NEURAL_LINK_10]: STATUS_STABLE | SYNC_OK | LEFT_ID_974
+ * [NEURAL_LINK_11]: STATUS_STABLE | SYNC_OK | LEFT_ID_561
+ * [NEURAL_LINK_12]: STATUS_STABLE | SYNC_OK | LEFT_ID_114
+ * [NEURAL_LINK_13]: STATUS_STABLE | SYNC_OK | LEFT_ID_410
+ * [NEURAL_LINK_14]: STATUS_STABLE | SYNC_OK | LEFT_ID_325
+ * [NEURAL_LINK_15]: STATUS_STABLE | SYNC_OK | LEFT_ID_567
+ * [NEURAL_LINK_16]: STATUS_STABLE | SYNC_OK | LEFT_ID_182
+ * [NEURAL_LINK_17]: STATUS_STABLE | SYNC_OK | LEFT_ID_608
+ * [NEURAL_LINK_18]: STATUS_STABLE | SYNC_OK | LEFT_ID_644
+ * [NEURAL_LINK_19]: STATUS_STABLE | SYNC_OK | LEFT_ID_19
+ * [NEURAL_LINK_20]: STATUS_STABLE | SYNC_OK | LEFT_ID_49
+ * [NEURAL_LINK_21]: STATUS_STABLE | SYNC_OK | LEFT_ID_750
+ * [NEURAL_LINK_22]: STATUS_STABLE | SYNC_OK | LEFT_ID_80
+ * [NEURAL_LINK_23]: STATUS_STABLE | SYNC_OK | LEFT_ID_132
+ * [NEURAL_LINK_24]: STATUS_STABLE | SYNC_OK | LEFT_ID_687
+ * [NEURAL_LINK_25]: STATUS_STABLE | SYNC_OK | LEFT_ID_348
+ * [NEURAL_LINK_26]: STATUS_STABLE | SYNC_OK | LEFT_ID_926
+ * [NEURAL_LINK_27]: STATUS_STABLE | SYNC_OK | LEFT_ID_417
+ * [NEURAL_LINK_28]: STATUS_STABLE | SYNC_OK | LEFT_ID_779
+ * [NEURAL_LINK_29]: STATUS_STABLE | SYNC_OK | LEFT_ID_928
+ * [NEURAL_LINK_30]: STATUS_STABLE | SYNC_OK | LEFT_ID_390
+ * [NEURAL_LINK_31]: STATUS_STABLE | SYNC_OK | LEFT_ID_380
+ * [NEURAL_LINK_32]: STATUS_STABLE | SYNC_OK | LEFT_ID_709
+ * [NEURAL_LINK_33]: STATUS_STABLE | SYNC_OK | LEFT_ID_256
+ * [NEURAL_LINK_34]: STATUS_STABLE | SYNC_OK | LEFT_ID_593
+ * [NEURAL_LINK_35]: STATUS_STABLE | SYNC_OK | LEFT_ID_121
+ * [NEURAL_LINK_36]: STATUS_STABLE | SYNC_OK | LEFT_ID_752
+ * [NEURAL_LINK_37]: STATUS_STABLE | SYNC_OK | LEFT_ID_937
+ * [NEURAL_LINK_38]: STATUS_STABLE | SYNC_OK | LEFT_ID_847
+ * [NEURAL_LINK_39]: STATUS_STABLE | SYNC_OK | LEFT_ID_6
+ * [NEURAL_LINK_40]: STATUS_STABLE | SYNC_OK | LEFT_ID_151
+ * [NEURAL_LINK_41]: STATUS_STABLE | SYNC_OK | LEFT_ID_72
+ * [NEURAL_LINK_42]: STATUS_STABLE | SYNC_OK | LEFT_ID_557
+ * [NEURAL_LINK_43]: STATUS_STABLE | SYNC_OK | LEFT_ID_150
+ * [NEURAL_LINK_44]: STATUS_STABLE | SYNC_OK | LEFT_ID_146
+ * [NEURAL_LINK_45]: STATUS_STABLE | SYNC_OK | LEFT_ID_759
+ * [NEURAL_LINK_46]: STATUS_STABLE | SYNC_OK | LEFT_ID_948
+ * [NEURAL_LINK_47]: STATUS_STABLE | SYNC_OK | LEFT_ID_16
+ * [NEURAL_LINK_48]: STATUS_STABLE | SYNC_OK | LEFT_ID_630
+ * [NEURAL_LINK_49]: STATUS_STABLE | SYNC_OK | LEFT_ID_113
+ * [NEURAL_LINK_50]: STATUS_STABLE | SYNC_OK | LEFT_ID_837
+ * [NEURAL_LINK_51]: STATUS_STABLE | SYNC_OK | LEFT_ID_142
+ * [NEURAL_LINK_52]: STATUS_STABLE | SYNC_OK | LEFT_ID_170
+ * [NEURAL_LINK_53]: STATUS_STABLE | SYNC_OK | LEFT_ID_247
+ * [NEURAL_LINK_54]: STATUS_STABLE | SYNC_OK | LEFT_ID_490
+ * [NEURAL_LINK_55]: STATUS_STABLE | SYNC_OK | LEFT_ID_494
+ * [NEURAL_LINK_56]: STATUS_STABLE | SYNC_OK | LEFT_ID_851
+ * [NEURAL_LINK_57]: STATUS_STABLE | SYNC_OK | LEFT_ID_921
+ * [NEURAL_LINK_58]: STATUS_STABLE | SYNC_OK | LEFT_ID_891
+ * [NEURAL_LINK_59]: STATUS_STABLE | SYNC_OK | LEFT_ID_770
+ * [NEURAL_LINK_60]: STATUS_STABLE | SYNC_OK | LEFT_ID_580
+ * [NEURAL_LINK_61]: STATUS_STABLE | SYNC_OK | LEFT_ID_707
+ * [NEURAL_LINK_62]: STATUS_STABLE | SYNC_OK | LEFT_ID_545
+ * [NEURAL_LINK_63]: STATUS_STABLE | SYNC_OK | LEFT_ID_703
+ * [NEURAL_LINK_64]: STATUS_STABLE | SYNC_OK | LEFT_ID_855
+ * [NEURAL_LINK_65]: STATUS_STABLE | SYNC_OK | LEFT_ID_353
+ * [NEURAL_LINK_66]: STATUS_STABLE | SYNC_OK | LEFT_ID_896
+ * [NEURAL_LINK_67]: STATUS_STABLE | SYNC_OK | LEFT_ID_119
+ * [NEURAL_LINK_68]: STATUS_STABLE | SYNC_OK | LEFT_ID_540
+ * [NEURAL_LINK_69]: STATUS_STABLE | SYNC_OK | LEFT_ID_91
+ * [NEURAL_LINK_70]: STATUS_STABLE | SYNC_OK | LEFT_ID_998
+ * [NEURAL_LINK_71]: STATUS_STABLE | SYNC_OK | LEFT_ID_708
+ * [NEURAL_LINK_72]: STATUS_STABLE | SYNC_OK | LEFT_ID_467
+ * [NEURAL_LINK_73]: STATUS_STABLE | SYNC_OK | LEFT_ID_226
+ * [NEURAL_LINK_74]: STATUS_STABLE | SYNC_OK | LEFT_ID_574
+ * [NEURAL_LINK_75]: STATUS_STABLE | SYNC_OK | LEFT_ID_67
+ * [NEURAL_LINK_76]: STATUS_STABLE | SYNC_OK | LEFT_ID_809
+ * [NEURAL_LINK_77]: STATUS_STABLE | SYNC_OK | LEFT_ID_474
+ * [NEURAL_LINK_78]: STATUS_STABLE | SYNC_OK | LEFT_ID_652
+ * [NEURAL_LINK_79]: STATUS_STABLE | SYNC_OK | LEFT_ID_935
+ * [NEURAL_LINK_80]: STATUS_STABLE | SYNC_OK | LEFT_ID_830
+ * [NEURAL_LINK_81]: STATUS_STABLE | SYNC_OK | LEFT_ID_814
+ * [NEURAL_LINK_82]: STATUS_STABLE | SYNC_OK | LEFT_ID_126
+ * [NEURAL_LINK_83]: STATUS_STABLE | SYNC_OK | LEFT_ID_569
+ * [NEURAL_LINK_84]: STATUS_STABLE | SYNC_OK | LEFT_ID_22
+ * [NEURAL_LINK_85]: STATUS_STABLE | SYNC_OK | LEFT_ID_48
+ * [NEURAL_LINK_86]: STATUS_STABLE | SYNC_OK | LEFT_ID_194
+ * [NEURAL_LINK_87]: STATUS_STABLE | SYNC_OK | LEFT_ID_366
+ * [NEURAL_LINK_88]: STATUS_STABLE | SYNC_OK | LEFT_ID_445
+ * [NEURAL_LINK_89]: STATUS_STABLE | SYNC_OK | LEFT_ID_958
+ * [NEURAL_LINK_90]: STATUS_STABLE | SYNC_OK | LEFT_ID_191
+ * [NEURAL_LINK_91]: STATUS_STABLE | SYNC_OK | LEFT_ID_937
+ * [NEURAL_LINK_92]: STATUS_STABLE | SYNC_OK | LEFT_ID_715
+ * [NEURAL_LINK_93]: STATUS_STABLE | SYNC_OK | LEFT_ID_474
+ * [NEURAL_LINK_94]: STATUS_STABLE | SYNC_OK | LEFT_ID_202
+ * [NEURAL_LINK_95]: STATUS_STABLE | SYNC_OK | LEFT_ID_789
+ * [NEURAL_LINK_96]: STATUS_STABLE | SYNC_OK | LEFT_ID_863
+ * [NEURAL_LINK_97]: STATUS_STABLE | SYNC_OK | LEFT_ID_990
+ * [NEURAL_LINK_98]: STATUS_STABLE | SYNC_OK | LEFT_ID_253
+ * [NEURAL_LINK_99]: STATUS_STABLE | SYNC_OK | LEFT_ID_860
+ */
+
 };

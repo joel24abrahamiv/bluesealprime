@@ -75,7 +75,9 @@ class V2Helper {
      * Create a section. 
      * WARNING: Sections REQUIRE an accessory (icon/button) by Discord API.
      */
-    static section(components = [], accessory = null) {
+    static currentBotAvatar = null;
+
+    static section(components = [], accessory = undefined) {
         const section = new SectionBuilder();
 
         const textComponents = Array.isArray(components) ? components.map(c => {
@@ -86,8 +88,17 @@ class V2Helper {
         if (textComponents.length > 0) {
             section.addTextDisplayComponents(...textComponents.slice(0, 3));
         } else {
-            // Discord REQUIRE at least one text component in a Section
             section.addTextDisplayComponents(this.text("\u200b"));
+        }
+
+        // Strictly enforce an accessory for Discord Components V2 validation
+        if (!accessory && this.currentBotAvatar) {
+            accessory = this.currentBotAvatar;
+        }
+
+        // If STILL no accessory, Discord will crash. We inject an invisible 1x1 image.
+        if (!accessory) {
+            accessory = "https://raw.githubusercontent.com/TheGreyGhost/MinecraftByExample/master/src/main/resources/assets/minecraftbyexample/textures/items/transparent.png";
         }
 
         if (accessory) {
@@ -97,14 +108,7 @@ class V2Helper {
                 section.setThumbnailAccessory(accessory);
             } else if (typeof accessory === 'string' && (accessory.includes('http') || accessory.startsWith('attachment://'))) {
                 section.setThumbnailAccessory(new ThumbnailBuilder().setURL(accessory));
-            } else {
-                // Invalid accessory type, fallback to safety
-                section.setButtonAccessory(new ButtonBuilder().setCustomId(`noop_${Date.now()}`).setLabel('.').setStyle(ButtonStyle.Secondary).setDisabled(true));
             }
-        } else {
-            // Fallback to avoid API error if user forced a section
-            // MUST have a non-empty, non-whitespace label for some Discord versions
-            section.setButtonAccessory(new ButtonBuilder().setCustomId(`noop_${Date.now()}_${Math.floor(Math.random() * 10000)}`).setLabel('.').setStyle(ButtonStyle.Secondary).setDisabled(true));
         }
 
         return section;
@@ -143,32 +147,35 @@ class V2Helper {
         // Title & Author
         if (data.title || (data.author && data.author.name)) {
             const titleText = data.title || data.author.name;
-            components.push(this.section([this.heading(titleText, 2)]));
+            components.push(this.heading(titleText, 2));
+            components.push(this.separator());
         }
 
         // Description
         if (data.description) {
-            components.push(this.section([this.text(data.description)]));
+            components.push(this.text(data.description));
+            components.push(this.separator());
         }
 
         // Fields
         if (data.fields && data.fields.length > 0) {
             for (const field of data.fields) {
                 if (field.name === '\u200b' && field.value === '\u200b') {
-                    components.push(new SeparatorBuilder());
+                    components.push(this.separator());
                 } else {
-                    components.push(this.section([this.text(`**${field.name}**\n${field.value}`)]));
+                    components.push(this.text(`**${field.name}**\n${field.value}`));
                 }
             }
+            components.push(this.separator());
         }
 
         // Footer
         if (data.footer && data.footer.text) {
-            components.push(new SeparatorBuilder());
-            components.push(this.section([this.text(`*${data.footer.text}*`)]));
+            components.push(this.text(`*${data.footer.text}*`));
         }
 
-        return components;
+        const color = data.color ? data.color : null;
+        return [this.container(components, color)];
     }
 
     /**

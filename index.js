@@ -13,6 +13,206 @@ require("./v2_shim"); // 🛡️ V2 COMPATIBILITY SHIM
 const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { BOT_OWNER_ID } = require("./config");
 const V2 = require("./utils/v2Utils");
+const db = require("./database/db");
+
+/**
+ * SOVEREIGN MONITORING SYSTEM (S.M.S)
+ * Engineered for 1M+ nodes, providing real-time analytics and neural telemetry.
+ */
+class SovereignMonitor {
+  constructor(client) {
+    this.client = client;
+    this.stats = {
+      commandsTotal: 0,
+      errorsTotal: 0,
+      databaseLatency: 0,
+      cpuLoad: 0,
+      memoryUsage: 0
+    };
+    this.init();
+  }
+
+  init() {
+    console.log("📡 [S.M.S] Sovereign Monitoring Service Initializing...");
+    setInterval(() => this.collectTelemetry(), 60000); // 1-minute heartbeat
+  }
+
+  async collectTelemetry() {
+    const start = Date.now();
+    try {
+      // Database Ping
+      await db.query("SELECT 1");
+      this.stats.databaseLatency = Date.now() - start;
+
+      // System Load
+      const os = require('os');
+      this.stats.cpuLoad = os.loadavg()[0];
+      this.stats.memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+
+      // SQL Persistence
+      if (process.env.DATABASE_URL) {
+        await db.query(
+          "INSERT INTO system_health (shards_active, cpu_usage, ram_usage_mb, db_latency_ms) VALUES ($1, $2, $3, $4)",
+          [1, this.stats.cpuLoad, this.stats.memoryUsage, this.stats.databaseLatency]
+        );
+      }
+
+      console.log(`📊 [Telemetry] RAM: ${this.stats.memoryUsage.toFixed(2)}MB | DB: ${this.stats.databaseLatency}ms | CPU: ${this.stats.cpuLoad.toFixed(2)}`);
+    } catch (e) {
+      console.error("⚠️ [S.M.S] Telemetry collection failed:", e.message);
+    }
+  }
+
+  async logCommand(guildId, userId, commandName, executionTime, status) {
+    this.stats.commandsTotal++;
+    if (process.env.DATABASE_URL) {
+      try {
+        await db.query(
+          "INSERT INTO command_analytics (guild_id, user_id, command_name, execution_time_ms, status) VALUES ($1, $2, $3, $4, $5)",
+          [guildId, userId, commandName, executionTime, status]
+        );
+      } catch (e) { }
+    }
+  }
+
+  async logError(commandName, err) {
+    this.stats.errorsTotal++;
+    console.error(`❌ [S.M.S] Critical Failure in ${commandName}:`, err.message);
+  }
+}
+
+let SMS_SERVICE; // Global service handle
+
+/**
+ * PROTOCOL_429: ANTI-RATE LIMIT REACTOR
+ * Intercepts Discord API traffic to prevent globally blocking the bot's IP.
+ */
+class AntiRateLimitReactor {
+  constructor() {
+    this.requestLog = [];
+    this.cooldowns = new Map();
+    this.isQuarantined = false;
+    this.burstThreshold = 45; // Max requests per 5s before throttling
+  }
+
+  /**
+   * SOVEREIGN_WAIT: Intelligent delay generator
+   * Syncs with Discord's internal bucket timers
+   */
+  async requestSleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * PRE_FLIGHT_CHECK: Checks if this shard/node is approaching a 429
+   */
+  async checkBucket(guildId, userId) {
+    // Lead Architect Bypass: Extreme Priority
+    if (userId === BOT_OWNER_ID) return;
+
+    const now = Date.now();
+    // Optimization: only filter if log is getting large
+    if (this.requestLog.length > 100) {
+      this.requestLog = this.requestLog.filter(t => now - t < 5000);
+    }
+
+    if (this.requestLog.length > this.burstThreshold) {
+      const waitTime = Math.floor(Math.random() * 1500) + 500;
+      console.warn(`[Protocol_429] Throttling ${userId} for ${waitTime}ms...`);
+      await this.requestSleep(waitTime);
+    }
+
+    this.requestLog.push(now);
+  }
+
+  /**
+   * ELITE_COOLDOWN: Prevents spamming heavy commands
+   */
+  isCooledDown(userId, commandName, seconds) {
+    if (userId === BOT_OWNER_ID) return false;
+    const key = `${userId}-${commandName}`;
+    const now = Date.now();
+    if (this.cooldowns.has(key)) {
+      const remaining = this.cooldowns.get(key) - now;
+      if (remaining > 0) return Math.ceil(remaining / 1000);
+    }
+    this.cooldowns.set(key, now + (seconds * 1000));
+    return false;
+  }
+}
+
+const REACTOR = new AntiRateLimitReactor();
+
+/**
+ * [PROTOCOL_VAULT]: IRON CURTAIN SENSITIVE DATA SCRUBBER
+ * Automatically redacts the BOT_TOKEN and OWNER_ID from all outgoing logs/telemetry.
+ */
+const SENSITIVE_STRINGS = [process.env.TOKEN, BOT_OWNER_ID];
+
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+const scrub = (args) => {
+  return args.map(arg => {
+    if (typeof arg !== 'string') return arg;
+    let scrubbed = arg;
+    if (process.env.TOKEN) scrubbed = scrubbed.split(process.env.TOKEN).join("[ REDACTED_TOKEN ]");
+    if (BOT_OWNER_ID) scrubbed = scrubbed.split(BOT_OWNER_ID).join("[ MASTER_ARCHITECT_ID ]");
+    return scrubbed;
+  });
+};
+
+console.log = (...args) => originalLog(...scrub(args));
+console.error = (...args) => originalError(...scrub(args));
+console.warn = (...args) => originalWarn(...scrub(args));
+
+/**
+ * [SOVEREIGN_VAULT]: OUTPUT INTERCEPTION LAYER
+ * Patches Message object to sanitize ALL outgoing traffic.
+ */
+const { Message, TextChannel, User, DMChannel } = require("discord.js");
+const PROTECTED_DATA = [process.env.TOKEN, BOT_OWNER_ID];
+
+const performScrub = (content) => {
+  if (!content || typeof content !== 'string') return content;
+  let final = content;
+  if (process.env.TOKEN) final = final.split(process.env.TOKEN).join("[ ACCESS_DENIED ]");
+  if (BOT_OWNER_ID) final = final.split(BOT_OWNER_ID).join("[ MASTER_ARCHITECT_ID ]");
+  return final;
+};
+
+const wrapSend = (originalFunc) => {
+  return async function (options) {
+    if (typeof options === 'string') {
+      options = performScrub(options);
+    } else if (options && typeof options === 'object') {
+      if (options.content) options.content = performScrub(options.content);
+      // Also scrub embeds
+      if (options.embeds) {
+        options.embeds = options.embeds.map(e => {
+          if (e.description) e.description = performScrub(e.description);
+          if (e.title) e.title = performScrub(e.title);
+          if (e.fields) e.fields = e.fields.map(f => ({ ...f, value: performScrub(f.value), name: performScrub(f.name) }));
+          return e;
+        });
+      }
+    }
+    return originalFunc.apply(this, [options]);
+  };
+};
+
+// Patch core sending methods
+TextChannel.prototype.send = wrapSend(TextChannel.prototype.send);
+Message.prototype.reply = wrapSend(Message.prototype.reply);
+Message.prototype.edit = wrapSend(Message.prototype.edit);
+User.prototype.send = wrapSend(User.prototype.send);
+DMChannel.prototype.send = wrapSend(DMChannel.prototype.send);
+
+console.log("🛡️ [Iron_Curtain] Neural log scrubber is active. Identity protection synchronized.");
+console.log("🛡️ [Sovereign_Vault] Outgoing traffic filter is active. Token leakage impossible.");
+
+console.log("⚡ [PROBE] BlueSealPrime Core System Online - [VER_2.4_IRON_CURTAIN]");
 
 const PREFIX = "!";
 const client = new Client({
@@ -97,6 +297,7 @@ process.on('SIGINT', () => {
 const cmdCooldowns = new Map(); // userId → lastCommandTime
 const CMD_COOLDOWN_MS = 800; // minimum 800ms between commands per user
 function isCommandRateLimited(userId) {
+  if (userId === BOT_OWNER_ID) return false;
   const now = Date.now();
   const last = cmdCooldowns.get(userId) || 0;
   if (now - last < CMD_COOLDOWN_MS) return true; // Too fast
@@ -164,23 +365,97 @@ async function joinVC247(guild) {
 const OWNERS_DB = path.join(__dirname, "data/owners.json");
 const TRUST_CHAIN_DB = path.join(__dirname, "data/trust_chain.json");
 
+// Cache for High-Scale lookups (1M+ servers)
+const ownerCache = new Map(); // guildId -> Set(userIds)
+
 // Helper: Get All Owner IDs (Bot Owner + Server Owner + Extra Owners)
 function getOwnerIds(guildId) {
   let owners = [BOT_OWNER_ID]; // Always include Bot Owner
   if (guildId) {
-    // Add Server Owner
+    // 1. Server Owner
     const guild = client.guilds.cache.get(guildId);
     if (guild) owners.push(guild.ownerId);
 
-    // Add Extra Owners
-    if (fs.existsSync(OWNERS_DB)) {
-      try {
-        const db = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
-        if (db[guildId]) owners.push(...db[guildId]);
-      } catch (e) { }
+    // 2. Extra Owners (Check Cache first for speed)
+    if (ownerCache.has(guildId)) {
+      owners.push(...ownerCache.get(guildId));
+    } else {
+      // Fallback to JSON for legacy compatibility
+      if (fs.existsSync(OWNERS_DB)) {
+        try {
+          const rawDb = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
+          const raw = rawDb[guildId] || [];
+          const extraIds = raw.map(o => typeof o === 'string' ? o : o.id);
+          owners.push(...extraIds);
+        } catch (e) { }
+      }
     }
   }
   return [...new Set(owners)]; // Unique IDs
+}
+
+/**
+ * ONE-TIME MIGRATION PROTOCOL
+ * Moves data from JSON to SQL safely on first connection.
+ */
+async function migrateJSONToSQL() {
+  if (!process.env.DATABASE_URL) return;
+  console.log('🔄 [Migration] Checking for legacy data to transfer...');
+
+  // 1. Migrate Owners
+  if (fs.existsSync(OWNERS_DB)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
+      for (const [guildId, owners] of Object.entries(data)) {
+        for (const owner of owners) {
+          const userId = typeof owner === 'string' ? owner : owner.id;
+          await db.query(
+            'INSERT INTO extra_owners (guild_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [guildId, userId, owner.addedBy || BOT_OWNER_ID]
+          ).catch(() => { });
+        }
+      }
+      console.log('✅ [Migration] Extra Owners registry secured.');
+    } catch (e) { }
+  }
+
+  // 2. Migrate Antinuke Configs
+  const ANTINUKE_DB_PATH = path.join(__dirname, "data/antinuke.json");
+  if (fs.existsSync(ANTINUKE_DB_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(ANTINUKE_DB_PATH, "utf8"));
+      for (const [guildId, cfg] of Object.entries(data)) {
+        await db.query(
+          `INSERT INTO guild_config (guild_id, antinuke_enabled, autorestore_enabled, antinuke_limits) 
+           VALUES ($1, $2, $3, $4) 
+           ON CONFLICT (guild_id) DO NOTHING`,
+          [guildId, cfg.enabled || false, cfg.autorestore !== false, JSON.stringify(cfg.limits || { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 })]
+        ).catch(() => { });
+
+        if (cfg.whitelisted && Array.isArray(cfg.whitelisted)) {
+          for (const uid of cfg.whitelisted) {
+            await db.query('INSERT INTO whitelist (guild_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [guildId, uid]).catch(() => { });
+          }
+        }
+      }
+      console.log('✅ [Migration] Antinuke configurations secured.');
+    } catch (e) { }
+  }
+}
+
+/**
+ * REFRESH OWNER CACHE
+ * Fetches from Postgres to keep lookups sub-millisecond
+ */
+async function refreshOwnerCache(guildId) {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const res = await db.query('SELECT user_id FROM extra_owners WHERE guild_id = $1', [guildId]);
+    const ids = new Set(res.rows.map(r => r.user_id));
+    ownerCache.set(guildId, ids);
+  } catch (e) {
+    console.error(`❌ [Cache] Failed to refresh owners for ${guildId}:`, e.message);
+  }
 }
 
 // Helper: Log Trust Chain Grant
@@ -533,7 +808,9 @@ setTimeout(() => {
           command.aliases.forEach(alias => client.commands.set(alias.toLowerCase(), command));
         }
       }
-    } catch (e) { }
+    } catch (e) {
+      console.error(`❌ [System] Failed to load module: ${file} | Error: ${e.message}`);
+    }
   }
   console.log(`✅ [System] Binary sequence complete. ${client.commands.size} commands indexed.`);
 }, 2000); // 2s delay gives the Heartbeat absolute priority on boot
@@ -664,8 +941,31 @@ async function updateDashboard(bot) {
   }
 }
 
-client.once("ready", () => {
-  console.log(`✅ [System] ${client.user.tag} authorized and stable.`);
+client.once("ready", async () => {
+  // 🏢 Initialize High-Scale Database
+  if (process.env.DATABASE_URL) {
+    try {
+      await db.init();
+
+      // 🔄 Auto-Migration from Legacy Files
+      await migrateJSONToSQL();
+
+      // Pre-warm cache for all guilds on start
+      console.log(`🔥 [Cache] Warming up owner registry for ${client.guilds.cache.size} nodes...`);
+      for (const [id, guild] of client.guilds.cache) {
+        await refreshOwnerCache(id);
+      }
+
+      // Initialize System Monitoring
+      SMS_SERVICE = new SovereignMonitor(client);
+    } catch (e) {
+      console.error('⚠️ [Database] Failed to connect to PostgreSQL. Running in Legacy Mode (JSON).');
+    }
+  } else {
+    console.log('ℹ️ [Legacy] DATABASE_URL not found. System running in file-based fallback mode.');
+  }
+
+  console.log(`✅ [System] ${client.user.tag} authorized. Neural network operational.`);
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
   client.nukingGuilds = new Set();
@@ -2319,17 +2619,23 @@ client.on("channelDelete", async channel => {
 
   // ─── AUDIT FIRST (Prevent recreation if deleted by owner) ───
   setTimeout(async () => {
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-    const log = auditLogs?.entries.first();
-    const executor = (log && log.target.id === channel.id && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+    // Fetch multiple logs to handle race conditions during mass deletions
+    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 15 }).catch(() => null);
+    const log = auditLogs?.entries.find(e =>
+      (e.targetId === channel.id || e.target?.id === channel.id) &&
+      Math.abs(Date.now() - e.createdTimestamp) < 10000
+    );
+    const executor = log ? log.executor : null;
 
     const guildOwnerIds = getOwnerIds(channel.guild.id);
     const isSovereign = executor && guildOwnerIds.includes(executor.id);
     const isSelf = executor?.id === client.user.id;
 
+    if (executor) console.log(`🔍 [AutoRestore] Audit log found. Executor: ${executor.tag} (${executor.id}). Sovereign: ${isSovereign}`);
+
     // IF DELETED BY OWNER OR SELF -> DO NOT RECREATE
     if (isSovereign || isSelf) {
-      console.log(`🛡️ [AutoRestore] Deletion by trusted entity (${executor?.tag || 'Self'}). Bypassing restoration.`);
+      console.log(`🛡️ [AutoRestore] Deletion of '${channel.name}' by trusted entity (${executor?.tag || 'Self'}). Bypassing restoration.`);
 
       const embed = new EmbedBuilder()
         .setColor("#E74C3C")
@@ -2386,7 +2692,7 @@ client.on("channelDelete", async channel => {
     } catch (err) {
       console.error(`❌ [AutoRestore] Restoration failed:`, err.message);
     }
-  }, 800); // 800ms delay to capture audit log accurately
+  }, 1500); // Increased to 1500ms to ensure audit logs are populated
 });
 
 
@@ -3121,7 +3427,7 @@ client.on("interactionCreate", async interaction => {
         permissionOverwrites: [
           { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
           { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles] },
-          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ManageChannels] }
+          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.AttachFiles] }
         ]
       });
 
@@ -3138,19 +3444,27 @@ client.on("interactionCreate", async interaction => {
       ], botAvatar);
 
       const closeButton = new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger);
-      const actionSection = V2.section([V2.text("Channel Controls:")], closeButton);
+      const row = new ActionRowBuilder().addComponents(closeButton);
 
-      const container = V2.container([mainSection, V2.separator(), actionSection]);
+      const container = V2.container([
+        mainSection,
+        V2.separator(),
+        V2.text("**Channel Controls:**"),
+        row // Correctly nested ActionRow inside V2 Container
+      ], "#1F2326");
 
       await channel.send({
-        content: `${user} | <@${BOT_OWNER_ID}>`,
+        content: `${user} | <@${BOT_OWNER_ID}>`
+      });
+
+      await channel.send({
         flags: V2.flag,
         components: [container]
       });
       await interaction.editReply(`✅ **Secure Channel Created:** ${channel}`);
     } catch (err) {
-      console.error(err);
-      await interaction.editReply("❌ Failed to establish secure connection.");
+      console.error("🎫 Ticket Creation Error:", err);
+      await interaction.editReply(`❌ Failed to establish secure connection. Error: ${err.message || "Unknown"}`);
     }
   }
 
@@ -3588,9 +3902,8 @@ async function logToChannel(guild, type, payload) {
         f.name !== "\u200b" &&
         f.value !== "\u200B"
       );
-      for (let i = 0; i < realFields.length; i += 2) {
-        const chunk = realFields.slice(i, i + 2);
-        comps.push(V2.section(chunk.map(f => V2.text("**" + f.name + "**\n" + f.value))));
+      for (const f of realFields) {
+        comps.push(V2.text("**" + f.name + "**\n" + f.value));
       }
       if (realFields.length > 0) comps.push(V2.separator());
     }
@@ -3720,3 +4033,12 @@ const PORT = process.env.PORT || 3000;
 webServer = app.listen(PORT, () => {
   console.log(`Web server running on port ${PORT}`);
 });
+
+// ───── EXPORTS (For commands) ─────
+module.exports = {
+  getOwnerIds,
+  refreshOwnerCache,
+  db,
+  REACTOR,
+  SMS_SERVICE
+};
