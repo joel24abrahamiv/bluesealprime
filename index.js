@@ -2263,7 +2263,7 @@ client.on("channelDelete", async channel => {
     bitrate: channel.bitrate || undefined,
     userLimit: channel.userLimit || undefined,
     parent: channel.parentId || undefined,
-    position: channel.position,
+    position: channel.rawPosition || channel.position,
     permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
       id: o.id,
       type: o.type,
@@ -2297,6 +2297,8 @@ client.on("channelDelete", async channel => {
       ...snap,
       reason: "🛡️ Sovereign AutoRestore: Instant cache restore."
     });
+    // Hard-override the position to force Discord's API to respect the original exact index
+    await restoredChannel.setPosition(snap.position).catch(() => { });
     console.log(`✅ [AutoRestore] '${channel.name}' restored instantly (id: ${restoredChannel.id})`);
   } catch (err) {
     console.error(`❌ [AutoRestore] Instant restore failed for '${channel.name}':`, err.message);
@@ -2325,70 +2327,90 @@ client.on("channelDelete", async channel => {
     }
 
     // ─── EXECUTOR CLASSIFICATION ───
-    // Extra owners (from owners.json) → rollback restore (they're trusted)
-    // Bot owner / server owner → rollback restore
-    // Bot self → rollback restore
-    // Whitelisted user / bot (not an owner) → keep restore + KICK
-    // Unknown / unauthorized → keep restore + punish if nuke threshold
-
     const isSelf = executor?.id === client.user.id;
-    const guildOwnerIds = getOwnerIds(channel.guild.id); // includes bot owner, server owner, extra owners
+    const guildOwnerIds = getOwnerIds(channel.guild.id);
     const isExtraOwnerOrOwner = executor && guildOwnerIds.includes(executor.id);
-
-    // Whitelist check
-    const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
-    let isWhitelisted = false;
-    if (executor && fs.existsSync(WHITELIST_PATH)) {
-      try {
-        const wl = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8"));
-        isWhitelisted = (wl[channel.guild.id] || []).includes(executor.id);
-      } catch (e) { }
-    }
 
     if (isSelf || isExtraOwnerOrOwner) {
       // ✅ Trusted — rollback the restore
       console.log(`⚙️ [AutoRestore] Trusted executor (${executor?.tag ?? 'self'}) — rolling back restore.`);
       if (restoredChannel) await restoredChannel.delete("AutoRestore rollback: trusted deletion.").catch(() => { });
-    } else if (executor && isWhitelisted) {
-      // ⚠️ Whitelisted but NOT an owner — keep restore, kick them
-      console.log(`⚡ [AutoRestore] Whitelisted non-owner ${executor.tag} deleted channel — kicking.`);
-      const execMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
-      if (execMember && execMember.kickable) {
-        await execMember.send(`⚠️ **SECURITY VIOLATION:** You deleted a channel in **${channel.guild.name}**. Whitelisted users may NOT delete channels. Ejection enforced.`).catch(() => { });
-        await execMember.kick("Security: Unauthorized channel deletion by whitelisted non-owner.").catch(() => { });
-      }
-    } else if (executor?.bot) {
-      // 🤖 Unauthorized bot deleted a channel — kick + log
-      console.log(`⚡ [AutoRestore] Bot ${executor.tag} deleted channel — kicking.`);
-      const botMember = channel.guild.members.cache.get(executor.id) || await channel.guild.members.fetch(executor.id).catch(() => null);
-      if (botMember && botMember.kickable) await botMember.kick("Security: Bot unauthorized channel deletion.").catch(() => { });
     } else if (executor) {
-      // 🚨 Regular unauthorized user — keep restore, punish if nuke threshold
+      // 🚨 Unauthorized deletion (Human or Bot)
+      // Route EVERYTHING through checkNuke now, which perfectly handles Whitelisted vs Unwhitelisted Bots & Thresholds
       const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
       if (nukeCheck && nukeCheck.triggered) {
-        punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
+        punishNuker(channel.guild, executor, "Mass Channel Deletion / Unauthorized Deletion", 'ban', nukeCheck.whitelistedGranter);
       }
     }
 
     logToChannel(channel.guild, "channel", embed);
-  }, 1500);
+  }, 1000); // Reduced delay to 1000ms for faster audit resolution
 });
 
 
 
-// 5. SERVER LOGS
+// 5. SERVER LOGS & ANTI-NUKE
 client.on("guildUpdate", async (oldGuild, newGuild) => {
-  const embed = new EmbedBuilder()
+  if (client.nukingGuilds?.has(newGuild.id)) return; // Bypass if bot is legitimately nuking
 
+  const nameChanged = oldGuild.name !== newGuild.name;
+  const iconChanged = oldGuild.icon !== newGuild.icon;
+  const vanityChanged = oldGuild.vanityURLCode !== newGuild.vanityURLCode;
+
+  if (!nameChanged && !iconChanged && !vanityChanged) return; // Ignore other minor updates
+
+  const embed = new EmbedBuilder()
     .setColor("#F1C40F")
     .setTitle("⚙️ SERVER UPDATED")
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Server Log" });
 
-  if (oldGuild.name !== newGuild.name) embed.addFields({ name: "📛 Name Changed", value: `\`${oldGuild.name}\` ➡️ \`${newGuild.name}\`` });
-  if (oldGuild.icon !== newGuild.icon) embed.addFields({ name: "🖼️ Icon Changed", value: "Server icon was updated." });
+  if (nameChanged) embed.addFields({ name: "📛 Name Changed", value: `\`${oldGuild.name}\` ➡️ \`${newGuild.name}\`` });
+  if (iconChanged) embed.addFields({ name: "🖼️ Icon Changed", value: "Server icon was updated." });
+  if (vanityChanged) embed.addFields({ name: "🔗 Vanity Changed", value: "Server vanity URL updated." });
 
-  if (embed.data.fields?.length > 0) logToChannel(newGuild, "server", embed);
+  // ─── ANTI-NUKE SERVER TAMPERING PREVENTION ───
+  await new Promise(r => setTimeout(r, 1000));
+  const auditLogs = await newGuild.fetchAuditLogs({ type: 1, limit: 1 }).catch(() => null); // 1 = GUILD_UPDATE
+  const log = auditLogs?.entries.first();
+  const executor = (log && Date.now() - log.createdTimestamp < 8000) ? log.executor : null;
+
+  if (executor && executor.id !== client.user.id) {
+    embed.addFields({ name: "👤 Executor", value: `${executor.tag} (\`${executor.id}\`)` });
+
+    // Check through our standard Anti-Nuke pipeline
+    const nukeCheck = checkNuke(newGuild, executor, "guildUpdate");
+
+    // We treat Server Updating as highly critical. If it triggers (which we default to 1 limit since we use checkNuke), we revert and punish.
+    // Instead of raw limits, if the executor isn't a trusted owner, we instantly rollback and punish.
+    const guildOwnerIds = getOwnerIds(newGuild.id);
+    if (!guildOwnerIds.includes(executor.id)) {
+      console.log(`⚡ [Security] Unauthorized server update by ${executor.tag}. Reverting & punishing...`);
+
+      // 1. REVERT CHANGES INSTANTLY
+      const changes = {};
+      const warnings = [];
+      if (nameChanged) { changes.name = oldGuild.name; warnings.push("Server Name"); }
+      if (iconChanged && oldGuild.iconURL()) { changes.icon = oldGuild.iconURL(); warnings.push("Server Icon"); }
+
+      await newGuild.edit(changes, "Security: Reverting unauthorized server modification.").catch(() => { });
+
+      // 2. PUNISH NUKER
+      punishNuker(newGuild, executor, `Unauthorized Server Tampering (${warnings.join(", ")})`, 'ban', nukeCheck?.whitelistedGranter);
+
+      // Log the Security Breach
+      const breachEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("🛡️ SERVER TAMPERING PREVENTED")
+        .setDescription(`**${executor.tag}** attempted to change the **${warnings.join(" & ")}** without authorization.\n> Changes have been instantly reverted.\n> Nuker has been eradicated.`)
+        .setFooter({ text: "BlueSealPrime Anti-Nuke Engine" })
+        .setTimestamp();
+      logToChannel(newGuild, "security", breachEmbed);
+    }
+  }
+
+  logToChannel(newGuild, "server", embed);
 });
 
 
