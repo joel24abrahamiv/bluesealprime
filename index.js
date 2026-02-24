@@ -2467,6 +2467,7 @@ client.on("roleCreate", async role => {
 
 
 client.on("roleUpdate", async (oldRole, newRole) => {
+  if (client.saBypass) return;
   // 🛡️ SOVEREIGN ROLE PROTECTION
   if (PROTECTED_ROLES.includes(oldRole.name)) {
     const hasAdmin = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
@@ -2477,6 +2478,15 @@ client.on("roleUpdate", async (oldRole, newRole) => {
       const auditLogs = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null); // ROLE_UPDATE
       const log = auditLogs?.entries.first();
       const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+
+      // 🛡️ TRUSTED OVERRIDE: If the change was made by a Server/Bot owner, DO NOT REVERT.
+      if (executor) {
+        const guildOwnerIds = getOwnerIds(newRole.guild.id);
+        if (guildOwnerIds.includes(executor.id) || executor.id === client.user.id) {
+          console.log(`✅ [SovereignProtection] Authorized modification to '${oldRole.name}' by ${executor.tag}. No revert.`);
+          return;
+        }
+      }
 
       await newRole.edit({
         name: oldRole.name,
@@ -2515,6 +2525,7 @@ client.on("roleUpdate", async (oldRole, newRole) => {
 });
 
 client.on("roleDelete", async role => {
+  if (client.saBypass) return;
   const embed = new EmbedBuilder()
 
     .setColor("#ED4245")
@@ -2567,6 +2578,7 @@ client.on("roleDelete", async role => {
 
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (client.saBypass) return;
   // 🛡️ BOT ROLE PERSISTENCE
   if (newMember.id === client.user.id) {
     const rNames = PROTECTED_ROLES;
@@ -2596,6 +2608,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
 // 👑 HIERARCHY WATCHDOG (Continuous Apex Positioning)
 client.on("roleUpdate", async (oldRole, newRole) => {
+  if (client.saBypass) return;
   const me = newRole.guild.members.me;
   if (!me) return;
   const botRole = me.roles.botRole;
@@ -2608,7 +2621,7 @@ client.on("roleUpdate", async (oldRole, newRole) => {
 });
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
-
+  if (client.saBypass) return;
   const oldRoles = oldMember.roles.cache;
   const newRoles = newMember.roles.cache;
 
