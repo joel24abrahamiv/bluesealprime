@@ -1020,10 +1020,11 @@ client.once("ready", async () => {
 
   // ───── IMMEDIATE TASKS ─────
   const activities = [
+    { name: "BlueSealPrime! | GT!", type: 3 },
     { name: "Server Security | 🛡️ Active", type: 3 },
-    { name: "Packet Traffic | 🟢 Stable", type: 3 },
+    { name: "Node Integrity | [ UNBYPASSABLE ]", type: 3 },
     { name: "for Intruders | 👁️ Scanning", type: 3 },
-    { name: "BlueSealPrime v2.0 | 👑 Online", type: 0 }
+    { name: "Sovereign Core V2.1.Ω | 🔴 Busy", type: 0 }
   ];
 
   let i = 0;
