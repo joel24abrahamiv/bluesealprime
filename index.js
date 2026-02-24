@@ -891,21 +891,44 @@ async function updateDashboard(bot) {
     const logChannel = dashGuild.channels.cache.find(c => c.name === "📂-bot-system");
     if (!logChannel) return;
 
-    // Fetch messages ONCE for the whole loop
-    const dashboardMessages = await logChannel.messages.fetch({ limit: 50 }).catch(() => null);
+    // 1. Fetch Existing Monitor Messages (Efficiency)
+    const dashboardMessages = await logChannel.messages.fetch({ limit: 100 }).catch(() => null);
 
+    // 2. Global System Status (Sent Once)
+    const globalTitle = "🌐 **GLOBAL SYSTEM OVERVIEW**";
+    const botAvatar = V2.botAvatar({ guild: dashGuild, client: bot });
+    const statsSection = V2.section([
+      V2.heading("📊 SYSTEM ANALYTICS", 2),
+      V2.text(`**Gateway:** \`CONNECTED\`\n**Nodes:** \`${bot.guilds.cache.size}\`\n**Users:** \`${bot.users.cache.size}\``)
+    ], botAvatar);
+
+    const latencySection = V2.section([
+      V2.heading("📡 NETWORK TRAFFIC", 3),
+      V2.text(`**API Latency:** \`${Math.round(bot.ws.ping)}ms\`\n**Response Time:** \`STABLE\``)
+    ]);
+
+    const globalContainer = V2.container([statsSection, V2.separator(), latencySection]);
+    const globalEmbed = new EmbedBuilder().setTitle(globalTitle).setColor("#5865F2").setTimestamp();
+
+    let existingGlobal = dashboardMessages?.find(m => m.embeds[0]?.title === globalTitle);
+    if (existingGlobal) {
+      await existingGlobal.edit({ embeds: [globalEmbed], flags: V2.flag, components: [globalContainer] }).catch(() => { });
+    } else {
+      await logChannel.send({ embeds: [globalEmbed], flags: V2.flag, components: [globalContainer] }).catch(() => { });
+    }
+
+    // 3. Sequential Guild Intelligence (Unique per Guild)
     for (const guild of bot.guilds.cache.values()) {
       if (guild.id === dashGuild.id) continue;
 
-      // Use Cache for Owner (Fast)
       const ownerId = guild.ownerId;
       const owner = bot.users.cache.get(ownerId);
-
       const features = guild.features.map(f => `\`${f}\``).join(", ") || "None";
+
+      const guildTitle = `📊 **SERVER INTELLIGENCE:** ${guild.name.toUpperCase()}`;
       const embed = new EmbedBuilder()
         .setColor("#2B2D31")
-        .setTitle(`📊 **SERVER INTELLIGENCE:** ${guild.name.toUpperCase()}`)
-        // ... (rest of embed build remains same)
+        .setTitle(guildTitle)
         .setDescription(
           `> **ID:** \`${guild.id}\`\n` +
           `> **Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}:D> (<t:${Math.floor(guild.createdTimestamp / 1000)}:R>)\n` +
@@ -927,34 +950,21 @@ async function updateDashboard(bot) {
         .setFooter({ text: `BlueSealPrime • Global Monitoring • Node: ${process.version}`, iconURL: bot.user.displayAvatarURL() })
         .setTimestamp();
 
-      // 3. Use the fetched messages map
-      let existingMsg = dashboardMessages?.find(m =>
-        m.author.id === bot.user.id &&
-        m.embeds[0]?.title === embed.data.title
-      );
+      const guildSection = V2.section([
+        V2.heading(`📁 NODE INTELLIGENCE: ${guild.name}`, 3),
+        V2.text(`**Gateway:** SYNCHRONIZED\n**Integrity:** VERIFIED\n**Protocol:** OMEGA`)
+      ], guild.iconURL({ extension: "png", size: 512 }) || botAvatar);
 
-      // 3. Create CV2 Container
-      const botAvatar = V2.botAvatar({ guild: dashGuild, client: bot });
-      const statsSection = V2.section([
-        V2.heading("📊 SYSTEM ANALYTICS", 2),
-        V2.text(`**Gateway:** \`CONNECTED\`\n**Nodes:** \`${bot.guilds.cache.size}\`\n**Users:** \`${bot.users.cache.size}\``)
-      ], botAvatar);
+      const guildContainer = V2.container([guildSection]);
 
-      const latencySection = V2.section([
-        V2.heading("📡 NETWORK TRAFFIC", 3),
-        V2.text(`**API Latency:** \`${Math.round(bot.ws.ping)}ms\`\n**Response Time:** \`STABLE\``)
-      ]);
-
-      const container = V2.container([statsSection, V2.separator(), latencySection]);
+      let existingMsg = dashboardMessages?.find(m => m.embeds[0]?.title === guildTitle);
 
       if (existingMsg) {
-        await existingMsg.edit({ flags: V2.flag, components: [container] }).catch(() => { });
+        await existingMsg.edit({ embeds: [embed], flags: V2.flag, components: [guildContainer] }).catch(() => { });
       } else {
-        await logChannel.send({ flags: V2.flag, components: [container] }).catch(() => { });
+        await logChannel.send({ embeds: [embed], flags: V2.flag, components: [guildContainer] }).catch(() => { });
+        await new Promise(r => setTimeout(r, 1500)); // Delay for new messages to avoid rate limit spikes
       }
-
-      // 4. Rate Limit Protection: 1-second delay is enough if we don't fetch every time
-      await new Promise(r => setTimeout(r, 1000));
     }
 
   } catch (e) {
@@ -1448,8 +1458,8 @@ client.on("messageCreate", async message => {
   const isBotOwner = message.author.id === BOT_OWNER_ID;
   const isServerOwner = message.guild.ownerId === message.author.id;
 
-  // ⚡ SPAM PROTECTION (Auto-Timeout 5m)
-  // Threshold: 6 messages in 3 seconds = 5 minute timeout
+  // ⚡ SPAM PROTECTION (Auto-Blacklist 1 Week + Timeout)
+  // Threshold: 6 messages in 3 seconds = 5 minute timeout + 1 Week Blacklist
   if (!isBotOwner && !isServerOwner) {
     if (!global.messageLog) global.messageLog = new Map();
     const key = `${message.guild.id}-${message.author.id}`;
@@ -1467,13 +1477,78 @@ client.on("messageCreate", async message => {
     if (userData.count >= 6) {
       const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
       if (member && member.moderatable) {
+        // Apply Timeout
         await member.timeout(5 * 60 * 1000, "Spam Detection (Autonomous Safety)").catch(() => { });
+
+        // Apply 1 Week Blacklist
+        const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+        let spmbl = {};
+        if (fs.existsSync(SPMBL_PATH)) {
+          try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
+        }
+        const expiry = now + (7 * 24 * 60 * 60 * 1000); // 1 week
+        spmbl[message.author.id] = { expires: expiry, reason: "Excessive Communication Spam (Auto-Detected)", guildId: message.guild.id };
+        fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+
+        // DM the violator
+        const dmEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("⚠️ [ SECURITY_VIOLATION_DETECTED ]")
+          .setDescription(`### **PROTOCOL: AUTO-QUARANTINE**\n\n> You have been automatically blacklisted from using **BlueSealPrime** systems for **1 week** due to excessive spamming.\n\n**Server:** \`${message.guild.name}\`\n**Duration:** 168 Hours (1 Week)\n**Expires:** <t:${Math.floor(expiry / 1000)}:R>`)
+          .setFooter({ text: "BlueSealPrime Sovereign Security" });
+
+        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
+
         const spamEmbed = new EmbedBuilder()
           .setColor("#FF3300")
           .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-          .setDescription(`${message.author} has been timed out for **5 minutes** for excessive communication spam.`)
+          .setDescription(`${message.author} has been timed out and **blacklisted for 1 week** for excessive communication spam.\n> *Violation recorded in the neural registry.*`)
           .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
         message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
+
+        // --- DUAL-LAYER SECURITY LOGGING ---
+        try {
+          const LOGS_DB = path.join(__dirname, "data/logs.json");
+          const SYS_DB = path.join(__dirname, "data/system.json");
+          let logChannels = {};
+          let sysData = {};
+          if (fs.existsSync(LOGS_DB)) logChannels = JSON.parse(fs.readFileSync(LOGS_DB, "utf8") || "{}");
+          if (fs.existsSync(SYS_DB)) sysData = JSON.parse(fs.readFileSync(SYS_DB, "utf8") || "{}");
+
+          const localSpamId = logChannels[message.guild.id]?.spam;
+          const globalSpamId = sysData.GLOBAL_SPAM_LOG;
+
+          // Generate an invite link for the server where spam occurred (Architect utility)
+          let serverInvite = "No invite available";
+          try {
+            const firstChannel = message.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(client.user).has("CreateInstantInvite"));
+            if (firstChannel) {
+              const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0 }).catch(() => null);
+              if (invite) serverInvite = invite.url;
+            }
+          } catch (e) { }
+
+          const logEmbed = new EmbedBuilder()
+            .setColor("#FF0000")
+            .setTitle("🛡️ SPAM_VIOLATION_RECORDED")
+            .setThumbnail(message.author.displayAvatarURL())
+            .addFields(
+              { name: "👤 VIOLATOR", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
+              { name: "📍 SECTOR", value: `${message.guild.name} (\`${message.guild.id}\`)`, inline: true },
+              { name: "⏳ DURATION", value: "1 Week (168h)", inline: true },
+              { name: "📝 REASON", value: "Autonomous Spam Interception", inline: false },
+              { name: "📡 SERVER LINK", value: `[Join Sector](${serverInvite})`, inline: false }
+            )
+            .setTimestamp();
+
+          [localSpamId, globalSpamId].forEach(async id => {
+            if (id) {
+              const chan = client.channels.cache.get(id) || await client.channels.fetch(id).catch(() => null);
+              if (chan) chan.send({ embeds: [logEmbed] }).catch(() => { });
+            }
+          });
+        } catch (e) { console.error("Spam Log Error:", e); }
+        // --- END LOGGING ---
         return;
       }
     }
@@ -1507,17 +1582,27 @@ client.on("messageCreate", async message => {
   }
 
 
-  const isBotOwner = message.author.id === BOT_OWNER_ID;
-  const isServerOwner = message.guild.ownerId === message.author.id;
-
   // ───── GLOBAL BLACKLIST CHECK (MESSAGE) ─────
   // OWNER BYPASS: Owner is immune to blacklist
   if (!isBotOwner) {
+    // 1. Permanent Blacklist
     const BL_PATH = path.join(__dirname, "data/blacklist.json");
     if (fs.existsSync(BL_PATH)) {
       try {
         const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
-        if (blacklist.includes(message.author.id)) return; // Silently ignore blacklisted users
+        if (blacklist.includes(message.author.id)) return;
+      } catch (e) { }
+    }
+    // 2. Spam Blacklist (Timed)
+    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+    if (fs.existsSync(SPMBL_PATH)) {
+      try {
+        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
+        const entry = spmbl[message.author.id];
+        if (entry) {
+          if (Date.now() < entry.expires) return; // Still blacklisted
+          else { delete spmbl[message.author.id]; fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2)); }
+        }
       } catch (e) { }
     }
   }
