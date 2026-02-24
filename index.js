@@ -983,6 +983,7 @@ client.once("ready", async () => {
 
       // Initialize System Monitoring
       SMS_SERVICE = new SovereignMonitor(client);
+      global.SMS_SERVICE = SMS_SERVICE;
     } catch (e) {
       console.error('⚠️ [Database] Failed to connect to PostgreSQL. Running in Legacy Mode (JSON).');
     }
@@ -1444,6 +1445,40 @@ client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
+  const isBotOwner = message.author.id === BOT_OWNER_ID;
+  const isServerOwner = message.guild.ownerId === message.author.id;
+
+  // ⚡ SPAM PROTECTION (Auto-Timeout 5m)
+  // Threshold: 6 messages in 3 seconds = 5 minute timeout
+  if (!isBotOwner && !isServerOwner) {
+    if (!global.messageLog) global.messageLog = new Map();
+    const key = `${message.guild.id}-${message.author.id}`;
+    const now = Date.now();
+    const userData = global.messageLog.get(key) || { count: 0, startTime: now };
+
+    if (now - userData.startTime > 3000) {
+      userData.count = 1;
+      userData.startTime = now;
+    } else {
+      userData.count++;
+    }
+    global.messageLog.set(key, userData);
+
+    if (userData.count >= 6) {
+      const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+      if (member && member.moderatable) {
+        await member.timeout(5 * 60 * 1000, "Spam Detection (Autonomous Safety)").catch(() => { });
+        const spamEmbed = new EmbedBuilder()
+          .setColor("#FF3300")
+          .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
+          .setDescription(`${message.author} has been timed out for **5 minutes** for excessive communication spam.`)
+          .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
+        message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
+        return;
+      }
+    }
+  }
+
   // ⚡ ANTI-SPAM BOMB: silently drop if user is firing too fast (< 800ms between commands)
   if (isCommandRateLimited(message.author.id)) return;
 
@@ -1751,12 +1786,22 @@ client.on("messageCreate", async message => {
       }
     }
 
+    const EXECUTION_START = Date.now();
     try {
       console.log(`[CMD] Executing !${commandName} by ${message.author.tag}`);
       await command.execute(message, args, commandName);
-      console.log(`[CMD] Success: !${commandName}`);
+
+      // Async Telemetry (Non-Blocking)
+      if (global.SMS_SERVICE) {
+        const duration = Date.now() - EXECUTION_START;
+        global.SMS_SERVICE.logCommand(message.guild.id, message.author.id, commandName, duration, "SUCCESS").catch(() => { });
+      }
     } catch (err) {
-      console.error(`[CMD] Error in !${commandName}:`, err);
+      const duration = Date.now() - EXECUTION_START;
+      if (global.SMS_SERVICE) {
+        global.SMS_SERVICE.logCommand(message.guild.id, message.author.id, commandName, duration, "FAILURE").catch(() => { });
+        global.SMS_SERVICE.logError(commandName, err).catch(() => { });
+      }
       if (err.code === 50013 && (message.author.id === BOT_OWNER_ID || message.author.id === message.guild.ownerId)) {
         return message.reply({
           content: "⚠️ **ACCESS DENIED BY DISCORD PROTOCOLS**",
@@ -1781,9 +1826,17 @@ client.on("messageCreate", async message => {
 
     if (command && (isBotOwner || isServerOwner)) {
       args.shift();
+      const EXECUTION_START = Date.now();
       try {
         await command.execute(message, args, commandName);
+        if (global.SMS_SERVICE) {
+          global.SMS_SERVICE.logCommand(message.guild.id, message.author.id, commandName, Date.now() - EXECUTION_START, "SUCCESS").catch(() => { });
+        }
       } catch (err) {
+        if (global.SMS_SERVICE) {
+          global.SMS_SERVICE.logCommand(message.guild.id, message.author.id, commandName, Date.now() - EXECUTION_START, "FAILURE").catch(() => { });
+          global.SMS_SERVICE.logError(commandName, err).catch(() => { });
+        }
         if (err.code === 50013 && isBotOwner) {
           return message.reply({ content: `⚠️ **I don't have permission to do that here.**\n> *"Dude, no perms given... Shall I nuke it instead? (in a funny way)"* ☢️😏` });
         }
@@ -2013,7 +2066,7 @@ client.on("guildMemberAdd", async member => {
 
     // 3. ANTI-RAID DETECTION (Always-On with auto-init)
     const ANTIRAID_PATH = path.join(__dirname, "data/antiraid.json");
-    let raidConfig = { enabled: true, threshold: 4, timeWindow: 0.01 };
+    let raidConfig = { enabled: true, threshold: 5, timeWindow: 10 };
     if (fs.existsSync(ANTIRAID_PATH)) {
       try {
         const antiRaidData = JSON.parse(fs.readFileSync(ANTIRAID_PATH, "utf8"));
