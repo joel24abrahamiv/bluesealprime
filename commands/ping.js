@@ -23,22 +23,6 @@ module.exports = {
         if (!message || !message.guild) return;
         const botMember = message.guild.members.me;
 
-        if (!botMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply({
-                flags: V2.flag,
-                components: [V2.container([V2.text("❌ **PERMISSION_FAULT:** Administrator role required.")], V2_RED)]
-            }).catch(() => { });
-        }
-
-        if (mainProcess.REACTOR) {
-            await mainProcess.REACTOR.checkBucket(message.guild.id, message.author.id);
-            const cooldown = ["enuke", "antinuke", "massban", "backup"].includes("ping") ? 10 : 3;
-            const remaining = mainProcess.REACTOR.isCooledDown(message.author.id, "ping", cooldown);
-            if (remaining && message.author.id !== BOT_OWNER_ID) {
-                return message.reply({ content: `⚠️ **THROTTLED:** Wait ${remaining}s.`, flags: V2.flag }).catch(() => { });
-            }
-        }
-
         try {
             /* --- KERNEL_START --- */
             const startTime = Date.now();

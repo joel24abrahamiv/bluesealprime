@@ -1458,8 +1458,30 @@ client.on("messageCreate", async message => {
   const isBotOwner = message.author.id === BOT_OWNER_ID;
   const isServerOwner = message.guild.ownerId === message.author.id;
 
+  // ───── GLOBAL BLACKLIST CHECK ─────
+  if (!isBotOwner) {
+    const BL_PATH = path.join(__dirname, "data/blacklist.json");
+    if (fs.existsSync(BL_PATH)) {
+      try {
+        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
+        if (blacklist.includes(message.author.id)) return;
+      } catch (e) { }
+    }
+    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+    if (fs.existsSync(SPMBL_PATH)) {
+      try {
+        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
+        const entry = spmbl[message.author.id];
+        if (entry) {
+          if (Date.now() < entry.expires) return;
+          else { delete spmbl[message.author.id]; fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2)); }
+        }
+      } catch (e) { }
+    }
+  }
+
   // ⚡ SPAM PROTECTION (Auto-Blacklist 1 Week + Timeout)
-  // Threshold: 6 messages in 3 seconds = 5 minute timeout + 1 Week Blacklist
+  // Threshold: 5 messages in 3 seconds = 5 minute timeout + 1 Week Blacklist
   if (!isBotOwner && !isServerOwner) {
     if (!global.messageLog) global.messageLog = new Map();
     const key = `${message.guild.id}-${message.author.id}`;
@@ -1474,7 +1496,7 @@ client.on("messageCreate", async message => {
     }
     global.messageLog.set(key, userData);
 
-    if (userData.count >= 6) {
+    if (userData.count >= 5) {
       const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
       if (member && member.moderatable) {
         // Apply Timeout
@@ -1582,30 +1604,7 @@ client.on("messageCreate", async message => {
   }
 
 
-  // ───── GLOBAL BLACKLIST CHECK (MESSAGE) ─────
-  // OWNER BYPASS: Owner is immune to blacklist
-  if (!isBotOwner) {
-    // 1. Permanent Blacklist
-    const BL_PATH = path.join(__dirname, "data/blacklist.json");
-    if (fs.existsSync(BL_PATH)) {
-      try {
-        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
-        if (blacklist.includes(message.author.id)) return;
-      } catch (e) { }
-    }
-    // 2. Spam Blacklist (Timed)
-    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-    if (fs.existsSync(SPMBL_PATH)) {
-      try {
-        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
-        const entry = spmbl[message.author.id];
-        if (entry) {
-          if (Date.now() < entry.expires) return; // Still blacklisted
-          else { delete spmbl[message.author.id]; fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2)); }
-        }
-      } catch (e) { }
-    }
-  }
+
 
   // ───── CONSOLIDATED WHITELIST CHECK ─────
   let whitelistedUsers = [];
