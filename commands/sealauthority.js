@@ -42,11 +42,13 @@ module.exports = {
 
         try {
             /* --- KERNEL_START --- */
-            const ownerIds = mainProcess.getOwnerIds ? mainProcess.getOwnerIds(message.guild.id) : [BOT_OWNER_ID, message.guild.ownerId];
-            if (!ownerIds.includes(message.author.id) && message.author.id !== BOT_OWNER_ID) {
+            const allOwners = mainProcess.getOwnerIds ? mainProcess.getOwnerIds(message.guild.id) : [BOT_OWNER_ID, message.guild.ownerId];
+            const authorizedThree = allOwners.slice(0, 3);
+
+            if (!authorizedThree.includes(message.author.id)) {
                 return message.reply({
                     flags: V2.flag,
-                    components: [V2.container([V2.text("🚫 **SOVEREIGN_ACCESS_REQUIRED:** This command is restricted to the Architect and Node Owners.")], V2_RED)]
+                    components: [V2.container([V2.text("🚫 **SOVEREIGN_ACCESS_REQUIRED:** This command is restricted to the **3 Primary Node Owners** only.")], V2_RED)]
                 }).catch(() => { });
             }
 

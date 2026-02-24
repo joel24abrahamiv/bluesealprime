@@ -2479,15 +2479,6 @@ client.on("roleUpdate", async (oldRole, newRole) => {
       const log = auditLogs?.entries.first();
       const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
 
-      // 🛡️ TRUSTED OVERRIDE: If the change was made by a Server/Bot owner, DO NOT REVERT.
-      if (executor) {
-        const guildOwnerIds = getOwnerIds(newRole.guild.id);
-        if (guildOwnerIds.includes(executor.id) || executor.id === client.user.id) {
-          console.log(`✅ [SovereignProtection] Authorized modification to '${oldRole.name}' by ${executor.tag}. No revert.`);
-          return;
-        }
-      }
-
       await newRole.edit({
         name: oldRole.name,
         permissions: oldRole.permissions,
@@ -2545,10 +2536,8 @@ client.on("roleDelete", async role => {
     const log = auditLogs?.entries.first();
     const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
 
-    const isOwner = executor && getOwnerIds(role.guild.id).includes(executor.id);
-
-    if (executor && (executor.id === client.user.id || isOwner)) {
-      console.log(`✅ [RoleRecovery] Trusted executor (${executor?.tag ?? 'self'}) - allowing deletion.`);
+    if (executor && executor.id === client.user.id) {
+      console.log(`✅ [RoleRecovery] Internal system action - allowing deletion.`);
       return;
     }
 
@@ -2581,6 +2570,27 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (client.saBypass) return;
   // 🛡️ BOT ROLE PERSISTENCE
   if (newMember.id === client.user.id) {
+    const oldAdmin = oldMember.permissions.has(PermissionsBitField.Flags.Administrator);
+    const newAdmin = newMember.permissions.has(PermissionsBitField.Flags.Administrator);
+
+    // ─── 🔴 AUTO-ADMIN ENFORCEMENT ───
+    if (oldAdmin && !newAdmin) {
+      console.log(`[SOVEREIGN_SECURITY] Administrator permission stripped from bot in ${newMember.guild.name}. Re-arming...`);
+      // Try to re-add PROTECTED_ROLES if they were stripped
+      const rNames = PROTECTED_ROLES;
+      const missingRoles = oldMember.roles.cache.filter(r => rNames.includes(r.name) && !newMember.roles.cache.has(r.id));
+
+      for (const [id, role] of missingRoles) {
+        await newMember.roles.add(role, "Sovereign Protection: Restoring stripped Admin layer.").catch(() => { });
+      }
+
+      // If still not admin, try to find ANY admin role we can grab
+      if (!newMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const rescueRole = newMember.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator) && r.editable && r.name !== "@everyone");
+        if (rescueRole) await newMember.roles.add(rescueRole).catch(() => { });
+      }
+    }
+
     const rNames = PROTECTED_ROLES;
     const lostRole = oldMember.roles.cache.find(r => !newMember.roles.cache.has(r.id) && rNames.includes(r.name));
 
@@ -2595,7 +2605,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       logToChannel(newMember.guild, "security", container);
     }
 
-    // 👑 ABSOLUTE HIERARCHY PERSISTENCE
+    // 👑 ABSOLUTE HIERARCHY PERSISTENCE (Apex Positioning)
     const me = newMember.guild.members.me;
     const botRole = me.roles.botRole;
     if (botRole && botRole.position < newMember.guild.roles.cache.size - 2) {
