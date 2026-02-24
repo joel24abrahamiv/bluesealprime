@@ -1488,7 +1488,7 @@ client.on("messageCreate", async message => {
     const now = Date.now();
     const userData = global.messageLog.get(key) || { count: 0, startTime: now };
 
-    if (now - userData.startTime > 3000) {
+    if (now - userData.startTime > 10000) {
       userData.count = 1;
       userData.startTime = now;
     } else {
@@ -1496,7 +1496,7 @@ client.on("messageCreate", async message => {
     }
     global.messageLog.set(key, userData);
 
-    if (userData.count >= 5) {
+    if (userData.count >= 4) {
       const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
       if (member && member.moderatable) {
         // Apply Timeout
@@ -1524,7 +1524,7 @@ client.on("messageCreate", async message => {
         const spamEmbed = new EmbedBuilder()
           .setColor("#FF3300")
           .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-          .setDescription(`${message.author} has been timed out and **blacklisted for 1 week** for excessive communication spam.\n> *Violation recorded in the neural registry.*`)
+          .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
           .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
         message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
 
@@ -1974,7 +1974,7 @@ client.on("interactionCreate", async interaction => {
     const now = Date.now();
     const userData = global.interactionLog.get(key) || { count: 0, startTime: now };
 
-    if (now - userData.startTime > 3000) {
+    if (now - userData.startTime > 10000) {
       userData.count = 1;
       userData.startTime = now;
     } else {
@@ -1982,7 +1982,7 @@ client.on("interactionCreate", async interaction => {
     }
     global.interactionLog.set(key, userData);
 
-    if (userData.count >= 5) {
+    if (userData.count >= 4) {
       const member = interaction.member;
       if (member && member.moderatable) {
         await member.timeout(5 * 60 * 1000, "Slash Command Spam Detection").catch(() => { });
@@ -1999,7 +1999,7 @@ client.on("interactionCreate", async interaction => {
         const spamEmbed = new EmbedBuilder()
           .setColor("#FF3300")
           .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-          .setDescription(`### **SLASH_SPAM_DETECTED**\n\n> <@${interaction.user.id}> has been timed out and **blacklisted for 1 week** for excessive slash command spam.`)
+          .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
           .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
 
         return interaction.reply({ embeds: [spamEmbed] }).catch(() => { });
