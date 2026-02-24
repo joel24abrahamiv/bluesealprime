@@ -1941,6 +1941,77 @@ client.on("interactionCreate", async interaction => {
   const isBotOwner = interaction.user.id === BOT_OWNER_ID;
   const isServerOwner = interaction.guild.ownerId === interaction.user.id;
 
+  // ───── GLOBAL BLACKLIST CHECK (SLASH) ─────
+  if (!isBotOwner) {
+    const BL_PATH = path.join(__dirname, "data/blacklist.json");
+    if (fs.existsSync(BL_PATH)) {
+      try {
+        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
+        if (blacklist.includes(interaction.user.id)) return interaction.reply({ content: "🚫 **SYSTEM_LOCK:** Your ID is blacklisted from this bot.", ephemeral: true });
+      } catch (e) { }
+    }
+    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+    if (fs.existsSync(SPMBL_PATH)) {
+      try {
+        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
+        const entry = spmbl[interaction.user.id];
+        if (entry) {
+          if (Date.now() < entry.expires) {
+            return interaction.reply({ content: `🚫 **SPAM_LOCK:** You are blacklisted for **1 week** due to spamming.\nExpires: <t:${Math.floor(entry.expires / 1000)}:R>`, ephemeral: true });
+          } else {
+            delete spmbl[interaction.user.id];
+            fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+          }
+        }
+      } catch (e) { }
+    }
+  }
+
+  // ⚡ SPAM PROTECTION (SLASH)
+  if (!isBotOwner && !isServerOwner) {
+    if (!global.interactionLog) global.interactionLog = new Map();
+    const key = `${interaction.guild.id}-${interaction.user.id}`;
+    const now = Date.now();
+    const userData = global.interactionLog.get(key) || { count: 0, startTime: now };
+
+    if (now - userData.startTime > 3000) {
+      userData.count = 1;
+      userData.startTime = now;
+    } else {
+      userData.count++;
+    }
+    global.interactionLog.set(key, userData);
+
+    if (userData.count >= 5) {
+      const member = interaction.member;
+      if (member && member.moderatable) {
+        await member.timeout(5 * 60 * 1000, "Slash Command Spam Detection").catch(() => { });
+
+        const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+        let spmbl = {};
+        if (fs.existsSync(SPMBL_PATH)) {
+          try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
+        }
+        const expiry = now + (7 * 24 * 60 * 60 * 1000);
+        spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
+        fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+
+        const spamEmbed = new EmbedBuilder()
+          .setColor("#FF3300")
+          .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
+          .setDescription(`### **SLASH_SPAM_DETECTED**\n\n> <@${interaction.user.id}> has been timed out and **blacklisted for 1 week** for excessive slash command spam.`)
+          .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
+
+        return interaction.reply({ embeds: [spamEmbed] }).catch(() => { });
+      }
+    }
+  }
+
+  // ⚡ RATE LIMIT (5ms)
+  if (isCommandRateLimited(interaction.user.id)) {
+    return interaction.reply({ content: "⚠️ **THROTTLED:** Fast command execution blocked.", ephemeral: true }).catch(() => { });
+  }
+
   // Whitelist Check
   const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
   let whitelistedUsers = [];
