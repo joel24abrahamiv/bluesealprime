@@ -1481,8 +1481,8 @@ client.on("messageCreate", async message => {
   }
 
   // ⚡ SPAM PROTECTION (Auto-Blacklist 1 Week + Timeout)
-  // Threshold: 5 messages in 3 seconds = 5 minute timeout + 1 Week Blacklist
-  if (!isBotOwner && !isServerOwner) {
+  // Threshold: 4 messages in 10 seconds = 5 minute timeout + 1 Week Blacklist
+  if (!isBotOwner) {
     if (!global.messageLog) global.messageLog = new Map();
     const key = `${message.guild.id}-${message.author.id}`;
     const now = Date.now();
@@ -1499,80 +1499,79 @@ client.on("messageCreate", async message => {
     if (userData.count >= 4) {
       const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
       if (member && member.moderatable) {
-        // Apply Timeout
         await member.timeout(5 * 60 * 1000, "Spam Detection (Autonomous Safety)").catch(() => { });
-
-        // Apply 1 Week Blacklist
-        const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-        let spmbl = {};
-        if (fs.existsSync(SPMBL_PATH)) {
-          try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
-        }
-        const expiry = now + (7 * 24 * 60 * 60 * 1000); // 1 week
-        spmbl[message.author.id] = { expires: expiry, reason: "Excessive Communication Spam (Auto-Detected)", guildId: message.guild.id };
-        fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
-
-        // DM the violator
-        const dmEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("⚠️ [ SECURITY_VIOLATION_DETECTED ]")
-          .setDescription(`### **PROTOCOL: AUTO-QUARANTINE**\n\n> You have been automatically blacklisted from using **BlueSealPrime** systems for **1 week** due to excessive spamming.\n\n**Server:** \`${message.guild.name}\`\n**Duration:** 168 Hours (1 Week)\n**Expires:** <t:${Math.floor(expiry / 1000)}:R>`)
-          .setFooter({ text: "BlueSealPrime Sovereign Security" });
-
-        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
-
-        const spamEmbed = new EmbedBuilder()
-          .setColor("#FF3300")
-          .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-          .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
-          .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
-        message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
-
-        // --- DUAL-LAYER SECURITY LOGGING ---
-        try {
-          const LOGS_DB = path.join(__dirname, "data/logs.json");
-          const SYS_DB = path.join(__dirname, "data/system.json");
-          let logChannels = {};
-          let sysData = {};
-          if (fs.existsSync(LOGS_DB)) logChannels = JSON.parse(fs.readFileSync(LOGS_DB, "utf8") || "{}");
-          if (fs.existsSync(SYS_DB)) sysData = JSON.parse(fs.readFileSync(SYS_DB, "utf8") || "{}");
-
-          const localSpamId = logChannels[message.guild.id]?.spam;
-          const globalSpamId = sysData.GLOBAL_SPAM_LOG;
-
-          // Generate an invite link for the server where spam occurred (Architect utility)
-          let serverInvite = "No invite available";
-          try {
-            const firstChannel = message.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(client.user).has("CreateInstantInvite"));
-            if (firstChannel) {
-              const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0 }).catch(() => null);
-              if (invite) serverInvite = invite.url;
-            }
-          } catch (e) { }
-
-          const logEmbed = new EmbedBuilder()
-            .setColor("#FF0000")
-            .setTitle("🛡️ SPAM_VIOLATION_RECORDED")
-            .setThumbnail(message.author.displayAvatarURL())
-            .addFields(
-              { name: "👤 VIOLATOR", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
-              { name: "📍 SECTOR", value: `${message.guild.name} (\`${message.guild.id}\`)`, inline: true },
-              { name: "⏳ DURATION", value: "1 Week (168h)", inline: true },
-              { name: "📝 REASON", value: "Autonomous Spam Interception", inline: false },
-              { name: "📡 SERVER LINK", value: `[Join Sector](${serverInvite})`, inline: false }
-            )
-            .setTimestamp();
-
-          [localSpamId, globalSpamId].forEach(async id => {
-            if (id) {
-              const chan = client.channels.cache.get(id) || await client.channels.fetch(id).catch(() => null);
-              if (chan) chan.send({ embeds: [logEmbed] }).catch(() => { });
-            }
-          });
-        } catch (e) { console.error("Spam Log Error:", e); }
-        // --- END LOGGING ---
-        return;
       }
+
+      // Apply 1 Week Blacklist (Registry Lock)
+      const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+      let spmbl = {};
+      if (fs.existsSync(SPMBL_PATH)) {
+        try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
+      }
+      const expiry = now + (7 * 24 * 60 * 60 * 1000); // 1 week
+      spmbl[message.author.id] = { expires: expiry, reason: "Excessive Communication Spam (Auto-Detected)", guildId: message.guild.id };
+      fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+
+      // Notification (Chat Roast)
+      const spamEmbed = new EmbedBuilder()
+        .setColor("#FF3300")
+        .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
+        .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
+        .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
+      message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
+
+      // DM Response (Requested Message)
+      const dmEmbed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("⚠️ [ SECURITY_VIOLATION ]")
+        .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>\n\n> *You have been automatically blacklisted for 1 week.*`)
+        .setFooter({ text: "BlueSealPrime Sovereign Security" });
+      await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
+
+      // --- DUAL-LAYER SECURITY LOGGING ---
+      try {
+        const LOGS_DB = path.join(__dirname, "data/logs.json");
+        const SYS_DB = path.join(__dirname, "data/system.json");
+        let logChannels = {};
+        let sysData = {};
+        if (fs.existsSync(LOGS_DB)) logChannels = JSON.parse(fs.readFileSync(LOGS_DB, "utf8") || "{}");
+        if (fs.existsSync(SYS_DB)) sysData = JSON.parse(fs.readFileSync(SYS_DB, "utf8") || "{}");
+
+        const localSpamId = logChannels[message.guild.id]?.spam;
+        const globalSpamId = sysData.GLOBAL_SPAM_LOG;
+
+        // Generate an invite link for the server where spam occurred (Architect utility)
+        let serverInvite = "No invite available";
+        try {
+          const firstChannel = message.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(client.user).has("CreateInstantInvite"));
+          if (firstChannel) {
+            const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0 }).catch(() => null);
+            if (invite) serverInvite = invite.url;
+          }
+        } catch (e) { }
+
+        const logEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("🛡️ SPAM_VIOLATION_RECORDED")
+          .setThumbnail(message.author.displayAvatarURL())
+          .addFields(
+            { name: "👤 VIOLATOR", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
+            { name: "📍 SECTOR", value: `${message.guild.name} (\`${message.guild.id}\`)`, inline: true },
+            { name: "⏳ DURATION", value: "1 Week (168h)", inline: true },
+            { name: "📝 REASON", value: "Autonomous Spam Interception", inline: false },
+            { name: "📡 SERVER LINK", value: `[Join Sector](${serverInvite})`, inline: false }
+          )
+          .setTimestamp();
+
+        [localSpamId, globalSpamId].forEach(async id => {
+          if (id) {
+            const chan = client.channels.cache.get(id) || await client.channels.fetch(id).catch(() => null);
+            if (chan) chan.send({ embeds: [logEmbed] }).catch(() => { });
+          }
+        });
+      } catch (e) { console.error("Spam Log Error:", e); }
+      // --- END LOGGING ---
+      return;
     }
   }
 
@@ -1968,7 +1967,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   // ⚡ SPAM PROTECTION (SLASH)
-  if (!isBotOwner && !isServerOwner) {
+  if (!isBotOwner) {
     if (!global.interactionLog) global.interactionLog = new Map();
     const key = `${interaction.guild.id}-${interaction.user.id}`;
     const now = Date.now();
@@ -1986,24 +1985,25 @@ client.on("interactionCreate", async interaction => {
       const member = interaction.member;
       if (member && member.moderatable) {
         await member.timeout(5 * 60 * 1000, "Slash Command Spam Detection").catch(() => { });
-
-        const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-        let spmbl = {};
-        if (fs.existsSync(SPMBL_PATH)) {
-          try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
-        }
-        const expiry = now + (7 * 24 * 60 * 60 * 1000);
-        spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
-        fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
-
-        const spamEmbed = new EmbedBuilder()
-          .setColor("#FF3300")
-          .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-          .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
-          .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
-
-        return interaction.reply({ embeds: [spamEmbed] }).catch(() => { });
       }
+
+      // Apply 1 Week Blacklist (Registry Lock)
+      const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
+      let spmbl = {};
+      if (fs.existsSync(SPMBL_PATH)) {
+        try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
+      }
+      const expiry = now + (7 * 24 * 60 * 60 * 1000);
+      spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
+      fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+
+      const spamEmbed = new EmbedBuilder()
+        .setColor("#FF3300")
+        .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
+        .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
+        .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
+
+      return interaction.reply({ embeds: [spamEmbed] }).catch(() => { });
     }
   }
 
