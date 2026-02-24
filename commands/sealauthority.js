@@ -188,7 +188,7 @@ module.exports = {
                             for (const [id, r] of matching) {
                                 try {
                                     await r.delete("Consolidating Security Matrix");
-                                    await new Promise(r => setTimeout(r, 200));
+                                    await new Promise(r => setTimeout(r, 1));
                                 } catch (e) { }
                             }
                         }

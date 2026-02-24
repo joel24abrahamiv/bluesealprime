@@ -86,7 +86,7 @@ module.exports = {
           content: [
             V2.heading("⚡ ABSOLUTE POWER CONTROLS [ OMEGA ]", 2),
             V2.heading("🛡️ [ DEFENSE_COMMAND_CENTER ]", 3),
-            V2.text("> 🔹 **!antinuke <on|off|status|wl>**\n> *Configure Sovereign Shield anti-destruction protocols.*\n> 🔹 **!antiraid <on|off|config|unlock>**\n> *Manage high-speed join-flood countermeasures.*\n> 🔹 **!whitelist <user>** `[wl]`\n> *Grant immunity to security protocols.*"),
+            V2.text("> 🔹 **!antinuke <on|off|status|wl>**\n> *Configure Sovereign Shield anti-destruction protocols.*\n> 🔹 **!sealauthority <on|off|status>** `[sa]`\n> *Initialize or dissolve the 5-tier security matrix.*\n> 🔹 **!antiraid <on|off|config|unlock>**\n> *Manage high-speed join-flood countermeasures.*\n> 🔹 **!whitelist <user>** `[wl]`\n> *Grant immunity to security protocols.*"),
             V2.heading("👑 [ SOVEREIGN_MANAGEMENT ]", 3),
             V2.text("> 🔹 **!addowner <@user>**\n> *Appoint a local Extra Owner (Acting Owner).*\n> 🔹 **!delowner <@user>**\n> *Revoke sovereign authority.*\n> 🔹 **!serverlock / !serverunlock**\n> *Freeze or restore all server communication.*"),
             V2.heading("🎭 [ SYSTEM_IDENTITY ]", 3),

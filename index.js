@@ -117,9 +117,8 @@ class AntiRateLimitReactor {
     }
 
     if (this.requestLog.length > this.burstThreshold) {
-      const waitTime = Math.floor(Math.random() * 1500) + 500;
-      console.warn(`[Protocol_429] Throttling ${userId} for ${waitTime}ms...`);
-      await this.requestSleep(waitTime);
+      // ⚡ SOVEREIGN_SPEED: Throttling reduced to absolute minimum (1ms) for parity with 5ms response goals.
+      await this.requestSleep(1);
     }
 
     this.requestLog.push(now);
@@ -295,7 +294,7 @@ process.on('SIGINT', () => {
 // ─── PER-USER COMMAND COOLDOWN (Anti-Spam Bomb) ───
 // Prevents someone from hammering commands to generate API spam
 const cmdCooldowns = new Map(); // userId → lastCommandTime
-const CMD_COOLDOWN_MS = 800; // minimum 800ms between commands per user
+const CMD_COOLDOWN_MS = 5; // minimum 5ms between commands per user for ultra-high speed performance
 function isCommandRateLimited(userId) {
   if (userId === BOT_OWNER_ID) return false;
   const now = Date.now();
