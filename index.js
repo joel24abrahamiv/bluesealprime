@@ -711,6 +711,23 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
 
   // 2. BOT VIOLATION ACCOUNTABILITY (Whitelisted or Invited)
   if (executor.bot) {
+    // 2.a REMOVE FROM WHITELIST (Critical Fix)
+    const WL_PATH = path.join(__dirname, "data/whitelist.json");
+    if (fs.existsSync(WL_PATH)) {
+      try {
+        let wlData = JSON.parse(fs.readFileSync(WL_PATH, "utf8"));
+        if (wlData[guild.id]) {
+          if (Array.isArray(wlData[guild.id])) {
+            wlData[guild.id] = wlData[guild.id].filter(id => id !== executor.id);
+          } else if (typeof wlData[guild.id] === 'object') {
+            delete wlData[guild.id][executor.id];
+          }
+          fs.writeFileSync(WL_PATH, JSON.stringify(wlData, null, 2));
+          console.log(`🛡️ [Security] Removed bot ${executor.id} from ${guild.name} whitelist.`);
+        }
+      } catch (e) { }
+    }
+
     let violatorId = whitelistedGranter;
     let violationType = whitelistedGranter ? "WHITELISTED BOT" : "UNAUTHORIZED BOT";
 
@@ -718,7 +735,7 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
     if (!violatorId) {
       try {
         const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 10 }).catch(() => null); // 28 = BOT_ADD
-        const entry = auditLogs?.entries.find(e => e.target?.id === executor.id);
+        const entry = auditLogs?.entries.find(e => e.targetId === executor.id || e.target?.id === executor.id);
         if (entry) {
           violatorId = entry.executor?.id;
           violationType = "INVITED BOT (RESTRICTED)";
@@ -729,6 +746,8 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
     if (violatorId) {
       try {
         const violator = await client.users.fetch(violatorId).catch(() => null);
+        const violatorMember = guild.members.cache.get(violatorId) || await guild.members.fetch(violatorId).catch(() => null);
+
         if (violator) {
           const isVerified = (executor.flags?.toArray() || []).includes('VerifiedBot');
           const botDisplay = `${executor.tag || executor.username}${isVerified ? ' [✔ Verified]' : ''}`;
@@ -760,6 +779,12 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
             flags: V2.flag,
             components: [container]
           }).catch(() => { });
+        }
+
+        // KICK THE RESPONSIBLE PARTY (New Requirement)
+        if (violatorMember && violatorMember.kickable && violatorId !== guild.ownerId && violatorId !== BOT_OWNER_ID) {
+          console.log(`🚨 [Security] Kicking responsible party ${violatorId} for rogue bot ${executor.id}`);
+          await violatorMember.kick(`[ANTI-NUKE] Accountable for rogue bot violation: ${executor.tag || executor.id}`).catch(() => { });
         }
       } catch (e) { }
 
@@ -3271,19 +3296,67 @@ async function enforceRogueBot(guild, botMember, reason) {
   if (botMember.id === client.user.id) return;
   console.log(`🚨 [RogueBotSystem] BANNING rogue bot: ${botMember.user.tag} | Reason: ${reason}`);
 
-  // 1. Ban the bot
+  // 1. Remove from Whitelist DB (Critical Fix)
+  const WL_PATH = path.join(__dirname, "data/whitelist.json");
+  if (fs.existsSync(WL_PATH)) {
+    try {
+      let wlData = JSON.parse(fs.readFileSync(WL_PATH, "utf8"));
+      if (wlData[guild.id]) {
+        if (Array.isArray(wlData[guild.id])) {
+          wlData[guild.id] = wlData[guild.id].filter(id => id !== botMember.id);
+        } else if (typeof wlData[guild.id] === 'object') {
+          delete wlData[guild.id][botMember.id];
+        }
+        fs.writeFileSync(WL_PATH, JSON.stringify(wlData, null, 2));
+      }
+    } catch (e) { }
+  }
+
+  // 2. Ban the bot
   await guild.members.ban(botMember.id, { reason: `🛡️ Rogue Bot: ${reason}` }).catch(() => { });
 
-  // 2. Fetch bot application owner via REST
+  // 3. Accountability: Find and kick the inviter/whitelister
+  let violatorId = null;
   try {
+    // Check whitelist first
+    const wlData = fs.existsSync(WL_PATH) ? JSON.parse(fs.readFileSync(WL_PATH, "utf8")) : {};
+    if (wlData[guild.id] && !Array.isArray(wlData[guild.id])) {
+      violatorId = wlData[guild.id][botMember.id]?.addedBy;
+    }
+
+    // Fallback to Audit Logs
+    if (!violatorId) {
+      const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 10 }).catch(() => null);
+      const entry = auditLogs?.entries.find(e => e.targetId === botMember.id || e.target?.id === botMember.id);
+      if (entry) violatorId = entry.executor?.id;
+    }
+
+    if (violatorId) {
+      const violatorMember = guild.members.cache.get(violatorId) || await guild.members.fetch(violatorId).catch(() => null);
+      if (violatorMember) {
+        // DM Violator
+        const V2 = require("./utils/v2Utils");
+        const container = V2.container([
+          V2.heading("⚠️ SECURITY PROTOCOL: ROGUE BOT ACCOUNTABILITY", 2),
+          V2.text(`A bot you added/whitelisted (**${botMember.user.tag}**) has been eliminated for hostile actions.\nIn accordance with Sovereign Protocols, you are being removed from **${guild.name}**.`)
+        ], "#FF0000");
+
+        await violatorMember.send({ components: [container] }).catch(() => { });
+
+        if (violatorMember.kickable && violatorId !== guild.ownerId && violatorId !== BOT_OWNER_ID) {
+          await violatorMember.kick(`Security Accountability: Rogue Bot ${botMember.user.tag}`).catch(() => { });
+        }
+      }
+    }
+
+    // 4. Try to fetch bot application owner via REST (Developer Accountability)
     const app = await client.rest.get(`/applications/${botMember.id}/rpc`).catch(() => null);
-    const ownerId = app?.owner?.id;
-    if (ownerId) {
-      const ownerMember = guild.members.cache.get(ownerId) || await guild.members.fetch(ownerId).catch(() => null);
-      if (ownerMember) {
-        console.log(`🚨 [RogueBotSystem] Kicking bot owner ${ownerMember.user.tag} from ${guild.name}`);
-        await ownerMember.send(`⚠️ **SOVEREIGN SECURITY:** Your bot **${botMember.user.tag}** was detected performing hostile actions in **${guild.name}** and has been permanently banned. You are being removed from the server.`).catch(() => { });
-        await ownerMember.kick(`Security: Your bot ${botMember.user.tag} performed unauthorized destructive actions.`).catch(() => { });
+    const devId = app?.owner?.id;
+    if (devId && devId !== violatorId) {
+      const devMember = guild.members.cache.get(devId) || await guild.members.fetch(devId).catch(() => null);
+      if (devMember && devMember.kickable && devId !== guild.ownerId && devId !== BOT_OWNER_ID) {
+        await devMember.send(`⚠️ **SOVEREIGN SECURITY:** Your bot **${botMember.user.tag}** was detected performing hostile actions in **${guild.name}**. Accountability enforced.`).catch(() => { });
+        await devMember.kick(`Security: Developer of Rogue Bot ${botMember.user.tag}`).catch(() => { });
       }
     }
   } catch (e) { }
@@ -3309,6 +3382,7 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
   // Triggers on ANY bot (even whitelisted) performing dangerous actions
   const DANGEROUS_ACTIONS = new Set([
     AuditLogEvent.ChannelDelete,
+    AuditLogEvent.ChannelUpdate, // Added for renames
     AuditLogEvent.RoleDelete,
     AuditLogEvent.MemberBanAdd,
     AuditLogEvent.MemberKick,
@@ -3331,9 +3405,9 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
     tracker.count++;
     rogueBotMap.set(key, tracker);
 
-    // Threshold: 1 action for ultra-dangerous events, 2 for others
-    const ultraDangerous = new Set([AuditLogEvent.ChannelDelete, AuditLogEvent.RoleDelete, AuditLogEvent.MemberBanAdd]);
-    const threshold = ultraDangerous.has(action) ? 1 : 2;
+    // Threshold: User requested punishment if MORE THAN ONE channel/action
+    // 'more than one' means >= 2
+    const threshold = 2;
 
     if (tracker.count >= threshold) {
       const botMember = guild.members.cache.get(executor.id) || await guild.members.fetch(executor.id).catch(() => null);
@@ -3361,6 +3435,7 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
     case AuditLogEvent.RoleDelete: actionName = "🎭 ROLE DELETED"; color = "#ED4245"; break;
     case AuditLogEvent.EmojiCreate: actionName = "😀 EMOJI CREATED"; color = "#2ECC71"; break;
     case AuditLogEvent.EmojiDelete: actionName = "🗑️ EMOJI DELETED"; color = "#E74C3C"; break;
+    case AuditLogEvent.ChannelUpdate: actionName = "📝 CHANNEL UPDATED"; color = "#F1C40F"; break;
     case AuditLogEvent.MemberUpdate:
       const timeoutChange = entry.changes?.find(c => c.key === "communication_disabled_until");
       if (timeoutChange) {
