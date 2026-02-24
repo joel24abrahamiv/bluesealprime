@@ -77,7 +77,7 @@ class V2Helper {
      */
     static currentBotAvatar = null;
 
-    static section(components = [], accessory = undefined) {
+    static section(components = [], accessory = undefined, message = null) {
         const section = new SectionBuilder();
 
         const textComponents = Array.isArray(components) ? components.map(c => {
@@ -92,8 +92,9 @@ class V2Helper {
         }
 
         // Strictly enforce an accessory for Discord Components V2 validation
-        if (!accessory && this.currentBotAvatar) {
-            accessory = this.currentBotAvatar;
+        if (!accessory) {
+            if (message) accessory = this.botAvatar(message);
+            else if (this.currentBotAvatar) accessory = this.currentBotAvatar;
         }
 
         // If STILL no accessory, Discord will crash. We inject an invisible 1x1 image.

@@ -969,6 +969,7 @@ client.once("ready", async () => {
   console.log(`📊 [System] Synchronized with ${client.guilds.cache.size} nodes.`);
 
   client.nukingGuilds = new Set();
+  V2.currentBotAvatar = client.user.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 });
   client.commands.forEach(cmd => { if (typeof cmd.init === "function") cmd.init(client); });
 
   setTimeout(async () => {
@@ -1507,11 +1508,12 @@ client.on("messageCreate", async message => {
     console.error("AutoMod Error:", e);
   }
 
-  // 1. OWNER TAG RESPONSE (Universal)
+  // 1. MASTER TAG RESPONSE (Lead Architect or Global Tags)
   if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone || message.mentions.here) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
     if (!normalizedContent.startsWith(PREFIX)) {
       const V2 = require("./utils/v2Utils");
       const { V2_BLUE } = require("./config");
+      const botAvatar = V2.botAvatar(message);
 
       const tagContainer = V2.container([
         V2.section(
@@ -1519,7 +1521,7 @@ client.on("messageCreate", async message => {
             V2.heading("🛡️ SECURITY ALERT: MASTER DETECTED", 2),
             V2.text(`### **[ PROTECTION_PROTOCOL ]**\n> ⚠️ **Alert:** You tagged my Master.\n> 👑 **Subject:** <@${BOT_OWNER_ID}>\n> 🛡️ **Status:** Sovereign Protection ACTIVE`)
           ],
-          client.user.displayAvatarURL()
+          botAvatar
         ),
         V2.separator(),
         V2.field("📂 INTERROGATION_LOG", `> **Tagged by:** ${message.author}\n> **Identifier:** \`${message.author.id}\`\n> **Channel:** ${message.channel}`),
@@ -1529,7 +1531,7 @@ client.on("messageCreate", async message => {
         V2.text("*BlueSealPrime Sovereign Shield • Master Defense Matrix*")
       ], V2_BLUE);
 
-      await message.reply({ content: null, flags: V2.flag, components: [tagContainer] });
+      await message.reply({ content: null, flags: V2.flag, components: [tagContainer] }).catch(() => { });
       return;
     }
   }
