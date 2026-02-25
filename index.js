@@ -1647,7 +1647,11 @@ client.on("messageCreate", async message => {
   if (fs.existsSync(ANTINUKE_DB)) {
     try {
       const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
-      if (db[message.guild.id]?.whitelisted) whitelistedUsers.push(...db[message.guild.id].whitelisted);
+      const guildCfg = db[message.guild.id];
+      if (guildCfg && guildCfg.whitelisted) {
+        if (Array.isArray(guildCfg.whitelisted)) whitelistedUsers.push(...guildCfg.whitelisted);
+        else whitelistedUsers.push(...Object.keys(guildCfg.whitelisted));
+      }
     } catch (e) { }
   }
 
@@ -1655,7 +1659,11 @@ client.on("messageCreate", async message => {
   if (fs.existsSync(WHITELIST_DB)) {
     try {
       const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-      if (wl[message.guild.id]) whitelistedUsers.push(...wl[message.guild.id]);
+      const guildWL = wl[message.guild.id];
+      if (guildWL) {
+        if (Array.isArray(guildWL)) whitelistedUsers.push(...guildWL);
+        else whitelistedUsers.push(...Object.keys(guildWL));
+      }
     } catch (e) { }
   }
 

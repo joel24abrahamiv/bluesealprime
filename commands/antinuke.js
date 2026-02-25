@@ -250,19 +250,22 @@ module.exports = {
                         const user = await resolveWLTarget(args[2]);
                         if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl add @bot` or `!antinuke wl add <botID>`")], V2_RED)] });
 
-                        const isBot = user.bot;
+                        // Ensure they are in the local config
                         if (!config.whitelisted.includes(user.id)) {
                             config.whitelisted.push(user.id);
                             saveDB(db);
-                            addToGlobalWL(message.guild.id, user.id, message.author.id);
                         }
+
+                        // ALWAYS ensure they are in the global registry with correct structure
+                        addToGlobalWL(message.guild.id, user.id, message.author.id);
 
                         // ── GRANULAR PERMISSIONS UI (BUTTONS) ──
                         const V2 = require("../utils/v2Utils");
                         const { ActionRowBuilder, ButtonStyle, ComponentType } = require("discord.js");
 
                         const globalWL = loadGlobalWhitelist();
-                        const entry = globalWL[message.guild.id][user.id];
+                        const guildWL = globalWL[message.guild.id] || {};
+                        const entry = guildWL[user.id] || { permissions: {} };
                         const perms = entry.permissions || {};
 
                         const createButton = (id, label, enabled) => {

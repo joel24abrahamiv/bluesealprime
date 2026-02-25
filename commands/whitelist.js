@@ -185,7 +185,7 @@ module.exports = {
         addEntry(whitelist, guildId, target.id, message.author.id);
         saveWhitelist(whitelist);
 
-        const currentEntry = whitelist[guildId][target.id];
+        const currentEntry = (whitelist[guildId] && whitelist[guildId][target.id]) || { permissions: {} };
         const perms = currentEntry.permissions || {};
 
         const createButton = (id, label, enabled) => {
