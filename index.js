@@ -427,7 +427,7 @@ async function migrateJSONToSQL() {
           `INSERT INTO guild_config (guild_id, antinuke_enabled, autorestore_enabled, antinuke_limits) 
            VALUES ($1, $2, $3, $4) 
            ON CONFLICT (guild_id) DO NOTHING`,
-          [guildId, cfg.enabled || false, cfg.autorestore !== false, JSON.stringify(cfg.limits || { channelDelete: 2, roleDelete: 2, ban: 3, kick: 3, interval: 10000 })]
+          [guildId, cfg.enabled || false, cfg.autorestore !== false, JSON.stringify(cfg.limits || { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, interval: 10000 })]
         ).catch(() => { });
 
         if (cfg.whitelisted && Array.isArray(cfg.whitelisted)) {
@@ -604,7 +604,7 @@ function checkNuke(guild, executor, action) {
     whitelistedGranter = entry.addedBy || null;
   }
 
-  // CONFIG & LIMITS (applies to everyone — humans, extra owners, server owners, whitelisted bots)
+  // CONFIG & LIMITS (applies to everyone — humans, extra owners, whitelisted bots)
   if (Date.now() - antinukeCacheTime > 5000) {
     if (fs.existsSync(ANTINUKE_DB)) {
       try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
@@ -613,9 +613,10 @@ function checkNuke(guild, executor, action) {
   }
 
   const config = antinukeCache[guild.id];
+  // Even if disabled, we return triggered: false, but we still track counts
   if (config && config.enabled === false) return { triggered: false };
 
-  const defaultLimits = { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, interval: 10 };
+  const defaultLimits = { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
   const limits = config?.limits || defaultLimits;
   const limit = limits[action] || 3;
   const interval = limits.interval || 10;
@@ -631,7 +632,13 @@ function checkNuke(guild, executor, action) {
   }
   nukeMap.set(key, data);
 
-  return { triggered: data.count > limit, whitelistedGranter };
+  // CRITICAL: Lock down server IMMEDIATELY if we hit the limit, before returning
+  const isTriggered = data.count > limit;
+  if (isTriggered && action !== 'guildUpdate') {
+    emergencyLockdown(guild, `Nuke Limit Hit: ${action} (${data.count}/${limit})`);
+  }
+
+  return { triggered: isTriggered, whitelistedGranter };
 }
 
 // ─── ⚡ EMERGENCY SERVER LOCKDOWN ───
@@ -2517,172 +2524,10 @@ client.on("guildMemberRemove", async member => {
   }
 });
 
-// 3. ROLE LOGS
-client.on("roleCreate", async role => {
-  const embed = new EmbedBuilder()
-
-    .setColor("#5865F2")
-    .setTitle("🎭 ROLE CREATED")
-    .addFields(
-      { name: "📛 Role Name", value: `${role.name}`, inline: true },
-      { name: "🆔 Role ID", value: `\`${role.id}\``, inline: true },
-      { name: "🎨 Color", value: `\`${role.hexColor}\``, inline: true }
-    )
-    .setTimestamp()
-    .setFooter({ text: "BlueSealPrime • Role Log" });
-  logToChannel(role.guild, "role", embed);
-});
+// Consolidated Role/Member Update/Delete listeners are now further down in the file (Section 3-5).
 
 
-client.on("roleUpdate", async (oldRole, newRole) => {
-  if (client.saBypass) return;
-  // 🛡️ SOVEREIGN ROLE PROTECTION
-  if (PROTECTED_ROLES.includes(oldRole.name)) {
-    const hasAdmin = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
-    const hasNameMatch = newRole.name === oldRole.name;
-
-    if (!hasAdmin || !hasNameMatch) {
-      // Fetch Audit log to notify
-      const auditLogs = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null); // ROLE_UPDATE
-      const log = auditLogs?.entries.first();
-      const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
-
-      await newRole.edit({
-        name: oldRole.name,
-        permissions: oldRole.permissions,
-        reason: "Sovereign Protection: Reverting unauthorized modification to security layer."
-      }).catch(() => { });
-
-      if (executor && executor.id !== client.user.id) {
-        // 🚨 OVERRIDE: Revert even if Server Owner
-        const { V2_RED } = require("./config");
-        const container = V2.container([
-          V2.heading("🛡️ SOVEREIGN OVERRIDE ACTIVE", 2),
-          V2.text(`**Critical Alert:** An entity attempted to destabilize security layer \`${oldRole.name}\`.\n\n**STATUS:** Even higher-level node owners are restricted from de-authorizing the Architect's Core.\n**RESPONSE:** Modifications reverted. System integrity locked.`)
-        ], V2_RED);
-        logToChannel(newRole.guild, "security", container);
-      }
-    }
-  }
-  const embed = new EmbedBuilder()
-
-    .setColor("#5865F2")
-    .setTitle("🎭 ROLE UPDATED")
-    .addFields(
-      { name: "📛 Role", value: `${newRole} (\`${newRole.id}\`)`, inline: false }
-    )
-    .setTimestamp()
-    .setFooter({ text: "BlueSealPrime • Role Log" });
-
-  if (oldRole.name !== newRole.name) embed.addFields({ name: "📝 Name Changed", value: `\`${oldRole.name}\` ➡️ \`${newRole.name}\`` });
-  if (oldRole.hexColor !== newRole.hexColor) embed.addFields({ name: "🎨 Color Changed", value: `\`${oldRole.hexColor}\` ➡️ \`${newRole.hexColor}\`` });
-  if (!oldRole.permissions.equals(newRole.permissions)) embed.addFields({ name: "⚖️ Permissions Updated", value: "Role permissions were modified." });
-
-  if (embed.data.fields.length > 1) { // Only send if something actually changed
-    logToChannel(newRole.guild, "role", embed);
-  }
-});
-
-client.on("roleDelete", async role => {
-  if (client.saBypass) return;
-  const embed = new EmbedBuilder()
-
-    .setColor("#ED4245")
-    .setTitle("🎭 ROLE DELETED")
-    .addFields(
-      { name: "📛 Role Name", value: `${role.name}`, inline: true },
-      { name: "🆔 Role ID", value: `\`${role.id}\``, inline: true }
-    )
-    .setTimestamp()
-    .setFooter({ text: "BlueSealPrime • Role Log" });
-  logToChannel(role.guild, "role", embed);
-
-  // 🛡️ SOVEREIGN ROLE PROTECTION: AUTO-RECOVERY
-  if (PROTECTED_ROLES.includes(role.name)) {
-    // 🔍 CHECK EXECUTOR: Skip if the bot itself deleted the role (Intentional Wipe/Sync)
-    const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null); // ROLE_DELETE
-    const log = auditLogs?.entries.first();
-    const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
-
-    if (executor && executor.id === client.user.id) {
-      console.log(`✅ [RoleRecovery] Internal system action - allowing deletion.`);
-      return;
-    }
-
-    try {
-      const newRole = await role.guild.roles.create({
-        name: role.name,
-        permissions: [PermissionsBitField.Flags.Administrator],
-        reason: "Sovereign Protection: Recreating Deleted Security Role"
-      });
-
-      // Add to bot FIRST (Role is at bottom, always reachable)
-      await role.guild.members.me.roles.add(newRole).catch(() => { });
-
-      // 🚀 AGGRESSIVE HIERARCHY JUMP: Move 10 positions higher than previous
-      const targetPos = Math.min(role.position + 10, role.guild.members.me.roles.highest.position - 1);
-      if (targetPos > 0) await newRole.setPosition(targetPos).catch(() => { });
-
-      const { V2_BLUE } = require("./config");
-      const container = V2.container([
-        V2.heading("🛡️ SOVEREIGN RECOVERY INITIALIZED", 2),
-        V2.text(`**Alert:** Security layer \`${role.name}\` was deleted by **${executor?.tag || "Unknown Entity"}**.\n\n**RESPONSE:** New security node deployed at **Aggressive Elevation** [Position ${targetPos}, +10 Levels]. High-clearance permissions restored.`)
-      ], V2_BLUE);
-      logToChannel(role.guild, "security", container);
-    } catch (e) { }
-  }
-});
-
-
-client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  if (client.saBypass) return;
-  // 🛡️ BOT ROLE PERSISTENCE
-  if (newMember.id === client.user.id) {
-    const oldAdmin = oldMember.permissions.has(PermissionsBitField.Flags.Administrator);
-    const newAdmin = newMember.permissions.has(PermissionsBitField.Flags.Administrator);
-
-    // ─── 🔴 AUTO-ADMIN ENFORCEMENT ───
-    if (oldAdmin && !newAdmin) {
-      console.log(`[SOVEREIGN_SECURITY] Administrator permission stripped from bot in ${newMember.guild.name}. Re-arming...`);
-      // Try to re-add PROTECTED_ROLES if they were stripped
-      const rNames = PROTECTED_ROLES;
-      const missingRoles = oldMember.roles.cache.filter(r => rNames.includes(r.name) && !newMember.roles.cache.has(r.id));
-
-      for (const [id, role] of missingRoles) {
-        await newMember.roles.add(role, "Sovereign Protection: Restoring stripped Admin layer.").catch(() => { });
-      }
-
-      // If still not admin, try to find ANY admin role we can grab
-      if (!newMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        const rescueRole = newMember.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator) && r.editable && r.name !== "@everyone");
-        if (rescueRole) await newMember.roles.add(rescueRole).catch(() => { });
-      }
-    }
-
-    const rNames = PROTECTED_ROLES;
-    const lostRole = oldMember.roles.cache.find(r => !newMember.roles.cache.has(r.id) && rNames.includes(r.name));
-
-    if (lostRole) {
-      await newMember.roles.add(lostRole, "Sovereign Protection: Self-Restoring Security Role").catch(() => { });
-
-      const { V2_BLUE } = require("./config");
-      const container = V2.container([
-        V2.heading("🛡️ SOVEREIGN SELF-REPAIR", 2),
-        V2.text(`**Alert:** System role \`${lostRole.name}\` was stripped from the bot.\n\n**RESPONSE:** Sovereign authority restored. Integrity verified.`)
-      ], V2_BLUE);
-      logToChannel(newMember.guild, "security", container);
-    }
-
-    // 👑 ABSOLUTE HIERARCHY PERSISTENCE (Apex Positioning)
-    const me = newMember.guild.members.me;
-    const botRole = me.roles.botRole;
-    if (botRole && botRole.position < newMember.guild.roles.cache.size - 2) {
-      try {
-        await botRole.setPosition(newMember.guild.roles.cache.size - 2, { reason: "Sovereign Dominance: Enforcing Absolute hierarchy." }).catch(() => { });
-      } catch (e) { }
-    }
-  }
-});
+// Bot role persistence logic is handled in Section 3 logic further down.
 
 // 👑 HIERARCHY WATCHDOG (Continuous Apex Positioning)
 client.on("roleUpdate", async (oldRole, newRole) => {
@@ -2700,11 +2545,32 @@ client.on("roleUpdate", async (oldRole, newRole) => {
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (client.saBypass) return;
+
+  // 1. BOT PERSISTENCE (Roles & Admin)
+  if (newMember.id === client.user.id) {
+    const oldAdmin = oldMember.permissions.has(PermissionsBitField.Flags.Administrator);
+    const newAdmin = newMember.permissions.has(PermissionsBitField.Flags.Administrator);
+
+    if (oldAdmin && !newAdmin) {
+      console.log(`[SOVEREIGN_SECURITY] Re-arming bot permissions in ${newMember.guild.name}...`);
+      const rescueRole = newMember.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator) && r.editable);
+      if (rescueRole) await newMember.roles.add(rescueRole).catch(() => { });
+    }
+
+    // Apex Position Check
+    const botRole = newMember.guild.members.me.roles.botRole;
+    if (botRole && botRole.position < newMember.guild.roles.cache.size - 2) {
+      await botRole.setPosition(newMember.guild.roles.cache.size - 2).catch(() => { });
+    }
+    return;
+  }
+
+  // 2. LOGGING & DANGEROUS ROLE DETECTION
   const oldRoles = oldMember.roles.cache;
   const newRoles = newMember.roles.cache;
-
-  // Roles Added
   const added = newRoles.filter(r => !oldRoles.has(r.id));
+  const removed = oldRoles.filter(r => !newRoles.has(r.id));
+
   if (added.size > 0) {
     const embed = new EmbedBuilder()
       .setColor("#2ECC71")
@@ -2719,87 +2585,34 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     logToChannel(newMember.guild, "role", embed);
 
     // 🛡️ ANTI-DANGEROUS ROLE (ANTI-ADMIN)
-    const dangerousParams = [PermissionsBitField.Flags.Administrator, PermissionsBitField.Flags.ManageGuild, PermissionsBitField.Flags.ManageRoles, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.BanMembers, PermissionsBitField.Flags.KickMembers];
+    const dangerousParams = [PermissionsBitField.Flags.Administrator, PermissionsBitField.Flags.ManageGuild, PermissionsBitField.Flags.ManageRoles];
     const isDangerous = added.some(r => dangerousParams.some(p => r.permissions.has(p)));
 
     if (isDangerous) {
-      // Fetch Audit Logs to find Executor
-      const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null); // MEMBER_ROLE_UPDATE
+      const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null);
       const log = auditLogs?.entries.first();
-
       if (log && log.target.id === newMember.id && Date.now() - log.createdTimestamp < 5000) {
         const executor = log.executor;
         const { BOT_OWNER_ID } = require("./config");
-
-        // CONSOLIDATED WHITELIST CHECK
         let authorizedIds = [BOT_OWNER_ID, newMember.guild.ownerId, client.user.id];
-
-        if (fs.existsSync(ANTINUKE_DB)) {
-          try { const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); authorizedIds.push(...(db[newMember.guild.id]?.whitelisted || [])); } catch (e) { }
-        }
-        if (fs.existsSync(WHITELIST_DB)) {
-          try { const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8")); authorizedIds.push(...(wl[newMember.guild.id] || [])); } catch (e) { }
-        }
-
-        // Logic:
-        // 1. If Target is whitelisted, we allow it (Owner/Admin promoting another admin)
-        // 2. If Target is NOT whitelisted, we check Executor.
-        // 3. If Executor is NOT whitelisted, PUNISH BOTH.
 
         const targetWhitelisted = authorizedIds.includes(newMember.id);
         const executorWhitelisted = authorizedIds.includes(executor.id);
 
         if (!targetWhitelisted && !executorWhitelisted) {
-          // 🚨 PUNISHMENT PROTOCOL
-          console.log(`[SECURITY] 🚨 UNAUTHORIZED ROLE GRANT DETECTED`);
-
-          // 1. STRIP EXECUTOR & REMOVE FROM WHITELIST
-          const executorMember = newMember.guild.members.cache.get(executor.id) || await newMember.guild.members.fetch(executor.id).catch(() => null);
+          console.log(`[SECURITY] 🚨 UNAUTHORIZED ROLE GRANT BY ${executor.tag}`);
+          const executorMember = await newMember.guild.members.fetch(executor.id).catch(() => null);
           if (executorMember && executorMember.id !== newMember.guild.ownerId) {
-            // Remove from Whitelist DB
-            const WL_PATH = path.join(__dirname, "data/whitelist.json");
-            if (fs.existsSync(WL_PATH)) {
-              try {
-                let wlData = JSON.parse(fs.readFileSync(WL_PATH, "utf8"));
-                if (wlData[newMember.guild.id]) {
-                  wlData[newMember.guild.id] = wlData[newMember.guild.id].filter(id => id !== executor.id);
-                  fs.writeFileSync(WL_PATH, JSON.stringify(wlData, null, 2));
-                }
-              } catch (e) { }
-            }
-
-            const punishEmbed = new EmbedBuilder()
-              .setColor("#FF0000")
-              .setTitle("⛔ SECURITY ACTION TAKEN")
-              .setDescription(`**You have been stripped of all roles and removed from the Whitelist.**\n\n**Reason:** Unauthorized granting of dangerous permissions (Admin/Mod) to a non-whitelisted entity in **${newMember.guild.name}**.\n\n> *Your actions have been logged.*`)
-              .setFooter({ text: "BlueSealPrime Security" })
-              .setTimestamp();
-
-            await executorMember.send({ embeds: [punishEmbed] }).catch(() => { });
             await executorMember.roles.set([]).catch(() => { });
           }
-
-          // 2. BAN TARGET
           if (newMember.bannable) {
-            await newMember.send(`⚠️ **Security Enforcement:** You have been banned from **${newMember.guild.name}** for receiving unauthorized dangerous permissions.`).catch(() => { });
-            await newMember.ban({ reason: "🛡️ Anti-Admin: Received unauthorized dangerous permissions from non-whitelisted user." }).catch(() => { });
+            await newMember.ban({ reason: "🛡️ Anti-Admin: Received unauthorized dangerous permissions." }).catch(() => { });
           }
-
-          // 3. LOG
-          const alertEmbed = new EmbedBuilder()
-            .setColor("#FF0000")
-            .setTitle("🚨 SOVEREIGN ENFORCEMENT")
-            .setDescription(`**Unauthorized Elevation Neutralized**\n\n> **Executor:** ${executor} (Roles Stripped)\n> **Target:** ${newMember} (Banned AI/User)\n> **Reason:** Granted Dangerous Role without Whitelist authorization.`)
-            .setTimestamp();
-          logToChannel(newMember.guild, "mod", alertEmbed);
         }
       }
     }
   }
 
-
-  // Roles Removed
-  const removed = oldRoles.filter(r => !newRoles.has(r.id));
   if (removed.size > 0) {
     const embed = new EmbedBuilder()
       .setColor("#ED4245")
@@ -2856,7 +2669,7 @@ client.on("channelDelete", async channel => {
     } catch (e) { }
   }
 
-  // ─── SNAPSHOT CACHE IMMEDIATELY (While data is fresh in memory) ───
+  // ─── SNAPSHOT CACHE IMMEDIATELY ───
   const snap = {
     name: channel.name,
     type: channel.type,
@@ -2874,82 +2687,67 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  // ─── AUDIT FIRST (Prevent recreation if deleted by owner) ───
-  setTimeout(async () => {
-    // Fetch multiple logs to handle race conditions during mass deletions
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 15 }).catch(() => null);
+  // ─── INSTANT RESPONSE PROTOCOL (0ms Delay) ───
+  // We handle the audit log fetch inside a retry loop for maximum speed
+  const processDeletion = async (attempt = 1) => {
+    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null);
     const log = auditLogs?.entries.find(e =>
       (e.targetId === channel.id || e.target?.id === channel.id) &&
       Math.abs(Date.now() - e.createdTimestamp) < 10000
     );
     const executor = log ? log.executor : null;
 
-    const guildOwnerIds = getOwnerIds(channel.guild.id);
-    const isSovereign = executor && guildOwnerIds.includes(executor.id);
-    const isSelf = executor?.id === client.user.id;
+    // If no executor found yet, retry once at 600ms, but CONTINUE with restoration anyway
+    if (!executor && attempt === 1) {
+      setTimeout(() => processDeletion(2), 600);
+      // Don't return, we'll continue with restoration below if it's unauthorized
+    }
 
-    if (executor) console.log(`🔍 [AutoRestore] Audit log found. Executor: ${executor.tag} (${executor.id}). Sovereign: ${isSovereign}`);
+    const { BOT_OWNER_ID } = require("./config");
+    const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
 
-    // IF DELETED BY OWNER OR SELF -> DO NOT RECREATE
-    if (isSovereign || isSelf) {
-      console.log(`🛡️ [AutoRestore] Deletion of '${channel.name}' by trusted entity (${executor?.tag || 'Self'}). Bypassing restoration.`);
-
-      const embed = new EmbedBuilder()
-        .setColor("#E74C3C")
-        .setTitle("📺 CHANNEL DELETED")
-        .addFields(
-          { name: "📛 Name", value: `${channel.name}`, inline: true },
-          { name: "👤 Executor", value: `${executor?.tag || "Architect"}`, inline: true },
-          { name: "🛡️ Status", value: "Trusted Action - No Restore", inline: true }
-        )
-        .setTimestamp();
-      logToChannel(channel.guild, "channel", embed);
+    if (isImmune) {
+      console.log(`🛡️ [AutoRestore] Authorized deletion by ${executor?.tag}. No restore.`);
       return;
     }
 
-    // IF NOT ENABLED -> LOG AND EXIT
-    if (!autorestoreEnabled) {
-      const embed = new EmbedBuilder()
-        .setColor("#34495E")
-        .setTitle("📺 CHANNEL DELETED")
-        .addFields(
-          { name: "📛 Name", value: `${channel.name}`, inline: true },
-          { name: "🆔 ID", value: `\`${channel.id}\``, inline: true },
-          { name: "🛡️ Status", value: "AutoRestore Disabled", inline: true }
-        )
-        .setTimestamp();
-      logToChannel(channel.guild, "channel", embed);
-      return;
+    // IF NOT IMMUNE -> RESTORE & PUNISH
+    if (autorestoreEnabled) {
+      console.log(`⚡ [AutoRestore] Restoring channel '${channel.name}'...`);
+      try {
+        const restored = await channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign AutoRestore: Unauthorized deletion counter-measure." });
+        await restored.setPosition(snap.position).catch(() => { });
+
+        const embed = new EmbedBuilder()
+          .setColor("#2ECC71")
+          .setTitle("♻️ CHANNEL AUTORESTORED")
+          .addFields(
+            { name: "📛 Name", value: `${channel.name}`, inline: true },
+            { name: "👤 Executor", value: `${executor?.tag || "Unknown (Tracing...)"}`, inline: true },
+            { name: "🛡️ Status", value: "Immediate Regeneration", inline: true }
+          )
+          .setTimestamp();
+        logToChannel(channel.guild, "channel", embed);
+      } catch (err) { }
     }
 
-    // ⚡ RESTORE EXECUTION (Unauthorized or Unknown)
-    console.log(`⚡ [AutoRestore] Unauthorized deletion of '${channel.name}'. Reclaiming...`);
-    try {
-      const restored = await channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign AutoRestore: Unauthorized deletion counter-measure." });
-      await restored.setPosition(snap.position).catch(() => { });
-
-      const embed = new EmbedBuilder()
-        .setColor("#2ECC71")
-        .setTitle("♻️ CHANNEL AUTORESTORED")
-        .addFields(
-          { name: "📛 Name", value: `${channel.name}`, inline: true },
-          { name: "👤 Executor", value: `${executor?.tag || "Unknown Entity"}`, inline: true },
-          { name: "🛡️ Response", value: "Immediate Regeneration", inline: true }
-        )
-        .setTimestamp();
-      logToChannel(channel.guild, "channel", embed);
-
-      // PUNISH if it was an unauthorized nuke attempt
-      if (executor) {
-        const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
-        if (nukeCheck && nukeCheck.triggered) {
-          punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
-        }
+    if (executor) {
+      const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
+      if (nukeCheck && nukeCheck.triggered) {
+        punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
       }
-    } catch (err) {
-      console.error(`❌ [AutoRestore] Restoration failed:`, err.message);
+    } else if (attempt === 2) {
+      // If still no executor after retry, log as suspicious unknown
+      const suspiciousEmbed = new EmbedBuilder()
+        .setColor("#FFA500")
+        .setTitle("⚠️ SUSPICIOUS CHANNEL DELETION")
+        .setDescription(`Channel \`${channel.name}\` was deleted but no audit log entry was found. Restoration completed.`)
+        .setTimestamp();
+      logToChannel(channel.guild, "security", suspiciousEmbed);
     }
-  }, 1500); // Increased to 1500ms to ensure audit logs are populated
+  };
+
+  processDeletion();
 });
 
 
@@ -2988,8 +2786,9 @@ client.on("guildUpdate", async (oldGuild, newGuild) => {
 
     // We treat Server Updating as highly critical. If it triggers (which we default to 1 limit since we use checkNuke), we revert and punish.
     // Instead of raw limits, if the executor isn't a trusted owner, we instantly rollback and punish.
-    const guildOwnerIds = getOwnerIds(newGuild.id);
-    if (!guildOwnerIds.includes(executor.id)) {
+    const { BOT_OWNER_ID } = require("./config");
+    const isImmune = executor.id === BOT_OWNER_ID || executor.id === newGuild.ownerId;
+    if (!isImmune) {
       console.log(`⚡ [Security] Unauthorized server update by ${executor.tag}. Reverting & punishing...`);
 
       // 1. REVERT CHANGES INSTANTLY
@@ -3214,61 +3013,56 @@ async function handleSAViolation(guild, executor, reason) {
 client.on("roleDelete", async role => {
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
-  const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null); // 32 = ROLE_DELETE
-  const log = auditLogs?.entries.first();
+  // 1. Audit Log Check (Unified & Fast)
+  const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 5 }).catch(() => null); // 32 = ROLE_DELETE
+  const log = auditLogs?.entries.find(e => e.targetId === role.id && Date.now() - e.createdTimestamp < 10000);
   const executor = log ? log.executor : null;
 
-  // 🛡️ [SA PROTECTION]: Auto-restore Sovereign Roles (Ultra-Fast Counter-Protocol)
-  const isSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime");
+  const { BOT_OWNER_ID } = require("./config");
+  const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === role.guild.ownerId || executor.id === client.user.id);
 
-  if (isSovereign && !client.saBypass) {
-    console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' purged. Initiating emergency restoration...`);
-    try {
-      const me = role.guild.members.me;
-      const hasAdmin = me.permissions.has(PermissionsBitField.Flags.Administrator);
+  // 🛡️ [SA PROTECTION]: Auto-restore Sovereign Roles
+  const isSovereignRole = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || PROTECTED_ROLES.includes(role.name);
 
-      // 🚀 RESTORE PHASE 1: Immediate Creation
-      const newRole = await role.guild.roles.create({
-        name: role.name,
-        color: "#5DADE2",
-        permissions: hasAdmin ? [PermissionsBitField.Flags.Administrator] : [],
-        reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
-      });
+  if (isSovereignRole && !client.saBypass) {
+    if (!isImmune) {
+      console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' purged. Initiating emergency restoration...`);
+      try {
+        const me = role.guild.members.me;
+        const newRole = await role.guild.roles.create({
+          name: role.name,
+          color: role.color || "#5DADE2",
+          permissions: role.permissions.bitfield > 0n ? role.permissions : [PermissionsBitField.Flags.Administrator],
+          reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
+        });
 
-      // ⚡ RESTORE PHASE 2: Sequential Authority Enforce
-      // 1. Snatch Role (While at bottom)
-      await me.roles.add(newRole).catch(() => { });
+        await me.roles.add(newRole).catch(() => { });
+        const botRole = me.roles.botRole;
+        if (botRole && botRole.position > 1) {
+          await newRole.setPosition(botRole.position - 1).catch(() => { });
+        }
 
-      // 2. Elevate (To highest possible position)
-      const botRole = me.roles.botRole;
-      if (botRole && botRole.position > 1) {
-        await newRole.setPosition(botRole.position - 1).catch(() => { });
-      }
-
-      console.log(`✅ [SA Protection] '${role.name}' restored and elevated.`);
-
-      // Punish Executor (Silent & Fast)
-      if (executor && executor.id !== client.user.id) {
-        handleSAViolation(role.guild, executor, `Purged Sovereign Role: ${role.name}`);
-      }
-    } catch (e) {
-      console.error(`❌ [SA Protection] Emergency Restore Failed:`, e.message);
+        if (executor) handleSAViolation(role.guild, executor, `Purged Sovereign Role: ${role.name}`);
+      } catch (e) { }
     }
   }
 
-  if (log && Date.now() - log.createdTimestamp < 5000) {
-    const nukeCheck = checkNuke(role.guild, log.executor, "roleDelete");
+  // 2. Anti-Nuke Threshold Check
+  if (executor && !isImmune) {
+    const nukeCheck = checkNuke(role.guild, executor, "roleDelete");
     if (nukeCheck && nukeCheck.triggered) {
-      punishNuker(role.guild, log.executor, "Mass Role Deletion", 'ban', nukeCheck.whitelistedGranter);
+      punishNuker(role.guild, executor, "Mass Role Deletion", 'ban', nukeCheck.whitelistedGranter);
     }
   }
 
+  // 3. Log
   const embed = new EmbedBuilder()
     .setColor("#ED4245")
     .setTitle("🎭 ROLE DELETED")
     .addFields(
       { name: "📛 Name", value: `${role.name}`, inline: true },
-      { name: "🆔 ID", value: `\`${role.id}\``, inline: true }
+      { name: "🆔 ID", value: `\`${role.id}\``, inline: true },
+      { name: "👤 Executor", value: `${executor?.tag || "Unknown"}`, inline: true }
     )
     .setTimestamp()
     .setFooter({ text: "BlueSealPrime • Role Log" });
@@ -3997,8 +3791,11 @@ client.on("guildBanRemove", async (ban) => {
   }
 });
 
-// ───── GHOST PROTOCOL: WEBHOOK SHIELD ─────
+// ───── SOVEREIGN WEBHOOK SHIELD (ANTI-WEBHOOK) ─────
 client.on("webhooksUpdate", async (channel) => {
+  if (!channel.guild) return;
+
+  // 1. Audit Interrogation
   const logs = await channel.guild.fetchAuditLogs({ type: 76, limit: 1 }).catch(() => null); // 76 = WEBHOOK_CREATE
   const entry = logs?.entries.first();
   if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
@@ -4006,43 +3803,46 @@ client.on("webhooksUpdate", async (channel) => {
   const executor = entry.executor;
   if (!executor || executor.id === client.user.id) return;
 
-  // Anti-Nuke Bypass Check
-  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-  let db = {};
-  if (fs.existsSync(ANTINUKE_DB)) {
-    try { db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
-  }
-  const config = db[channel.guild.id] || {};
-  const isWhitelisted = (config.whitelisted || []).includes(executor.id) || executor.id === require("./config").BOT_OWNER_ID || channel.guild.ownerId === executor.id;
+  // Immunity Check: Bot Owner, Server Owner, & Extra Owners
+  const { BOT_OWNER_ID } = require("./config");
+  const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
+  if (isImmune) return;
 
-  if (!isWhitelisted) {
-    try {
-      // 1. Terminate all unauthorized webhooks in this channel
-      const webhooks = await channel.fetchWebhooks();
-      const targets = webhooks.filter(wh => wh.owner.id === executor.id);
+  console.log(`🛡️ [WebhookShield] Unauthorized webhook detected by ${executor.tag} in ${channel.name}. Dissolving...`);
+
+  try {
+    // 2. DISMANTLE ROGUE ENDPOINTS (Guild-Wide for this user)
+    // Nukers often spam webhooks in multiple channels. We kill them all.
+    const allWebhooks = await channel.guild.fetchWebhooks().catch(() => null);
+    if (allWebhooks) {
+      const targets = allWebhooks.filter(wh => wh.owner?.id === executor.id);
       for (const [id, wh] of targets) {
-        await wh.delete("🛡️ Ghost Protocol: Unauthorized Webhook Terminated").catch(() => { });
+        await wh.delete("🛡️ Sovereign Security: Unauthorized Webhook dissolved.").catch(() => { });
       }
+    }
 
-      // 2. Punish Intruder
-      punishNuker(channel.guild, executor, "Unauthorized Webhook Creation");
+    // 3. PUNISHMENT PROTOCOL
+    const nukeCheck = checkNuke(channel.guild, executor, "webhookCreate");
+    if (nukeCheck && nukeCheck.triggered) {
+      punishNuker(channel.guild, executor, "Mass Webhook Creation", 'ban', nukeCheck.whitelistedGranter);
+    }
 
-      // 3. V2 Notification
-      const V2 = require("./utils/v2Utils");
-      const { V2_RED } = require("./config");
-      const interceptContainer = V2.container([
-        V2.section([
-          V2.heading("👻 GHOST PROTOCOL ACTIVATED", 2),
-          V2.text(`**Intrusion Detected:** Unauthorized Webhook Linkage.\n\n**STATUS:** System intercepted and dissolved the rogue endpoint.\n**RESPONSE:** Intruder ejected. Accountability enforced.`)
-        ], "https://cdn-icons-png.flaticon.com/512/9167/9167385.png"),
-        V2.separator(),
-        V2.text(`**Target:** @${executor.username} • **Sector:** ${channel.name}`),
-        V2.text(`*Protocol: ZERO_TRUST_WEBHOOK*`)
-      ], V2_RED);
+    // 4. SECURITY LOGGING (V2)
+    const V2 = require("./utils/v2Utils");
+    const { V2_RED } = require("./config");
+    const shieldContainer = V2.container([
+      V2.section([
+        V2.heading("📵 WEBHOOK_SHIELD: BREACH_INTERCEPTED", 2),
+        V2.text(`**Unauthorized Webhook Linkage.** System protocol dissolved rogue endpoint(s) in sector **${channel.name}**.\n\n**Executor:** @${executor.username} (\`${executor.id}\`)\n**Status:** Intercepted & Flagged.`)
+      ], "https://cdn-icons-png.flaticon.com/512/9167/9167385.png"),
+      V2.separator(),
+      V2.text(`*Protocol: GHOST_SHIELD_V4 • Zero Tolerance Webhook Policy*`)
+    ], V2_RED);
 
-      logToChannel(channel.guild, "security", interceptContainer);
+    logToChannel(channel.guild, "security", shieldContainer);
 
-    } catch (e) { console.error("Ghost Protocol Error:", e); }
+  } catch (e) {
+    console.error("Webhook Shield Error:", e);
   }
 });
 
