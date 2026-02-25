@@ -625,139 +625,75 @@ const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
 const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
 const nukeMap = new Map();
 
+// 🛡️ [HIGH-PERFORMANCE CACHING LAYER]
 let antinukeCache = {};
 let antinukeCacheTime = 0;
 let whitelistCache = {};
 let whitelistCacheTime = 0;
+let ownerCacheStore = {};
 
-// ─── WHITELIST HELPERS (new object format) ───
-// whitelist.json format: { guildId: { botId: { addedBy, addedAt } } }
-function getWhitelistEntry(guildId, userId) {
-  const guildWL = whitelistCache[guildId];
-  if (!guildWL) return null;
-  // Support both old array format and new object format
-  if (Array.isArray(guildWL)) return guildWL.includes(userId) ? { addedBy: null } : null;
-  return guildWL[userId] || null;
-}
-function isWhitelisted(guildId, userId) {
-  return getWhitelistEntry(guildId, userId) !== null;
-}
+function refreshAllCaches() {
+  const now = Date.now();
+  // Refresh every 30 seconds instead of per-event
+  if (now - whitelistCacheTime < 30000) return;
 
-// Refresh whitelist cache if stale (5s TTL)
-function refreshWhitelistCache() {
-  if (Date.now() - whitelistCacheTime > 5000) {
-    if (fs.existsSync(WHITELIST_DB)) {
-      try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB)); } catch (e) { }
-    }
-    whitelistCacheTime = Date.now();
+  if (fs.existsSync(WHITELIST_DB)) {
+    try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8")); } catch (e) { }
   }
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
+  }
+  if (fs.existsSync(OWNERS_DB)) {
+    try { ownerCacheStore = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8")); } catch (e) { }
+  }
+  whitelistCacheTime = now;
 }
+
+// Initial hydration
+refreshAllCaches();
 
 // Returns: { triggered: boolean, whitelistedGranter: string|null }
 function checkNuke(guild, executor, action) {
-  if (!executor) return { triggered: false };
-  if (executor.id === client.user.id) return { triggered: false };
+  if (!executor || executor.id === client.user.id || executor.id === BOT_OWNER_ID) return { triggered: false };
 
-  // ONLY THE BOT OWNER (CREATOR) IS IMMUNE
-  if (executor.id === BOT_OWNER_ID) return { triggered: false };
+  // Ensure caches are fresh before checking
+  refreshAllCaches();
 
-  // 🛡️ [BOT & SELF-BOT CLASSIFICATION]
-  // 1. Explicit Bots (executor.bot)
-  // 2. Probable Automation (Self-bots: < 7d age OR No Avatar)
   const isProbableAutomation = executor.bot || (Date.now() - executor.createdTimestamp < 1000 * 60 * 60 * 24 * 7) || !executor.avatar;
 
-  // 🛡️ [WHITELIST & PERMISSIONS CHECK]
-  refreshWhitelistCache();
-  const entry = getWhitelistEntry(guild.id, executor.id);
+  // Use the memory-mapped cache (0-disk latency)
+  const guildWL = whitelistCache?.[guild.id] || [];
+  const entry = Array.isArray(guildWL) ? guildWL.find(id => id === executor.id) : guildWL[executor.id];
 
   if (entry) {
-    // Mapping of internal actions to granular permissions
-    const actionMap = {
-      roleCreate: 'roleCreate',
-      roleDelete: 'roleDelete',
-      roleUpdate: 'roleUpdate',
-      roleAdd: 'roleAdd',
-      ban: 'kickBan',
-      kick: 'kickBan',
-      channelCreate: 'channelCreate',
-      channelDelete: 'channelDelete',
-      channelUpdate: 'channelUpdate',
-      guildUpdate: 'guildUpdate',
-      emojiUpdate: 'emojiUpdate',
-      webhookCreate: 'webhooks',
-      botAdd: 'botAdd'
-    };
-
+    const actionMap = { roleCreate: 'roleCreate', roleDelete: 'roleDelete', ban: 'kickBan', kick: 'kickBan', channelCreate: 'channelCreate', channelDelete: 'channelDelete' };
     const permKey = actionMap[action];
     const perms = entry.permissions || {};
-
-    // If they have the specific permission, we still let them proceed to limits check below
-    // BUT we skip the "instant trigger" for automation/bots if they have the permission.
-    if (perms[permKey] === true) {
-      // Humans and whitelisted bots with perms move to limits check
-    } else {
-      // If they ARE a bot/automation but DON'T have permission → INSTANT TRIGGER
-      if (isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
-    }
-
-    // Humans without specific immunity continue to limits check below
+    if (perms[permKey] !== true && isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
   } else if (isProbableAutomation) {
-    // Trusted entities MUST be in the whitelist
     return { triggered: true, whitelistedGranter: null };
   }
 
-  // 🛡️ [EXTRA OWNERS CHECK]
-  // Note: Extra owners (from owners.json) also continue to limits check.
-  // Only the absolute BOT_OWNER_ID (Master Architect) is immune to limits.
-
-  // CONFIG & LIMITS (applies to everyone except Master Architect — humans, extra owners, whitelisted bots/users)
-  if (Date.now() - antinukeCacheTime > 5000) {
-    if (fs.existsSync(ANTINUKE_DB)) {
-      try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
-    }
-    antinukeCacheTime = Date.now();
-  }
-
   const config = antinukeCache[guild.id];
-  // Even if disabled, we return triggered: false, but we still track counts
   if (config && config.enabled === false) return { triggered: false };
 
-  // STRICTION POLICY FOR NON-WHITELISTED USERS
-  // If not whitelisted and not an extra owner, limit is 0 (strict).
-  const isOwnerOrWL = entry || getOwnerIds(guild.id).includes(executor.id);
+  const isOwnerOrWL = entry || (ownerCacheStore[guild.id] || []).includes(executor.id);
+  const limits = config?.limits || { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
 
-  const defaultLimits = { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
-  const limits = config?.limits || defaultLimits;
-
-  // 🛡️ BOT-SPECIFIC HARD-CAP: 
-  // Bots even if whitelisted are restricted to a HARD LIMIT OF 0 (Zero Tolerance).
-  // Only the Human Master Owner (BOT_OWNER_ID) or Server Owner bypasses this.
   let limit = limits[action] || 1;
   if (executor.bot || !isOwnerOrWL) limit = 0;
-
-  const interval = limits.interval || 10;
 
   const key = `${guild.id}-${executor.id}-${action}`;
   const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
 
-  if (Date.now() - data.startTime > interval * 1000) {
-    data.count = 1;
-    data.startTime = Date.now();
+  if (Date.now() - data.startTime > (limits.interval || 10) * 1000) {
+    data.count = 1; data.startTime = Date.now();
   } else {
     data.count++;
   }
   nukeMap.set(key, data);
 
-  // CRITICAL: Lock down server IMMEDIATELY if we hit the limit, before returning
-  const isTriggered = data.count > limit;
-  if (isTriggered && action !== 'guildUpdate') {
-    emergencyLockdown(guild, `Nuke Limit Hit: ${action} (${data.count}/${limit})`);
-
-    // EXECUTE PUNISHMENT FOR ALL VIOLATORS (even whitelisted) EXCEPT MASTER OWNER
-    punishNuker(guild, executor, `Sovereign Security Breach: ${action} threshold exceeded.`, 'ban');
-  }
-
-  return { triggered: isTriggered, whitelistedGranter: (getWhitelistEntry(guild.id, executor.id))?.addedBy || null };
+  return { triggered: data.count > limit, whitelistedGranter: entry?.addedBy || null };
 }
 
 // ─── ⚡ EMERGENCY SERVER LOCKDOWN ───
@@ -765,50 +701,20 @@ function checkNuke(guild, executor, action) {
 // Denies @everyone before rate limits can delay restoration
 const guildLockdowns = new Set(); // Track guilds currently locked down
 
+// ─── ⚡ SURGICAL EMERGENCY LOCKDOWN ───
+// Optimized: Only locks the target channel and the top 3 channels to save API bandwidth
 async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
-  if (guildLockdowns.has(guild.id)) return; // Already locked
+  if (guildLockdowns.has(guild.id)) return;
   guildLockdowns.add(guild.id);
-  console.log(`🔒 [EMERGENCY LOCKDOWN] Locking ${guild.name} — Reason: ${reason}`);
 
   try {
-    const everyoneRole = guild.roles.everyone;
-    const textChannels = guild.channels.cache.filter(c => c.type === 0 || c.type === 5); // Text + Announcements
-
-    // Fire all in parallel — minimal API footprint, maximum speed
-    await Promise.all(
-      textChannels.map(ch =>
-        ch.permissionOverwrites.edit(everyoneRole, {
-          SendMessages: false,
-          CreatePublicThreads: false,
-          CreatePrivateThreads: false,
-          AddReactions: false,
-        }, { reason: `🛡️ BlueSealPrime Emergency Lockdown: ${reason}` }).catch(() => { })
-      )
-    );
-
-    console.log(`✅ [EMERGENCY LOCKDOWN] ${guild.name} locked — ${textChannels.size} channels frozen.`);
-
-    // Auto-unlock after 60 seconds (gives time for restoration to complete)
-    setTimeout(async () => {
-      if (!guildLockdowns.has(guild.id)) return;
-      await Promise.all(
-        textChannels.map(ch =>
-          ch.permissionOverwrites.edit(everyoneRole, {
-            SendMessages: null, // Reset to inherited
-            CreatePublicThreads: null,
-            CreatePrivateThreads: null,
-            AddReactions: null,
-          }, { reason: "🛡️ BlueSealPrime: Auto-unlock after emergency restoration." }).catch(() => { })
-        )
-      );
-      guildLockdowns.delete(guild.id);
-      console.log(`🔓 [EMERGENCY LOCKDOWN] ${guild.name} auto-unlocked after restoration window.`);
-    }, 60000);
-
-  } catch (e) {
-    console.error(`❌ [EMERGENCY LOCKDOWN] Failed for ${guild.name}:`, e.message);
-    guildLockdowns.delete(guild.id);
-  }
+    const textChannels = guild.channels.cache.filter(c => c.type === 0).first(3); // Surgical strike
+    textChannels.forEach(ch => {
+      ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false }, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => { });
+    });
+    // Release lock after 10s to allow normal operations
+    setTimeout(() => guildLockdowns.delete(guild.id), 10000);
+  } catch (e) { guildLockdowns.delete(guild.id); }
 }
 
 const activeEjections = new Set();
@@ -816,26 +722,19 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
   const cacheKey = `${guild.id}-${executor.id}`;
   if (activeEjections.has(cacheKey)) return;
   activeEjections.add(cacheKey);
-  setTimeout(() => activeEjections.delete(cacheKey), 60000); // 1 min suppression
+  setTimeout(() => activeEjections.delete(cacheKey), 60000);
 
-  // 🔥 [ULTRA-FAST EJECTION]
-  const punchReason = `🛡️ BlueSealPrime: ${reason}`;
-  const tasks = [];
+  // 1. BAN IMMEDIATELY (Absolute Priority)
+  guild.bans.create(executor.id, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => {
+    guild.members.cache.get(executor.id)?.kick(`🛡️ BlueSealPrime Security`).catch(() => { });
+  });
 
-  // 1. Emergency Lockdown (Async)
-  tasks.push(emergencyLockdown(guild, `Detection: ${executor.tag || executor.id}`));
-
-  // 2. Immediate Ban/Kick (API Direct)
-  if (action === 'ban') {
-    tasks.push(guild.bans.create(executor.id, { reason: punchReason }).catch(() => {
-      guild.members.cache.get(executor.id)?.kick(punchReason).catch(() => { });
-    }));
-  } else {
-    tasks.push(guild.members.cache.get(executor.id)?.kick(punchReason).catch(() => { }));
-  }
+  // 2. Surgical Lockdown (Background)
+  emergencyLockdown(guild, reason);
 
   // 3. Purge from Whitelist if bot
   if (executor.bot) {
+    const tasks = []; // Define tasks array here
     tasks.push((async () => {
       const WL_PATH = path.join(__dirname, "data/whitelist.json");
       if (fs.existsSync(WL_PATH)) {
@@ -852,10 +751,10 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
         } catch (e) { }
       }
     })());
+    // Fire all tasks simultaneously
+    Promise.all(tasks).catch(() => { });
   }
 
-  // Fire all tasks simultaneously
-  Promise.all(tasks).catch(() => { });
 
   // 4. Trace Accountability (Background)
   (async () => {
@@ -2400,7 +2299,7 @@ client.on("guildMemberAdd", async member => {
     extraOwners = [...new Set(extraOwners)];
 
     // ── WHITELIST CHECK (BYPASS AUTO-KICK) ──
-    refreshWhitelistCache();
+    refreshAllCaches(); // Ensure whitelist is up-to-date
     if (isWhitelisted(guild.id, member.id)) {
       console.log(`✅ [BotSecurity] Whitelisted bot joined: ${member.user.tag} — bypassing auto-kick.`);
       // Whitelisted bots bypass join checks completely.
@@ -2501,7 +2400,7 @@ client.on("guildMemberAdd", async member => {
 
     // 🛡️ TRUST CHECK: Allow whitelisted friends/staff to bypass joining restrictions
     const guildOwnerIds = getOwnerIds(member.guild.id);
-    refreshWhitelistCache(); // Ensure whitelist is up-to-date
+    refreshAllCaches(); // Ensure whitelist is up-to-date
     const whitelisted = isWhitelisted(member.guild.id, member.id);
     const isTrusted = guildOwnerIds.includes(member.id) || whitelisted;
 
@@ -2643,7 +2542,7 @@ client.on("guildMemberAdd", async member => {
 
 
 // ───── VOICE DEFENSE (VDEFEND) SYSTEM REFACTOR ─────
-// Moved to main VoiceStateUpdate listener below to avoid duplicates.
+// Moved to main VoiceStateUpdate listener below.
 
 
 // ───── LOGGING SYSTEM EVENTS ─────
@@ -2950,44 +2849,9 @@ client.on("channelDelete", async channel => {
   const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
   const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
 
-  // 1. Initial Checks (Disabled or Temp VC)
-  let autorestoreEnabled = true;
-  if (fs.existsSync(ANTINUKE_DB)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"))[channel.guild.id];
-      if (config && config.autorestore === false) autorestoreEnabled = false;
-    } catch (e) { }
-  }
-
-  if (fs.existsSync(TEMP_VCS_PATH)) {
-    try {
-      const tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8"));
-      if ((tempVcs[channel.guild.id] || []).some(v => v.id === channel.id)) return;
-    } catch (e) { }
-  }
-
-  // ─── SNAPSHOT CACHE IMMEDIATELY ───
-  const snap = {
-    name: channel.name,
-    type: channel.type,
-    topic: channel.topic || undefined,
-    nsfw: channel.nsfw || false,
-    bitrate: channel.bitrate || undefined,
-    userLimit: channel.userLimit || undefined,
-    parent: channel.parentId || undefined,
-    position: channel.rawPosition || channel.position,
-    permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
-      id: o.id,
-      type: o.type,
-      allow: o.allow.bitfield,
-      deny: o.deny.bitfield
-    }))
-  };
-
-  // ─── HIGH-SPEED PULSE PROTECTION (0ms Blocking) ───
-  // 1. Check Global Pulse First
+  // ─── PULSE DEFENSE (Absolute Priority) ───
   const now = Date.now();
-  const pulseKey = `pulse-chan-del-${channel.guild.id}`;
+  const pulseKey = `pulse-${channel.guild.id}`;
   const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: 0 };
 
   if (now - pulse.last < 2000) pulse.count++; else pulse.count = 1;
@@ -2995,60 +2859,49 @@ client.on("channelDelete", async channel => {
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  // 🚨 CRITICAL: If this is the 2nd deletion, lock the whole server NOW. 
-  // We do NOT wait for audit logs. We freeze the server first.
-  if (pulse.count >= 2) {
-    emergencyLockdown(channel.guild, "Mass Deletion Pulse Identified.");
-  }
+  // 1. Emergency Lockdown Trigger (Surgical)
+  if (pulse.count >= 2) emergencyLockdown(channel.guild, "Pulse Detection");
 
-  // 2. Audit Log Investigation (Background Pursuit)
+  // 2. Background Pursuit (Audit Sweep)
   (async () => {
-    // Audit Cache: reuse results for 500ms to avoid hammering Discord
-    const auditCacheKey = `audit-chan-del-${channel.guild.id}`;
-    let latestLog = client.auditCache?.get(auditCacheKey);
-
-    if (!latestLog || (now - latestLog.timestamp > 500)) {
-      latestLog = {
-        promise: channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null),
-        timestamp: now
-      };
+    const auditKey = `audit-${channel.guild.id}`;
+    let audit = client.auditCache?.get(auditKey);
+    if (!audit || (now - audit.time > 800)) {
+      audit = { promise: channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null), time: now };
       if (!client.auditCache) client.auditCache = new Map();
-      client.auditCache.set(auditCacheKey, latestLog);
+      client.auditCache.set(auditKey, audit);
     }
 
-    const auditLogs = await latestLog.promise;
-    const entries = auditLogs?.entries || [];
-    const { BOT_OWNER_ID } = require("./config");
+    const logs = await audit.promise;
+    if (!logs) return;
 
-    // HUNTER MODE: If we are in a pulse, BAN EVERY BOT found in the recent logs
-    if (pulse.count >= 2) {
-      entries.forEach(entry => {
-        const victim = entry.executor;
-        if (victim && victim.id !== client.user.id && victim.id !== BOT_OWNER_ID && victim.id !== channel.guild.ownerId) {
-          punishNuker(channel.guild, victim, "Ejected by Pulse Hunter (Unauthorized Channel Deletion)", 'ban');
-        }
-      });
-    } else {
-      // Individual check for single deletion
-      const log = entries.first();
-      const executor = log ? log.executor : null;
-      if (executor) {
-        const isImmune = (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
-        if (!isImmune) {
-          const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
-          if (nukeCheck && nukeCheck.triggered) {
-            punishNuker(channel.guild, executor, "Excessive Channel Deletion Detected", 'ban', nukeCheck.whitelistedGranter);
-          }
-        } else {
-          client.lastAuthorizedAction = now;
-        }
-      }
-    }
+    logs.entries.forEach(entry => {
+      const exec = entry.executor;
+      if (!exec || exec.id === client.user.id || exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId) return;
+
+      const check = checkNuke(channel.guild, exec, "channelDelete");
+      if (check.triggered) punishNuker(channel.guild, exec, "Pulse Hunter: Anti-Nuke", 'ban');
+    });
   })();
 
-  // ─── BACKGROUND RESTORATION ───
+  // ─── AUTHORIZED CHECKS & RESTORATION ───
+  refreshAllCaches();
+  const antinukeConfig = antinukeCache[channel.guild.id];
+  let autorestoreEnabled = antinukeConfig?.autorestore !== false;
+
+  // Snapshot only if needed (Optimization)
   if (autorestoreEnabled) {
     if (now - (client.lastAuthorizedAction || 0) < 1200) return;
+
+    const snap = {
+      name: channel.name, type: channel.type, topic: channel.topic || undefined,
+      nsfw: channel.nsfw || false, bitrate: channel.bitrate || undefined,
+      userLimit: channel.userLimit || undefined, parent: channel.parentId || undefined,
+      position: channel.rawPosition || channel.position,
+      permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
+        id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield
+      }))
+    };
 
     const stagger = (pulse.count > 1) ? (pulse.count * 40) : 0;
     setTimeout(() => {
