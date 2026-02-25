@@ -2969,56 +2969,51 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  // ─── ULTRA-FAST INSTANT REGEN PROTOCOL (0ms Delay) ───
-  // 1. EXECUTE RESTORATION BEFORE AUDIT CHECK (Maximum Speed)
-  if (autorestoreEnabled) {
-    console.log(`⚡ [AutoRestore] ULTRA-FAST: Immediate regen started for '${channel.name}'...`);
-    channel.guild.channels.create({
-      ...snap,
-      reason: `🛡️ Sovereign Anti-Nuke: Pre-emptive restoration.`
-    }).then(async (restored) => {
-      // 2. NOW CHECK AUDIT LOGS IN PARALLEL
-      const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 3 }).catch(() => null);
-      const log = auditLogs?.entries.find(e =>
-        (e.targetId === channel.id || e.target?.id === channel.id) &&
-        Math.abs(Date.now() - e.createdTimestamp) < 3000
-      );
-      const executor = log ? log.executor : null;
-      const { BOT_OWNER_ID } = require("./config");
+  // ─── HIGH-SPEED SECURITY RESPONSE ───
+  // 1. ANALYZE AUDIT LOGS FIRST (Parallel with Restoration)
+  (async () => {
+    // 🛡️ [BREACH MODE] If we see rapid deletions, skip wait and hit the emergency ban button
+    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+    const log = auditLogs?.entries.first();
+    const executor = log ? log.executor : null;
+    const { BOT_OWNER_ID } = require("./config");
 
-      const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
+    if (executor) {
+      const isImmune = (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
 
-      if (isImmune) {
-        console.log(`🛡️ [AutoRestore] Verified authorized deletion by ${executor?.tag}. Reversing pre-emptive regen.`);
-        await restored.delete("Authorized deletion verified.").catch(() => { });
-        return;
-      }
-
-      // Finalize the restore
-      await restored.setPosition(snap.position).catch(() => { });
-
-      // 3. PUNISH VIOLATOR IF NOT IMMUNE
-      if (executor) {
+      if (!isImmune) {
+        // 🚨 PULSE DETECTION: If this is the 2nd channel deleted by this executor in <2s, trigger INSTANT BAN
         const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
         if (nukeCheck && nukeCheck.triggered) {
-          punishNuker(channel.guild, executor, "Mass Channel Deletion Violation", 'ban', nukeCheck.whitelistedGranter);
+          punishNuker(channel.guild, executor, "Critical Nuke Pulse Detected", 'ban', nukeCheck.whitelistedGranter);
         }
-
-        const embed = new EmbedBuilder()
-          .setColor("#2ECC71")
-          .setTitle("♻️ CHANNEL AUTORESTORED")
-          .setThumbnail(executor.displayAvatarURL())
-          .addFields(
-            { name: "📛 Name", value: `${channel.name}`, inline: true },
-            { name: "👤 Executor", value: `${executor.tag}`, inline: true },
-            { name: "🛡️ Power", value: "Instant Zero-Delay Restoration", inline: true }
-          )
-          .setTimestamp();
-        logToChannel(channel.guild, "channel", embed);
+      } else {
+        // If it was an owner, skip restoration (or queue deletion of the pre-emptive one)
+        client.lastAuthorizedAction = Date.now();
       }
-    }).catch(err => {
-      console.error("❌ [AutoRestore] Instant regen failed:", err.message);
-    });
+    }
+  })();
+
+  // ─── ULTRA-FAST INSTANT REGEN (Parallel Background) ───
+  if (autorestoreEnabled) {
+    if (Date.now() - (client.lastAuthorizedAction || 0) < 2000) {
+      console.log(`🛡️ [AutoRestore] Authorized window active. Skipping regen for '${channel.name}'.`);
+    } else {
+      console.log(`⚡ [AutoRestore] FIRE: Restoring channel '${channel.name}'...`);
+      channel.guild.channels.create({
+        ...snap,
+        reason: `🛡️ Sovereign Anti-Nuke: Rapid Regeneration Protocol.`
+      }).then(async (restored) => {
+        await restored.setPosition(snap.position).catch(() => { });
+
+        // Final sanity check: if we just created this but it WAS an authorized user, delete it.
+        const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+        const l = logs?.entries.first();
+        if (l && (l.executor.id === channel.guild.ownerId || l.executor.id === BOT_OWNER_ID)) {
+          await restored.delete("Reversing pre-emptive regen: Authorized action found.").catch(() => { });
+        }
+      }).catch(() => { });
+    }
   }
 });
 
