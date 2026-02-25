@@ -2877,7 +2877,16 @@ client.on("channelDelete", async channel => {
 
     logs.entries.forEach(entry => {
       const exec = entry.executor;
-      if (!exec || exec.id === client.user.id || exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId) return;
+      if (!exec || exec.id === client.user.id) return;
+
+      // Detect Owners (Bot Owner, Server Owner, or Extra Owners from memory cache)
+      const extraOwners = ownerCacheStore[channel.guild.id] || [];
+      const isOwner = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
+
+      if (isOwner) {
+        client.lastAuthorizedAction = now; // Suppress restoration for this window
+        return;
+      }
 
       const check = checkNuke(channel.guild, exec, "channelDelete");
       if (check.triggered) punishNuker(channel.guild, exec, "Pulse Hunter: Anti-Nuke", 'ban');
@@ -2891,24 +2900,31 @@ client.on("channelDelete", async channel => {
 
   // Snapshot only if needed (Optimization)
   if (autorestoreEnabled) {
-    if (now - (client.lastAuthorizedAction || 0) < 1200) return;
-
-    const snap = {
-      name: channel.name, type: channel.type, topic: channel.topic || undefined,
-      nsfw: channel.nsfw || false, bitrate: channel.bitrate || undefined,
-      userLimit: channel.userLimit || undefined, parent: channel.parentId || undefined,
-      position: channel.rawPosition || channel.position,
-      permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
-        id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield
-      }))
-    };
-
-    const stagger = (pulse.count > 1) ? (pulse.count * 40) : 0;
+    // Check again after a tiny delay to allow the background audit loop to set lastAuthorizedAction
     setTimeout(() => {
-      channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
-        await restored.setPosition(snap.position).catch(() => { });
-      }).catch(() => { });
-    }, stagger);
+      const authWindow = Date.now() - (client.lastAuthorizedAction || 0);
+      if (authWindow < 1500) {
+        console.log(`🛡️ [AutoRestore] Authorized deletion detected for '${channel.name}'. Skipping regen.`);
+        return;
+      }
+
+      const snap = {
+        name: channel.name, type: channel.type, topic: channel.topic || undefined,
+        nsfw: channel.nsfw || false, bitrate: channel.bitrate || undefined,
+        userLimit: channel.userLimit || undefined, parent: channel.parentId || undefined,
+        position: channel.rawPosition || channel.position,
+        permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
+          id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield
+        }))
+      };
+
+      const stagger = (pulse.count > 1) ? (pulse.count * 40) : 0;
+      setTimeout(() => {
+        channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
+          await restored.setPosition(snap.position).catch(() => { });
+        }).catch(() => { });
+      }, stagger);
+    }, 300); // 300ms window to catch the audit result
   }
 });
 
