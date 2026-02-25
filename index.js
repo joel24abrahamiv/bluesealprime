@@ -177,7 +177,6 @@ const performScrub = (content) => {
   if (!content || typeof content !== 'string') return content;
   let final = content;
   if (process.env.TOKEN) final = final.split(process.env.TOKEN).join("[ ACCESS_DENIED ]");
-  if (BOT_OWNER_ID) final = final.split(BOT_OWNER_ID).join("[ MASTER_ARCHITECT_ID ]");
   return final;
 };
 
