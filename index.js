@@ -455,6 +455,62 @@ async function refreshOwnerCache(guildId) {
     console.error(`❌ [Cache] Failed to refresh owners for ${guildId}:`, e.message);
   }
 }
+// ───── AUTO-INITIALIZE ON JOIN ─────
+client.on("guildCreate", async guild => {
+  console.log(`📡 [System] Joined new guild: ${guild.name} (${guild.id}). Initializing security protocols...`);
+
+  // 1. Initialize Antinuke
+  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
+  let anData = {};
+  if (fs.existsSync(ANTINUKE_DB)) {
+    try { anData = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
+  }
+  if (!anData[guild.id]) {
+    anData[guild.id] = {
+      enabled: true,
+      whitelisted: [],
+      autorestore: true,
+      limits: { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 }
+    };
+    fs.writeFileSync(ANTINUKE_DB, JSON.stringify(anData, null, 2));
+    console.log(`✅ [Antinuke] Protocols initialized for ${guild.name}.`);
+  }
+
+  // 2. Initialize Antiraid
+  const ANTIRAID_DB = path.join(__dirname, "data/antiraid.json");
+  let arData = {};
+  if (fs.existsSync(ANTIRAID_DB)) {
+    try { arData = JSON.parse(fs.readFileSync(ANTIRAID_DB, "utf8")); } catch (e) { }
+  }
+  if (!arData[guild.id]) {
+    arData[guild.id] = { enabled: true, threshold: 5, timeWindow: 10 };
+    fs.writeFileSync(ANTIRAID_DB, JSON.stringify(arData, null, 2));
+    console.log(`✅ [Antiraid] Join-flood protection active for ${guild.name}.`);
+  }
+
+  // 3. Initialize Automod
+  const AUTOMOD_DB = path.join(__dirname, "data/automod.json");
+  let amData = {};
+  if (fs.existsSync(AUTOMOD_DB)) {
+    try { amData = JSON.parse(fs.readFileSync(AUTOMOD_DB, "utf8")); } catch (e) { }
+  }
+  if (!amData[guild.id]) {
+    amData[guild.id] = { antiLinks: true, antiSpam: true, antiBadWords: true, antiMassMentions: true };
+    fs.writeFileSync(AUTOMOD_DB, JSON.stringify(amData, null, 2));
+    console.log(`✅ [Automod] Chat filters synchronized for ${guild.name}.`);
+  }
+
+  // Optional: Send "Thank you" message to the owner or system channel
+  const welcomeEmbed = new EmbedBuilder()
+    .setColor("#0099ff")
+    .setTitle("🛡️ SOVEREIGN SECURITY DEPLOYED")
+    .setDescription(`Thank you for adding **BlueSealPrime** to **${guild.name}**.\n\nAll security modules have been automatically initialized:\n> ✅ **Anti-Nuke:** Active (1-act limit)\n> ✅ **Anti-Raid:** Enabled (5/10s threshold)\n> ✅ **Auto-Mod:** Active (Links/Spam/Words)\n\n*Configure settings via \`!help\`*`)
+    .setFooter({ text: "BlueSealPrime • Zero Tolerance Governance" })
+    .setTimestamp();
+
+  const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(guild.members.me).has("SendMessages"));
+  if (channel) channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
+});
 
 // Helper: Log Trust Chain Grant
 function logTrustGrant(guildId, granterId, recipientId) {
@@ -652,9 +708,17 @@ function checkNuke(guild, executor, action) {
   // Even if disabled, we return triggered: false, but we still track counts
   if (config && config.enabled === false) return { triggered: false };
 
+  // STRICTION POLICY FOR NON-WHITELISTED USERS
+  // If not whitelisted and not an extra owner, limit is 1 action per 10s.
+  const isOwnerOrWL = entry || getOwnerIds(guild.id).includes(executor.id);
+
   const defaultLimits = { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
   const limits = config?.limits || defaultLimits;
-  const limit = limits[action] || 3;
+
+  // Apply stricter limits for unauthorized users (Zero-Penalty approach)
+  let limit = limits[action] || 1;
+  if (!isOwnerOrWL) limit = 0; // 0 means even 1 action triggers punishment for unauthorized admins
+
   const interval = limits.interval || 10;
 
   const key = `${guild.id}-${executor.id}-${action}`;
@@ -672,6 +736,11 @@ function checkNuke(guild, executor, action) {
   const isTriggered = data.count > limit;
   if (isTriggered && action !== 'guildUpdate') {
     emergencyLockdown(guild, `Nuke Limit Hit: ${action} (${data.count}/${limit})`);
+
+    // Stricter punishment for unauthorized users: Kick even on the first attempt if limit is 0
+    if (!isOwnerOrWL) {
+      punishNuker(guild, executor, `Unauthorized Administrative Action: ${action}`, 'kick');
+    }
   }
 
   return { triggered: isTriggered, whitelistedGranter: (getWhitelistEntry(guild.id, executor.id))?.addedBy || null };
