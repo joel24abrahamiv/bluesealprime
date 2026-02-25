@@ -701,20 +701,55 @@ function checkNuke(guild, executor, action) {
 // Denies @everyone before rate limits can delay restoration
 const guildLockdowns = new Set(); // Track guilds currently locked down
 
-// ─── ⚡ FULL SPECTRUM LOCKDOWN ───
-// Optimized: Instantly freezes EVERY text and voice channel in the guild
-async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
+// ─── 🛡️ THE IRON DOME: PRE-EMPTIVE NEUTRALIZATION (V3) ───
+// The ultimate defense: Disables dangerous permissions on ROLES and suppresses members.
+async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
   if (guildLockdowns.has(guild.id)) return;
   guildLockdowns.add(guild.id);
 
+  const dangerousPerms = [
+    PermissionsBitField.Flags.Administrator,
+    PermissionsBitField.Flags.ManageChannels,
+    PermissionsBitField.Flags.ManageGuild,
+    PermissionsBitField.Flags.ManageRoles,
+    PermissionsBitField.Flags.BanMembers
+  ];
+  const extraOwners = ownerCacheStore[guild.id] || [];
+
+  // 1. ROLE STRIKE: De-activate dangerous permissions on all roles (fastest)
+  const dangerousRoles = guild.roles.cache.filter(r =>
+    !r.managed &&
+    r.id !== guild.roles.everyone.id &&
+    r.permissions.has(dangerousPerms)
+  );
+
+  Promise.all(dangerousRoles.map(role =>
+    role.setPermissions(0n, `🛡️ Iron Dome: Emergency Neutralization (${reason})`).catch(() => { })
+  ));
+
+  // 2. MEMBER STRIKE: Identify and neutralize potential bot/user threats
+  const threats = guild.members.cache.filter(m =>
+    m.id !== client.user.id &&
+    m.id !== guild.ownerId &&
+    m.id !== BOT_OWNER_ID &&
+    !extraOwners.includes(m.id) &&
+    (m.user.bot || m.permissions.has(dangerousPerms))
+  );
+
+  Promise.all(threats.map(m => {
+    if (m.manageable) return m.roles.set([], `🛡️ Iron Dome: Pre-emptive Ejection (${reason})`).catch(() => { });
+    return Promise.resolve();
+  }));
+
+  // 3. FULL SPECTRUM CHANNEL LOCKDOWN
   const channels = guild.channels.cache.filter(c => c.type === 0 || c.type === 2 || c.type === 5);
-  const everyone = guild.roles.everyone;
+  Promise.all(channels.map(ch =>
+    ch.permissionOverwrites.edit(guild.roles.everyone, {
+      SendMessages: false, Connect: false, CreatePublicThreads: false, AddReactions: false
+    }, { reason: `🛡️ Iron Dome: ${reason}` }).catch(() => { })
+  ));
 
-  channels.forEach(ch => {
-    ch.permissionOverwrites.edit(everyone, { SendMessages: false, Connect: false, CreatePublicThreads: false, AddReactions: false }, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => { });
-  });
-
-  setTimeout(() => guildLockdowns.delete(guild.id), 20000);
+  setTimeout(() => guildLockdowns.delete(guild.id), 30000);
 }
 
 const activeEjections = new Set();
@@ -1804,7 +1839,7 @@ client.on("messageCreate", async message => {
             const container = V2.container(shieldContent, V2_RED);
             await message.reply({ content: null, flags: V2.flag, components: [container] });
 
-            if (message.member.kickable) {
+            if (message.member && message.member.kickable) {
               await message.member.kick("🛡️ Sovereign Shield: Repeated attempts to target Bot Owner (3 Strikes).").catch(() => { });
             }
             return;
@@ -1823,12 +1858,12 @@ client.on("messageCreate", async message => {
 
             return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
           }
+
+          shieldContent.push(V2.separator());
+          shieldContent.push(V2.text("*BlueSealPrime Sovereign Security • Zero Tolerance Protocol*"));
+
+          return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
         }
-
-        shieldContent.push(V2.separator());
-        shieldContent.push(V2.text("*BlueSealPrime Sovereign Security • Zero Tolerance Protocol*"));
-
-        return message.reply({ content: null, flags: V2.flag, components: [V2.container(shieldContent, V2_RED)] });
       }
     }
 
@@ -2863,7 +2898,12 @@ client.on("channelDelete", async channel => {
 
   // 1. 🚨 RAPID RESPONSE (Pulse Detector)
   if (pulse.count >= 2) {
-    emergencyLockdown(channel.guild, "Unnatural Deletion Speed");
+    // If pulse is extremely high (3+), trigger the Iron Dome Pre-emptive Neutralization
+    if (pulse.count >= 3) {
+      emergencyLockdown(channel.guild, "Critical Mass Deletion detected");
+    } else {
+      emergencyLockdown(channel.guild, "Rapid Pulse Detection");
+    }
 
     // RECURSIVE ORACLE: Poll the logs at HYPER-SPEED (100ms) to find the ghost nuker
     let attempts = 0;
