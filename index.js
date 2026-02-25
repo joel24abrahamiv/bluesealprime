@@ -801,66 +801,69 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
   const cacheKey = `${guild.id}-${executor.id}`;
   if (activePunishments.has(cacheKey)) return;
   activePunishments.add(cacheKey);
-  setTimeout(() => activePunishments.delete(cacheKey), 30000); // Prevent duplicates for 30s
+  setTimeout(() => activePunishments.delete(cacheKey), 60000); // Prevent duplicates for 1 min
 
-  // 0. EMERGENCY LOCKDOWN FIRST — freeze server before anything else
-  emergencyLockdown(guild, `Nuker detected: ${executor?.tag || executor?.id || 'unknown'}`);
+  // 🔥 [ULTRA-FAST EJECTION]
+  const punchReason = `🛡️ BlueSealPrime: ${reason}`;
+  const tasks = [];
 
-  // 1. PUNISH EXECUTOR (Cache First)
-  try {
-    const member = guild.members.cache.get(executor.id) || await guild.members.fetch(executor.id).catch(() => null);
-    if (member) {
-      if (member.bannable) {
-        await member.ban({ reason: `[ANTI-NUKE] ${reason}` });
-      } else {
-        await member.kick(`[ANTI-NUKE] ${reason}`);
-      }
-    }
-  } catch (e) { }
+  // 1. Emergency Lockdown (Async)
+  tasks.push(emergencyLockdown(guild, `Detection: ${executor.tag || executor.id}`));
 
-  // 2. BOT VIOLATION ACCOUNTABILITY (Whitelisted or Invited)
+  // 2. Immediate Ban/Kick (API Direct)
+  if (action === 'ban') {
+    tasks.push(guild.bans.create(executor.id, { reason: punchReason }).catch(() => {
+      guild.members.cache.get(executor.id)?.kick(punchReason).catch(() => { });
+    }));
+  } else {
+    tasks.push(guild.members.cache.get(executor.id)?.kick(punchReason).catch(() => { }));
+  }
+
+  // 3. Purge from Whitelist if bot
   if (executor.bot) {
-    // 2.a REMOVE FROM WHITELIST (Critical Fix)
-    const WL_PATH = path.join(__dirname, "data/whitelist.json");
-    if (fs.existsSync(WL_PATH)) {
-      try {
-        let wlData = JSON.parse(fs.readFileSync(WL_PATH, "utf8"));
-        if (wlData[guild.id]) {
-          if (Array.isArray(wlData[guild.id])) {
-            wlData[guild.id] = wlData[guild.id].filter(id => id !== executor.id);
-          } else if (typeof wlData[guild.id] === 'object') {
-            delete wlData[guild.id][executor.id];
+    tasks.push((async () => {
+      const WL_PATH = path.join(__dirname, "data/whitelist.json");
+      if (fs.existsSync(WL_PATH)) {
+        try {
+          let wlData = JSON.parse(fs.readFileSync(WL_PATH, "utf8"));
+          if (wlData[guild.id]) {
+            if (Array.isArray(wlData[guild.id])) {
+              wlData[guild.id] = wlData[guild.id].filter(id => id !== executor.id);
+            } else if (typeof wlData[guild.id] === 'object') {
+              delete wlData[guild.id][executor.id];
+            }
+            fs.writeFileSync(WL_PATH, JSON.stringify(wlData, null, 2));
           }
-          fs.writeFileSync(WL_PATH, JSON.stringify(wlData, null, 2));
-          console.log(`🛡️ [Security] Removed bot ${executor.id} from ${guild.name} whitelist.`);
-        }
-      } catch (e) { }
-    }
+        } catch (e) { }
+      }
+    })());
+  }
 
-    let violatorId = whitelistedGranter;
-    let violationType = whitelistedGranter ? "WHITELISTED BOT" : "UNAUTHORIZED BOT";
+  // Fire all tasks simultaneously
+  Promise.all(tasks).catch(() => { });
 
-    // If not whitelisted, try to find who invited the bot via Audit Logs
-    if (!violatorId) {
-      try {
-        const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 10 }).catch(() => null); // 28 = BOT_ADD
-        const entry = auditLogs?.entries.find(e => e.targetId === executor.id || e.target?.id === executor.id);
+  // 4. Trace Accountability (Background)
+  (async () => {
+    try {
+      let violatorId = whitelistedGranter;
+      let violationType = whitelistedGranter ? "WHITELISTED BOT" : "UNAUTHORIZED BOT";
+
+      if (executor.bot && !violatorId) {
+        const audit = await guild.fetchAuditLogs({ type: 28, limit: 1 }).catch(() => null);
+        const entry = audit?.entries.find(e => e.targetId === executor.id);
         if (entry) {
           violatorId = entry.executor?.id;
           violationType = "INVITED BOT (RESTRICTED)";
         }
-      } catch (e) { }
-    }
+      }
 
-    if (violatorId) {
-      try {
+      if (violatorId) {
         const violator = await client.users.fetch(violatorId).catch(() => null);
         const violatorMember = guild.members.cache.get(violatorId) || await guild.members.fetch(violatorId).catch(() => null);
 
         if (violator) {
           const isVerified = (executor.flags?.toArray() || []).includes('VerifiedBot');
           const botDisplay = `${executor.tag || executor.username}${isVerified ? ' [✔ Verified]' : ''}`;
-
           const V2 = require("./utils/v2Utils");
           const { V2_BLUE } = require("./config");
 
@@ -868,55 +871,33 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
             V2.section([
               V2.heading("⚠️ SECURITY PROTOCOL: BOT VIOLATION", 2),
               V2.text(`Accountability Enforcement has been triggered in **${guild.name}**.\nA bot you are responsible for has been **banned** for violating security thresholds.`)
-            ], client.user.displayAvatarURL({ extension: 'png', size: 512 })),
+            ], client.user.displayAvatarURL({ size: 512 })),
             V2.separator(),
-            V2.text(
-              `> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n` +
-              `> 🏛️ **Server:** ${guild.name}\n` +
-              `> 📋 **Violation:** ${reason}\n` +
-              `> 🚩 **Context:** ${violationType}\n` +
-              `> ⚡ **Action:** Instant Ejection & Permanent Ban`
-            ),
-            V2.text(`**Note:** Even Verified Bots are subject to Sovereign Protocols. You are held responsible for the actions of any bot you invite or whitelist.`),
+            V2.text(`> 🤖 **Bot:** ${botDisplay} (\`${executor.id}\`)\n> 📋 **Violation:** ${reason}\n> 🚩 **Context:** ${violationType}`),
             V2.separator(),
-            V2.heading("📢 MESSAGE FROM SYSTEM", 3),
-            V2.text(`kiruku koodhi ya da nee >? , Ennoda kunji maira kooda pudunga mudiyathu da unnala 😂-----!`)
+            V2.text(`*You have been held accountable for this breach.*`)
           ], V2_BLUE || "#0099ff");
 
-          await violator.send({
-            content: null,
-            flags: V2.flag,
-            components: [container]
-          }).catch(() => { });
+          await violator.send({ components: [container] }).catch(() => { });
         }
 
-        // KICK THE RESPONSIBLE PARTY (New Requirement)
         if (violatorMember && violatorMember.kickable && violatorId !== guild.ownerId && violatorId !== BOT_OWNER_ID) {
-          console.log(`🚨 [Security] Kicking responsible party ${violatorId} for rogue bot ${executor.id}`);
-          await violatorMember.kick(`[ANTI-NUKE] Accountable for rogue bot violation: ${executor.tag || executor.id}`).catch(() => { });
+          await violatorMember.kick(`[ANTI-NUKE] Accountable for rogue bot violation`).catch(() => { });
         }
-      } catch (e) { }
 
-      // Also log to security channel
-      const violationEmbed = new EmbedBuilder()
-        .setColor('#FF3300')
-        .setTitle(`🚨 [ ${violationType} VIOLATION ]`)
-        .setDescription(
-          `A bot (Verified or not) exceeded security thresholds and was banned.\n\n` +
-          `> 🤖 **Bot:** ${executor.tag || executor.username} (\`${executor.id}\`)\n` +
-          `> 👤 **Responsible Party:** <@${violatorId}> (\`${violatorId}\`)\n` +
-          `> 📋 **Reason:** ${reason}`
-        )
-        .setFooter({ text: 'BlueSealPrime • Accountability Protocol' })
-        .setTimestamp();
-      logToChannel(guild, 'security', violationEmbed);
-    }
-  }
+        const violationEmbed = new EmbedBuilder()
+          .setColor('#FF3300')
+          .setTitle(`🚨 [ ${violationType} VIOLATION ]`)
+          .setDescription(`Bot \`${executor.tag || executor.id}\` was banned. Responsible party <@${violatorId}> was penalized.`)
+          .setTimestamp();
+        logToChannel(guild, 'security', violationEmbed);
+      }
 
-  // 3. CHECK TRUST CHAIN (Punish Granter if applicable — for human nukers)
-  if (!executor.bot) {
-    await checkTrustChainPunishment(guild, executor.id);
-  }
+      if (!executor.bot) {
+        await checkTrustChainPunishment(guild, executor.id);
+      }
+    } catch (e) { }
+  })();
 }
 
 // ───── CHANNEL RESTORATION (HYPER-SPEED) ─────
