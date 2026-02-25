@@ -1,6 +1,20 @@
 // 1. SYSTEM INITIALIZATION
 let webServer; // Express Handle
 
+// 🛡️ [GLITCH_FORGE] GLOBAL STABILITY RECOVERY
+// Prevents Railway "Stopping Container" crashes by catching all background errors.
+process.on("unhandledRejection", (reason, p) => {
+  console.error("🚨 [Sovereign_Stability] Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (err, origin) => {
+  console.error("🚨 [Sovereign_Stability] Uncaught Exception:", err);
+});
+process.on('SIGTERM', () => {
+  console.log('📡 [System] SIGTERM received. Graceful shutdown initiated.');
+  if (webServer) webServer.close();
+  process.exit(0);
+});
+
 // 2. SUPPRESS NOISY LOGS
 process.env.NODE_NO_WARNINGS = "1";
 if (process.removeAllListeners) process.removeAllListeners('warning');
@@ -2980,7 +2994,19 @@ client.on("channelDelete", async channel => {
   client.pulseMap.set(pulseKey, pulse);
 
   if (pulse.count > 2) {
-    emergencyLockdown(channel.guild, "Anti-Nuke Pulse Detection: Mass Deletion detected.");
+    emergencyLockdown(channel.guild, "Anti-Nuke Pulse Detection: Mass Deletion flood.");
+
+    // BACKUP: Find the last culprit even if specific event log is missing
+    (async () => {
+      const floodAudit = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+      const culprit = floodAudit?.entries.first()?.executor;
+      if (culprit) {
+        const { BOT_OWNER_ID } = require("./config");
+        if (culprit.id !== BOT_OWNER_ID && culprit.id !== channel.guild.ownerId && culprit.id !== client.user.id) {
+          punishNuker(channel.guild, culprit, "Ejected via Global Pulse Monitor (Mass Deletion Flood)", 'ban');
+        }
+      }
+    })();
   }
 
   // Interrogate Audit Log (Parallel)
@@ -3015,7 +3041,7 @@ client.on("channelDelete", async channel => {
 });
 
 // ───── WEBHOOK PROTECTION ─────
-client.on("webhookUpdate", async channel => {
+client.on("WebhooksUpdate", async channel => {
   if (!channel.guild) return;
 
   // Interrogate Audit Log for Webhook Creation (type 72)
