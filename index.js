@@ -2985,58 +2985,69 @@ client.on("channelDelete", async channel => {
   };
 
   // ─── HIGH-SPEED SECURITY RESPONSE ───
+  // 1. Audit Log Caching (Efficiency)
+  const auditCacheKey = `audit-chan-del-${channel.guild.id}`;
+  const now = Date.now();
+  let latestLog = client.auditCache?.get(auditCacheKey);
+
+  if (!latestLog || (now - latestLog.timestamp > 800)) {
+    latestLog = {
+      promise: channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null),
+      timestamp: now
+    };
+    if (!client.auditCache) client.auditCache = new Map();
+    client.auditCache.set(auditCacheKey, latestLog);
+  }
+
   // Global Pulse Detection (Anti-Flood)
   const pulseKey = `pulse-chan-del-${channel.guild.id}`;
-  const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: Date.now() };
-  if (Date.now() - pulse.last < 2000) pulse.count++; else pulse.count = 1;
-  pulse.last = Date.now();
+  const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: 0 };
+  if (now - pulse.last < 2000) pulse.count++; else pulse.count = 1;
+  pulse.last = now;
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  if (pulse.count > 2) {
-    emergencyLockdown(channel.guild, "Anti-Nuke Pulse Detection: Mass Deletion flood.");
-
-    // BACKUP: Find the last culprit even if specific event log is missing
-    (async () => {
-      const floodAudit = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-      const culprit = floodAudit?.entries.first()?.executor;
-      if (culprit) {
-        const { BOT_OWNER_ID } = require("./config");
-        if (culprit.id !== BOT_OWNER_ID && culprit.id !== channel.guild.ownerId && culprit.id !== client.user.id) {
-          punishNuker(channel.guild, culprit, "Ejected via Global Pulse Monitor (Mass Deletion Flood)", 'ban');
-        }
-      }
-    })();
-  }
-
-  // Interrogate Audit Log (Parallel)
+  // Parallel Execution Block
   (async () => {
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+    const auditLogs = await latestLog.promise;
     const log = auditLogs?.entries.first();
     const executor = log ? log.executor : null;
     const { BOT_OWNER_ID } = require("./config");
 
+    // Pulse Protection: If flood detected, kill the latest executor immediately
+    if (pulse.count > 2 && executor) {
+      if (executor.id !== BOT_OWNER_ID && executor.id !== channel.guild.ownerId && executor.id !== client.user.id) {
+        emergencyLockdown(channel.guild, "Anti-Nuke Pulse: Mass Deletion detected.");
+        punishNuker(channel.guild, executor, "Ejected via Global Pulse (Mass Deletion)", 'ban');
+      }
+    }
+
+    // Individual Action Check
     if (executor) {
       const isImmune = (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
       if (!isImmune) {
-        // Instant check & punisher
         const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
         if (nukeCheck && nukeCheck.triggered) {
-          punishNuker(channel.guild, executor, "Critical Nuke Pulse Identified", 'ban', nukeCheck.whitelistedGranter);
+          punishNuker(channel.guild, executor, "Sovereign Security: Channel Deletion Threshold", 'ban', nukeCheck.whitelistedGranter);
         }
       } else {
-        client.lastAuthorizedAction = Date.now();
+        client.lastAuthorizedAction = now;
       }
     }
   })();
 
   // ─── BACKGROUND RESTORATION ───
   if (autorestoreEnabled) {
-    if (Date.now() - (client.lastAuthorizedAction || 0) < 1500) return;
+    // Only restore if no owner action in last 1.5s
+    if (now - (client.lastAuthorizedAction || 0) < 1500) return;
 
-    channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
-      await restored.setPosition(snap.position).catch(() => { });
-    }).catch(() => { });
+    // Stagger restorations to prevent API congestion (50ms per channel in pulse)
+    const stagger = (pulse.count > 1) ? (pulse.count * 50) : 0;
+    setTimeout(() => {
+      channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
+        await restored.setPosition(snap.position).catch(() => { });
+      }).catch(() => { });
+    }, stagger);
   }
 });
 
@@ -3054,6 +3065,14 @@ client.on("WebhooksUpdate", async channel => {
   const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id;
 
   if (!isImmune) {
+    // ─── DEBOUNCE REPETITIVE PUNISHMENTS ───
+    // If we just banned this user or locked this guild, don't spam the API with 50 more requests
+    const debounceKey = `punish-${channel.guild.id}-${executor.id}`;
+    if (client.punishDebounce?.has(debounceKey)) return;
+    if (!client.punishDebounce) client.punishDebounce = new Map();
+    client.punishDebounce.set(debounceKey, true);
+    setTimeout(() => client.punishDebounce.delete(debounceKey), 10000); // 10s safety window
+
     console.log(`🛡️ [Security] Unauthorized Webhook detected by ${executor.tag}. Neutralizing...`);
 
     // 1. Delete all webhooks in this channel
