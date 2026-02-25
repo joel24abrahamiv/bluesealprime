@@ -621,11 +621,14 @@ function checkNuke(guild, executor, action) {
     const permKey = actionMap[action];
     const perms = entry.permissions || {};
 
-    // If they have the specific permission, they are immune
-    if (perms[permKey] === true) return { triggered: false, whitelistedGranter: entry.addedBy || null };
-
-    // If they ARE a bot/automation but DON'T have permission → INSTANT TRIGGER
-    if (isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
+    // If they have the specific permission, we still let them proceed to limits check below
+    // BUT we skip the "instant trigger" for automation/bots if they have the permission.
+    if (perms[permKey] === true) {
+      // Humans and whitelisted bots with perms move to limits check
+    } else {
+      // If they ARE a bot/automation but DON'T have permission → INSTANT TRIGGER
+      if (isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
+    }
 
     // Humans without specific immunity continue to limits check below
   } else if (isProbableAutomation) {
@@ -633,7 +636,11 @@ function checkNuke(guild, executor, action) {
     return { triggered: true, whitelistedGranter: null };
   }
 
-  // CONFIG & LIMITS (applies to everyone — humans, extra owners, whitelisted bots)
+  // 🛡️ [EXTRA OWNERS CHECK]
+  // Note: Extra owners (from owners.json) also continue to limits check.
+  // Only the absolute BOT_OWNER_ID (Master Architect) is immune to limits.
+
+  // CONFIG & LIMITS (applies to everyone except Master Architect — humans, extra owners, whitelisted bots/users)
   if (Date.now() - antinukeCacheTime > 5000) {
     if (fs.existsSync(ANTINUKE_DB)) {
       try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
@@ -667,7 +674,7 @@ function checkNuke(guild, executor, action) {
     emergencyLockdown(guild, `Nuke Limit Hit: ${action} (${data.count}/${limit})`);
   }
 
-  return { triggered: isTriggered, whitelistedGranter };
+  return { triggered: isTriggered, whitelistedGranter: (getWhitelistEntry(guild.id, executor.id))?.addedBy || null };
 }
 
 // ─── ⚡ EMERGENCY SERVER LOCKDOWN ───
