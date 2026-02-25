@@ -2865,11 +2865,11 @@ client.on("channelDelete", async channel => {
   if (pulse.count >= 2) {
     emergencyLockdown(channel.guild, "Unnatural Deletion Speed");
 
-    // RECURSIVE ORACLE: Poll the logs for the next 1.5s to find the ghost nuker
+    // RECURSIVE ORACLE: Poll the logs at HYPER-SPEED (100ms) to find the ghost nuker
     let attempts = 0;
     const oracleId = setInterval(async () => {
       attempts++;
-      if (attempts > 6) return clearInterval(oracleId);
+      if (attempts > 15) return clearInterval(oracleId); // Stop after 1.5s
 
       const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 10 }).catch(() => null);
       if (!logs) return;
@@ -2877,15 +2877,23 @@ client.on("channelDelete", async channel => {
       logs.entries.forEach(entry => {
         const exec = entry.executor;
         if (!exec || exec.id === client.user.id) return;
+
+        // OWNER CHECK (Absolute Priority)
+        const { BOT_OWNER_ID } = require("./config"); // Ensure BOT_OWNER_ID is available
         const extraOwners = ownerCacheStore[channel.guild.id] || [];
-        if (exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id)) {
+        const isOwner = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
+
+        if (isOwner) {
           client.lastAuthorizedAction = Date.now();
-          return;
+          return clearInterval(oracleId);
         }
-        punishNuker(channel.guild, exec, "Ejected by Oracle Pulse (Mass Deletion)", 'ban');
-        clearInterval(oracleId); // Found him, stop polling
+
+        // 🎯 TARGET IDENTIFIED: Execute immediately
+        console.log(`⚡ [Oracle] Culprit found: ${exec.tag}. Ejecting...`);
+        punishNuker(channel.guild, exec, "Mass Channel Deletion intercepted (Pulse Hunter)", 'ban');
+        clearInterval(oracleId);
       });
-    }, 250);
+    }, 100);
   }
 
   // 2. 🕵️ INDIVIDUAL CHECK (Single deletion)
