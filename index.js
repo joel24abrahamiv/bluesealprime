@@ -616,7 +616,7 @@ function checkNuke(guild, executor, action) {
   // Even if disabled, we return triggered: false, but we still track counts
   if (config && config.enabled === false) return { triggered: false };
 
-  const defaultLimits = { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
+  const defaultLimits = { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
   const limits = config?.limits || defaultLimits;
   const limit = limits[action] || 3;
   const interval = limits.interval || 10;
@@ -2817,10 +2817,70 @@ client.on("guildUpdate", async (oldGuild, newGuild) => {
 });
 
 
+// 4. CHANNEL CREATION PROTECTION
+client.on("channelCreate", async channel => {
+  if (!channel.guild) return;
+  if (client.nukingGuilds?.has(channel.guild.id)) return;
+
+  // 1. Audit Interrogation
+  const auditLogs = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 }).catch(() => null); // 10 = CHANNEL_CREATE
+  const entry = auditLogs?.entries.first();
+  const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+
+  if (!executor || executor.id === client.user.id) return;
+
+  // Immunity Check: Bot Owner, Server Owner, & Extra Owners
+  const { BOT_OWNER_ID } = require("./config");
+  const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
+
+  if (isImmune) return;
+
+  // 2. Anti-Nuke Check
+  const nukeCheck = checkNuke(channel.guild, executor, "channelCreate");
+
+  if (nukeCheck && nukeCheck.triggered) {
+    console.log(`🛡️ [Anti-Nuke] Unauthorized channel creation by ${executor.tag}. Deleting and punishing...`);
+
+    // 🚀 IMMEDIATE RESPONSE: Delete the unauthorized channel
+    await channel.delete("🛡️ Sovereign Security: Unauthorized channel creation intercepted.").catch(() => { });
+
+    // 🔨 PUNISHMENT
+    punishNuker(channel.guild, executor, "Mass Channel Creation", 'ban', nukeCheck.whitelistedGranter);
+
+    // 📝 LOGGING
+    const V2 = require("./utils/v2Utils");
+    const { V2_RED } = require("./config");
+    const breachEmbed = V2.container([
+      V2.section([
+        V2.heading("🚨 CHANNEL CREATION INTERCEPTED", 2),
+        V2.text(`**Intrusion Detected:** Unauthorized Channel Creation.\n\n**Executor:** @${executor.username} (\`${executor.id}\`)\n**Target Sector:** ${channel.name}\n\n**RESPONSE:** Channel dissolved. Entity neutralized.`)
+      ], "https://cdn-icons-png.flaticon.com/512/9167/9167385.png"),
+      V2.separator(),
+      V2.text(`*Protocol: ZERO_TRUST_CHANNELS • Status: SECURED*`)
+    ], V2_RED);
+    logToChannel(channel.guild, "security", breachEmbed);
+  }
+});
+
+// 4.1 LOGS (LEGACY)
+client.on("channelCreate", async channel => {
+  if (!channel.guild) return;
+  const embed = new EmbedBuilder()
+    .setColor("#3498DB")
+    .setTitle("📺 CHANNEL CREATED")
+    .addFields(
+      { name: "📛 Name", value: `${channel.name}`, inline: true },
+      { name: "📂 Type", value: `\`${channel.type}\``, inline: true },
+      { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
+    )
+    .setTimestamp()
+    .setFooter({ text: "BlueSealPrime • Channel Log" });
+  logToChannel(channel.guild, "channel", embed);
+});
+
 // 6. INVITE LOGS
 client.on("inviteCreate", async invite => {
   const embed = new EmbedBuilder()
-
     .setColor("#2ECC71")
     .setTitle("🔗 INVITE CREATED")
     .setThumbnail(invite.inviter?.displayAvatarURL())

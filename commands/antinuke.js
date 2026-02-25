@@ -118,7 +118,7 @@ module.exports = {
                         enabled: false,
                         whitelisted: [],
                         autorestore: true,
-                        limits: { channelDelete: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10000 }
+                        limits: { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10000 }
                     };
                 }
                 const config = db[message.guild.id];
@@ -186,7 +186,7 @@ module.exports = {
                             V2.text(`> **Autorestore Protocol:** ${config.autorestore ? "✅ Enabled" : "❌ Disabled"}\n> **Authorized Personnel:** \`${config.whitelisted.length}\` Agents Whitelisted`),
                             V2.text("\u200b"),
                             V2.heading("📊 THRESHOLD LIMITS (per 10s)", 3),
-                            V2.text(`> **Channel Deletions:** \`${config.limits.channelDelete}\`\n> **Role Deletions:** \`${config.limits.roleDelete}\`\n> **Mass Bans:** \`${config.limits.ban}\`\n> **Webhook Creation:** \`${config.limits.webhookCreate || 1}\``),
+                            V2.text(`> **Channel Del/Create:** \`${config.limits.channelDelete}\` / \`${config.limits.channelCreate || 1}\`\n> **Role Deletions:** \`${config.limits.roleDelete}\`\n> **Mass Bans:** \`${config.limits.ban}\`\n> **Webhook Creation:** \`${config.limits.webhookCreate || 1}\``),
                             V2.separator(),
                             V2.text("*BlueSealPrime Defense Systems*")
                         ], config.enabled ? V2_BLUE : V2_RED)]
@@ -362,11 +362,11 @@ module.exports = {
                     if (!type || isNaN(value)) {
                         return message.reply({
                             content: null, flags: V2.flag,
-                            components: [V2.container([V2.text("Usage: `!antinuke limit <channelDelete|roleDelete|ban|kick|webhookCreate> <number>`")], V2_RED)]
+                            components: [V2.container([V2.text("Usage: `!antinuke limit <channelDelete|channelCreate|roleDelete|ban|kick|webhookCreate> <number>`")], V2_RED)]
                         });
                     }
 
-                    const validTypes = ["channelDelete", "roleDelete", "ban", "kick", "webhookCreate"];
+                    const validTypes = ["channelDelete", "channelCreate", "roleDelete", "ban", "kick", "webhookCreate"];
                     if (!validTypes.includes(type)) {
                         return message.reply({
                             content: null, flags: V2.flag,
