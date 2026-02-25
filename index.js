@@ -2990,66 +2990,58 @@ client.on("channelDelete", async channel => {
   };
 
   // ─── INSTANT RESPONSE PROTOCOL (0ms Delay) ───
-  // We handle the audit log fetch inside a retry loop for maximum speed
-  const processDeletion = async (attempt = 1) => {
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null);
+  const { BOT_OWNER_ID } = require("./config");
+
+  const executeAutoRestore = async () => {
+    // 1. QUICK AUDIT CHECK
+    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 3 }).catch(() => null);
     const log = auditLogs?.entries.find(e =>
       (e.targetId === channel.id || e.target?.id === channel.id) &&
-      Math.abs(Date.now() - e.createdTimestamp) < 10000
+      Math.abs(Date.now() - e.createdTimestamp) < 5000
     );
     const executor = log ? log.executor : null;
 
-    // If no executor found yet, retry once at 600ms, but CONTINUE with restoration anyway
-    if (!executor && attempt === 1) {
-      setTimeout(() => processDeletion(2), 600);
-      // Don't return, we'll continue with restoration below if it's unauthorized
-    }
-
-    const { BOT_OWNER_ID } = require("./config");
+    // 2. IMMUNITY CHECK
     const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
-
     if (isImmune) {
-      console.log(`🛡️ [AutoRestore] Authorized deletion by ${executor?.tag}. No restore.`);
+      console.log(`🛡️ [AutoRestore] Authorized deletion by ${executor?.tag}. Skipping restore.`);
       return;
     }
 
-    // IF NOT IMMUNE -> RESTORE & PUNISH
+    // 3. IMMEDIATE REGENERATION (If not immune or no log found yet)
     if (autorestoreEnabled) {
-      console.log(`⚡ [AutoRestore] Restoring channel '${channel.name}'...`);
+      console.log(`⚡ [AutoRestore] INSTANT REGEN: Restoring channel '${channel.name}'...`);
       try {
-        const restored = await channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign AutoRestore: Unauthorized deletion counter-measure." });
+        const restored = await channel.guild.channels.create({
+          ...snap,
+          reason: `🛡️ Sovereign AutoRestore: Counter-measure against ${executor?.tag || 'unauthorized deletion'}.`
+        });
         await restored.setPosition(snap.position).catch(() => { });
 
         const embed = new EmbedBuilder()
           .setColor("#2ECC71")
           .setTitle("♻️ CHANNEL AUTORESTORED")
+          .setThumbnail(executor ? executor.displayAvatarURL() : null)
           .addFields(
             { name: "📛 Name", value: `${channel.name}`, inline: true },
-            { name: "👤 Executor", value: `${executor?.tag || "Unknown (Tracing...)"}`, inline: true },
-            { name: "🛡️ Status", value: "Immediate Regeneration", inline: true }
+            { name: "👤 Executor", value: `${executor?.tag || "Unknown/Delayed Audit"}`, inline: true },
+            { name: "🛡️ Power", value: "Immediate Regeneration", inline: true }
           )
           .setTimestamp();
         logToChannel(channel.guild, "channel", embed);
       } catch (err) { }
     }
 
+    // 4. PUNISHMENT (If we have the executor)
     if (executor) {
       const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
       if (nukeCheck && nukeCheck.triggered) {
         punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
       }
-    } else if (attempt === 2) {
-      // If still no executor after retry, log as suspicious unknown
-      const suspiciousEmbed = new EmbedBuilder()
-        .setColor("#FFA500")
-        .setTitle("⚠️ SUSPICIOUS CHANNEL DELETION")
-        .setDescription(`Channel \`${channel.name}\` was deleted but no audit log entry was found. Restoration completed.`)
-        .setTimestamp();
-      logToChannel(channel.guild, "security", suspiciousEmbed);
     }
   };
 
-  processDeletion();
+  executeAutoRestore();
 });
 
 
