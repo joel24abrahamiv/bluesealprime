@@ -701,20 +701,20 @@ function checkNuke(guild, executor, action) {
 // Denies @everyone before rate limits can delay restoration
 const guildLockdowns = new Set(); // Track guilds currently locked down
 
-// ─── ⚡ SURGICAL EMERGENCY LOCKDOWN ───
-// Optimized: Only locks the target channel and the top 3 channels to save API bandwidth
+// ─── ⚡ FULL SPECTRUM LOCKDOWN ───
+// Optimized: Instantly freezes EVERY text and voice channel in the guild
 async function emergencyLockdown(guild, reason = "Anti-Nuke Emergency") {
   if (guildLockdowns.has(guild.id)) return;
   guildLockdowns.add(guild.id);
 
-  try {
-    const textChannels = guild.channels.cache.filter(c => c.type === 0).first(3); // Surgical strike
-    textChannels.forEach(ch => {
-      ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false }, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => { });
-    });
-    // Release lock after 10s to allow normal operations
-    setTimeout(() => guildLockdowns.delete(guild.id), 10000);
-  } catch (e) { guildLockdowns.delete(guild.id); }
+  const channels = guild.channels.cache.filter(c => c.type === 0 || c.type === 2 || c.type === 5);
+  const everyone = guild.roles.everyone;
+
+  channels.forEach(ch => {
+    ch.permissionOverwrites.edit(everyone, { SendMessages: false, Connect: false, CreatePublicThreads: false, AddReactions: false }, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => { });
+  });
+
+  setTimeout(() => guildLockdowns.delete(guild.id), 20000);
 }
 
 const activeEjections = new Set();
@@ -724,9 +724,16 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
   activeEjections.add(cacheKey);
   setTimeout(() => activeEjections.delete(cacheKey), 60000);
 
+  // 0. STRIP ROLES (Instant Neutralization)
+  const member = guild.members.cache.get(executor.id);
+  if (member && member.manageable) {
+    member.roles.set([], "🛡️ BlueSealPrime: Strip permissions during ejection.").catch(() => { });
+  }
+
   // 1. BAN IMMEDIATELY (Absolute Priority)
   guild.bans.create(executor.id, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => {
-    guild.members.cache.get(executor.id)?.kick(`🛡️ BlueSealPrime Security`).catch(() => { });
+    executor.send?.("🛡️ **BlueSealPrime:** Mass Violation Detected. Administrative Ejection performed.").catch(() => { });
+    member?.kick(`🛡️ BlueSealPrime Security: ${reason}`).catch(() => { });
   });
 
   // 2. Surgical Lockdown (Background)
@@ -2843,70 +2850,69 @@ client.on("channelCreate", async channel => {
 });
 
 client.on("channelDelete", async channel => {
-  if (!channel.guild) return;
-  if (client.nukingGuilds?.has(channel.guild.id)) return; // ⚡ BYPASS DURING ENUKE
+  if (!channel.guild || client.nukingGuilds?.has(channel.guild.id)) return;
 
-  const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
-  const TEMP_VCS_PATH = path.join(__dirname, "data/temp_vcs.json");
-
-  // ─── PULSE DEFENSE (Absolute Priority) ───
   const now = Date.now();
   const pulseKey = `pulse-${channel.guild.id}`;
   const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: 0 };
 
-  if (now - pulse.last < 2000) pulse.count++; else pulse.count = 1;
+  if (now - pulse.last < 3000) pulse.count++; else pulse.count = 1;
   pulse.last = now;
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  // 1. Emergency Lockdown Trigger (Surgical)
-  if (pulse.count >= 2) emergencyLockdown(channel.guild, "Pulse Detection");
+  // 1. 🚨 RAPID RESPONSE (Pulse Detector)
+  if (pulse.count >= 2) {
+    emergencyLockdown(channel.guild, "Unnatural Deletion Speed");
 
-  // 2. Background Pursuit (Audit Sweep)
-  (async () => {
-    const auditKey = `audit-${channel.guild.id}`;
-    let audit = client.auditCache?.get(auditKey);
-    if (!audit || (now - audit.time > 800)) {
-      audit = { promise: channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null), time: now };
-      if (!client.auditCache) client.auditCache = new Map();
-      client.auditCache.set(auditKey, audit);
-    }
+    // RECURSIVE ORACLE: Poll the logs for the next 1.5s to find the ghost nuker
+    let attempts = 0;
+    const oracleId = setInterval(async () => {
+      attempts++;
+      if (attempts > 6) return clearInterval(oracleId);
 
-    const logs = await audit.promise;
-    if (!logs) return;
+      const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 10 }).catch(() => null);
+      if (!logs) return;
 
-    logs.entries.forEach(entry => {
-      const exec = entry.executor;
+      logs.entries.forEach(entry => {
+        const exec = entry.executor;
+        if (!exec || exec.id === client.user.id) return;
+        const extraOwners = ownerCacheStore[channel.guild.id] || [];
+        if (exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id)) {
+          client.lastAuthorizedAction = Date.now();
+          return;
+        }
+        punishNuker(channel.guild, exec, "Ejected by Oracle Pulse (Mass Deletion)", 'ban');
+        clearInterval(oracleId); // Found him, stop polling
+      });
+    }, 250);
+  }
+
+  // 2. 🕵️ INDIVIDUAL CHECK (Single deletion)
+  if (pulse.count === 1) {
+    (async () => {
+      const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+      const log = logs?.entries.first();
+      const exec = log?.executor;
       if (!exec || exec.id === client.user.id) return;
 
-      // Detect Owners (Bot Owner, Server Owner, or Extra Owners from memory cache)
       const extraOwners = ownerCacheStore[channel.guild.id] || [];
-      const isOwner = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
-
-      if (isOwner) {
-        client.lastAuthorizedAction = now; // Suppress restoration for this window
+      if (exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id)) {
+        client.lastAuthorizedAction = now;
         return;
       }
 
       const check = checkNuke(channel.guild, exec, "channelDelete");
-      if (check.triggered) punishNuker(channel.guild, exec, "Pulse Hunter: Anti-Nuke", 'ban');
-    });
-  })();
+      if (check.triggered) punishNuker(channel.guild, exec, "Exceeded deletion threshold", 'ban');
+    })();
+  }
 
-  // ─── AUTHORIZED CHECKS & RESTORATION ───
+  // 3. ♻️ BACKGROUND REGEN
   refreshAllCaches();
   const antinukeConfig = antinukeCache[channel.guild.id];
-  let autorestoreEnabled = antinukeConfig?.autorestore !== false;
-
-  // Snapshot only if needed (Optimization)
-  if (autorestoreEnabled) {
-    // Check again after a tiny delay to allow the background audit loop to set lastAuthorizedAction
+  if (antinukeConfig?.autorestore !== false) {
     setTimeout(() => {
-      const authWindow = Date.now() - (client.lastAuthorizedAction || 0);
-      if (authWindow < 1500) {
-        console.log(`🛡️ [AutoRestore] Authorized deletion detected for '${channel.name}'. Skipping regen.`);
-        return;
-      }
+      if (Date.now() - (client.lastAuthorizedAction || 0) < 1800) return;
 
       const snap = {
         name: channel.name, type: channel.type, topic: channel.topic || undefined,
@@ -2918,15 +2924,16 @@ client.on("channelDelete", async channel => {
         }))
       };
 
-      const stagger = (pulse.count > 1) ? (pulse.count * 40) : 0;
+      const stagger = (pulse.count > 1) ? (pulse.count * 45) : 0;
       setTimeout(() => {
         channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
           await restored.setPosition(snap.position).catch(() => { });
         }).catch(() => { });
-      }, stagger);
-    }, 300); // 300ms window to catch the audit result
+      }, stagger + 200);
+    }, 450);
   }
 });
+
 
 
 // ───── WEBHOOK PROTECTION ─────
