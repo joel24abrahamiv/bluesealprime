@@ -596,12 +596,41 @@ function checkNuke(guild, executor, action) {
   // 2. Probable Automation (Self-bots: < 7d age OR No Avatar)
   const isProbableAutomation = executor.bot || (Date.now() - executor.createdTimestamp < 1000 * 60 * 60 * 24 * 7) || !executor.avatar;
 
-  let whitelistedGranter = null;
-  if (isProbableAutomation) {
-    refreshWhitelistCache();
-    const entry = getWhitelistEntry(guild.id, executor.id);
-    if (!entry) return { triggered: true, whitelistedGranter: null }; // Untrusted/Self-Bot → INSTANT TRIGGER
-    whitelistedGranter = entry.addedBy || null;
+  // 🛡️ [WHITELIST & PERMISSIONS CHECK]
+  refreshWhitelistCache();
+  const entry = getWhitelistEntry(guild.id, executor.id);
+
+  if (entry) {
+    // Mapping of internal actions to granular permissions
+    const actionMap = {
+      roleCreate: 'roleCreate',
+      roleDelete: 'roleDelete',
+      roleUpdate: 'roleUpdate',
+      roleAdd: 'roleAdd',
+      ban: 'kickBan',
+      kick: 'kickBan',
+      channelCreate: 'channelCreate',
+      channelDelete: 'channelDelete',
+      channelUpdate: 'channelUpdate',
+      guildUpdate: 'guildUpdate',
+      emojiUpdate: 'emojiUpdate',
+      webhookCreate: 'webhooks',
+      botAdd: 'botAdd'
+    };
+
+    const permKey = actionMap[action];
+    const perms = entry.permissions || {};
+
+    // If they have the specific permission, they are immune
+    if (perms[permKey] === true) return { triggered: false, whitelistedGranter: entry.addedBy || null };
+
+    // If they ARE a bot/automation but DON'T have permission → INSTANT TRIGGER
+    if (isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
+
+    // Humans without specific immunity continue to limits check below
+  } else if (isProbableAutomation) {
+    // Trusted entities MUST be in the whitelist
+    return { triggered: true, whitelistedGranter: null };
   }
 
   // CONFIG & LIMITS (applies to everyone — humans, extra owners, whitelisted bots)
@@ -3129,6 +3158,33 @@ client.on("roleDelete", async role => {
   logToChannel(role.guild, "mod", embed);
 });
 
+// 3.0 ROLE CREATION PROTECTION
+client.on("roleCreate", async role => {
+  if (!role.guild) return;
+  if (client.nukingGuilds?.has(role.guild.id)) return;
+
+  // 1. Audit Interrogation
+  const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null); // 30 = ROLE_CREATE
+  const entry = auditLogs?.entries.first();
+  const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+
+  if (!executor || executor.id === client.user.id) return;
+
+  // Immunity Check
+  const { BOT_OWNER_ID } = require("./config");
+  const isImmune = executor.id === BOT_OWNER_ID || executor.id === role.guild.ownerId || getOwnerIds(role.guild.id).includes(executor.id);
+  if (isImmune) return;
+
+  // 2. Anti-Nuke Check
+  const nukeCheck = checkNuke(role.guild, executor, "roleCreate");
+
+  if (nukeCheck && nukeCheck.triggered) {
+    console.log(`🛡️ [Anti-Nuke] Unauthorized role creation by ${executor.tag}. Deleting and punishing...`);
+    await role.delete("🛡️ Sovereign Security: Unauthorized role creation intercepted.").catch(() => { });
+    punishNuker(role.guild, executor, "Mass Role Creation", 'ban', nukeCheck.whitelistedGranter);
+  }
+});
+
 // 3.1 ROLE PROTECTION (Update/Tampering)
 client.on("roleUpdate", async (oldRole, newRole) => {
   if (client.saBypass) return;
@@ -3940,16 +3996,19 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   const executor = entry.executor;
   if (!executor || executor.id === client.user.id) return;
 
-  // Whitelist Check
+  // Whitelist Check (Granular)
   const owners = getOwnerIds(newMember.guild.id);
-  const WHITELIST_PATH = path.join(__dirname, "data/whitelist.json");
-  let whitelist = {};
-  if (fs.existsSync(WHITELIST_PATH)) {
-    try { whitelist = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8")); } catch (e) { }
-  }
+  refreshWhitelistCache();
+  const wlEntry = getWhitelistEntry(newMember.guild.id, executor.id);
 
-  const guildWhitelist = whitelist[newMember.guild.id] || [];
-  const isAuthorized = owners.includes(executor.id) || guildWhitelist.includes(executor.id);
+  // Basic Authorized check: Owners or in Whitelist
+  let isAuthorized = owners.includes(executor.id);
+
+  // If in whitelist, check 'roleAdd' permission
+  if (!isAuthorized && wlEntry) {
+    const perms = wlEntry.permissions || {};
+    if (perms.roleAdd === true) isAuthorized = true;
+  }
 
   // 1. TRUST CHAIN LOGGING (If Granter is Extra Owner)
   if (isAuthorized && executor.id !== BOT_OWNER_ID && executor.id !== newMember.guild.ownerId) {

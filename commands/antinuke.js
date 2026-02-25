@@ -15,19 +15,30 @@ function saveGlobalWhitelist(data) {
     if (!fs.existsSync(path.dirname(WHITELIST_PATH))) fs.mkdirSync(path.dirname(WHITELIST_PATH), { recursive: true });
     fs.writeFileSync(WHITELIST_PATH, JSON.stringify(data, null, 2));
 }
-function addToGlobalWL(guildId, userId, addedBy) {
+function addToGlobalWL(guildId, userId, addedBy, permissions = null) {
     const wl = loadGlobalWhitelist();
     if (!wl[guildId]) wl[guildId] = {};
-    // Migrate old array format
     if (Array.isArray(wl[guildId])) {
         const arr = wl[guildId];
         wl[guildId] = {};
-        arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now() }; });
+        arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: {} }; });
     }
     if (!wl[guildId][userId]) {
-        wl[guildId][userId] = { addedBy: addedBy || null, addedAt: Date.now() };
-        saveGlobalWhitelist(wl);
+        wl[guildId][userId] = {
+            addedBy: addedBy || null,
+            addedAt: Date.now(),
+            permissions: permissions || {
+                roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
+                kickBan: false, antiDangerous: false,
+                channelCreate: false, channelDelete: false, channelUpdate: false,
+                guildUpdate: false, emojiUpdate: false, webhooks: false,
+                botAdd: false
+            }
+        };
+    } else if (permissions) {
+        wl[guildId][userId].permissions = permissions;
     }
+    saveGlobalWhitelist(wl);
 }
 function removeFromGlobalWL(guildId, userId) {
     const wl = loadGlobalWhitelist();
@@ -235,20 +246,91 @@ module.exports = {
                         if (!config.whitelisted.includes(user.id)) {
                             config.whitelisted.push(user.id);
                             saveDB(db);
-                            // ✅ CRITICAL: also write to whitelist.json which checkNuke() reads
                             addToGlobalWL(message.guild.id, user.id, message.author.id);
-                            return message.reply({
-                                content: null, flags: V2.flag,
-                                components: [V2.container([
-                                    V2.section([
-                                        V2.heading("🔐 CLEARANCE GRANTED", 2),
-                                        V2.text(`**${isBot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> ${isBot ? "Bot" : "User"} is now **immune** to Anti-Nuke countermeasures.`)
-                                    ], user.displayAvatarURL({ dynamic: true }))
-                                ], V2_BLUE)]
-                            });
-                        } else {
-                            return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Already whitelisted.")], "#FFCC00")] });
                         }
+
+                        // ── GRANULAR PERMISSIONS UI (BUTTONS) ──
+                        const V2 = require("../utils/v2Utils");
+                        const { ActionRowBuilder, ButtonStyle, ComponentType } = require("discord.js");
+
+                        const globalWL = loadGlobalWhitelist();
+                        const entry = globalWL[message.guild.id][user.id];
+                        const perms = entry.permissions || {};
+
+                        const createButton = (id, label, enabled) => {
+                            return V2.button(`wl_${user.id}_${id}`, label, enabled ? ButtonStyle.Danger : ButtonStyle.Secondary)
+                                .setEmoji(enabled ? "🔴" : "🔘");
+                        };
+
+                        const generateComponents = (currentPerms) => {
+                            return [
+                                V2.section([V2.heading(`Whitelist Management: ${user.tag || user.username}`, 2), V2.text("Select specific actions this user is authorized to perform.")], user.displayAvatarURL({ dynamic: true })),
+                                V2.separator(),
+                                V2.text("**Roles Management**"),
+                                new ActionRowBuilder().addComponents(
+                                    createButton("roleCreate", "Role Create", currentPerms.roleCreate),
+                                    createButton("roleDelete", "Role Delete", currentPerms.roleDelete),
+                                    createButton("roleUpdate", "Role Update", currentPerms.roleUpdate),
+                                    createButton("roleAdd", "Give Roles", currentPerms.roleAdd)
+                                ),
+                                V2.text("**Moderation**"),
+                                new ActionRowBuilder().addComponents(
+                                    createButton("kickBan", "Ban / Kick", currentPerms.kickBan),
+                                    createButton("antiDangerous", "Dangerous", currentPerms.antiDangerous)
+                                ),
+                                V2.text("**Channel Management**"),
+                                new ActionRowBuilder().addComponents(
+                                    createButton("channelCreate", "Chan Create", currentPerms.channelCreate),
+                                    createButton("channelDelete", "Chan Delete", currentPerms.channelDelete),
+                                    createButton("channelUpdate", "Chan Update", currentPerms.channelUpdate)
+                                ),
+                                V2.text("**Server Management**"),
+                                new ActionRowBuilder().addComponents(
+                                    createButton("guildUpdate", "Server Mod", currentPerms.guildUpdate),
+                                    createButton("emojiUpdate", "Emoji Update", currentPerms.emojiUpdate),
+                                    createButton("webhooks", "Webhooks", currentPerms.webhooks)
+                                ),
+                                V2.text("**Bot Management**"),
+                                new ActionRowBuilder().addComponents(
+                                    createButton("botAdd", "Bot Add/Rem", currentPerms.botAdd)
+                                ),
+                                V2.separator(),
+                                new ActionRowBuilder().addComponents(V2.button(`wl_${user.id}_save`, "SAVE CHANGES", ButtonStyle.Primary))
+                            ];
+                        };
+
+                        const response = await message.reply({
+                            content: null, flags: V2.flag,
+                            components: [V2.container(generateComponents(perms), V2_BLUE)]
+                        });
+
+                        const collector = response.createMessageComponentCollector({
+                            componentType: ComponentType.Button,
+                            time: 60000,
+                            filter: (i) => i.user.id === message.author.id
+                        });
+
+                        let activePerms = { ...perms };
+
+                        collector.on("collect", async (i) => {
+                            const parts = i.customId.split("_");
+                            const targetId = parts[1];
+                            const action = parts[2];
+
+                            if (action === "save") {
+                                addToGlobalWL(message.guild.id, targetId, message.author.id, activePerms);
+                                await i.update({
+                                    components: [V2.container([V2.section([V2.heading("✅ PERMISSIONS SECURED", 2), V2.text(`Settings for **${user.tag}** have been updated successfully.`)])], "#2ECC71")]
+                                });
+                                return collector.stop();
+                            }
+
+                            // Toggle
+                            activePerms[action] = !activePerms[action];
+                            await i.update({
+                                components: [V2.container(generateComponents(activePerms), V2_BLUE)]
+                            });
+                        });
                     }
 
                     // Remove
