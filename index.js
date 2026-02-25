@@ -715,10 +715,11 @@ function checkNuke(guild, executor, action) {
   const defaultLimits = { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
   const limits = config?.limits || defaultLimits;
 
-  // 🛡️ BOT-SPECIFIC OVERRIDE: Bots even if whitelisted are restricted to default limit (usually 1)
-  // Non-whitelisted users/bots are ALWAYS limit 0.
+  // 🛡️ BOT-SPECIFIC HARD-CAP: 
+  // Bots even if whitelisted are restricted to a HARD LIMIT OF 0 (Zero Tolerance).
+  // Only the Human Master Owner (BOT_OWNER_ID) or Server Owner bypasses this.
   let limit = limits[action] || 1;
-  if (!isOwnerOrWL) limit = 0;
+  if (executor.bot || !isOwnerOrWL) limit = 0;
 
   const interval = limits.interval || 10;
 
@@ -2970,9 +2971,20 @@ client.on("channelDelete", async channel => {
   };
 
   // ─── HIGH-SPEED SECURITY RESPONSE ───
-  // 1. ANALYZE AUDIT LOGS FIRST (Parallel with Restoration)
+  // Global Pulse Detection (Anti-Flood)
+  const pulseKey = `pulse-chan-del-${channel.guild.id}`;
+  const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: Date.now() };
+  if (Date.now() - pulse.last < 2000) pulse.count++; else pulse.count = 1;
+  pulse.last = Date.now();
+  if (!client.pulseMap) client.pulseMap = new Map();
+  client.pulseMap.set(pulseKey, pulse);
+
+  if (pulse.count > 2) {
+    emergencyLockdown(channel.guild, "Anti-Nuke Pulse Detection: Mass Deletion detected.");
+  }
+
+  // Interrogate Audit Log (Parallel)
   (async () => {
-    // 🛡️ [BREACH MODE] If we see rapid deletions, skip wait and hit the emergency ban button
     const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
     const log = auditLogs?.entries.first();
     const executor = log ? log.executor : null;
@@ -2980,42 +2992,53 @@ client.on("channelDelete", async channel => {
 
     if (executor) {
       const isImmune = (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
-
       if (!isImmune) {
-        // 🚨 PULSE DETECTION: If this is the 2nd channel deleted by this executor in <2s, trigger INSTANT BAN
+        // Instant check & punisher
         const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
         if (nukeCheck && nukeCheck.triggered) {
-          punishNuker(channel.guild, executor, "Critical Nuke Pulse Detected", 'ban', nukeCheck.whitelistedGranter);
+          punishNuker(channel.guild, executor, "Critical Nuke Pulse Identified", 'ban', nukeCheck.whitelistedGranter);
         }
       } else {
-        // If it was an owner, skip restoration (or queue deletion of the pre-emptive one)
         client.lastAuthorizedAction = Date.now();
       }
     }
   })();
 
-  // ─── ULTRA-FAST INSTANT REGEN (Parallel Background) ───
+  // ─── BACKGROUND RESTORATION ───
   if (autorestoreEnabled) {
-    if (Date.now() - (client.lastAuthorizedAction || 0) < 2000) {
-      console.log(`🛡️ [AutoRestore] Authorized window active. Skipping regen for '${channel.name}'.`);
-    } else {
-      console.log(`⚡ [AutoRestore] FIRE: Restoring channel '${channel.name}'...`);
-      channel.guild.channels.create({
-        ...snap,
-        reason: `🛡️ Sovereign Anti-Nuke: Rapid Regeneration Protocol.`
-      }).then(async (restored) => {
-        await restored.setPosition(snap.position).catch(() => { });
+    if (Date.now() - (client.lastAuthorizedAction || 0) < 1500) return;
 
-        // Final sanity check: if we just created this but it WAS an authorized user, delete it.
-        const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-        const l = logs?.entries.first();
-        if (l && (l.executor.id === channel.guild.ownerId || l.executor.id === BOT_OWNER_ID)) {
-          await restored.delete("Reversing pre-emptive regen: Authorized action found.").catch(() => { });
-        }
-      }).catch(() => { });
-    }
+    channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
+      await restored.setPosition(snap.position).catch(() => { });
+    }).catch(() => { });
   }
 });
+
+// ───── WEBHOOK PROTECTION ─────
+client.on("webhookUpdate", async channel => {
+  if (!channel.guild) return;
+
+  // Interrogate Audit Log for Webhook Creation (type 72)
+  const audit = await channel.guild.fetchAuditLogs({ type: 72, limit: 1 }).catch(() => null);
+  const entry = audit?.entries.first();
+  if (!entry) return;
+
+  const executor = entry.executor;
+  const { BOT_OWNER_ID } = require("./config");
+  const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id;
+
+  if (!isImmune) {
+    console.log(`🛡️ [Security] Unauthorized Webhook detected by ${executor.tag}. Neutralizing...`);
+
+    // 1. Delete all webhooks in this channel
+    const hooks = await channel.fetchWebhooks().catch(() => null);
+    if (hooks) hooks.forEach(h => h.delete("Unauthorized creation intercepted.").catch(() => { }));
+
+    // 2. Punish Creator
+    punishNuker(channel.guild, executor, "Unauthorized Webhook Creation", 'ban');
+  }
+});
+
 
 
 
