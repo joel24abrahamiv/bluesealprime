@@ -2888,10 +2888,11 @@ client.on("channelDelete", async channel => {
   if (!channel.guild || client.nukingGuilds?.has(channel.guild.id)) return;
 
   const now = Date.now();
-  const pulseKey = `pulse-${channel.guild.id}`;
+  const pulseKey = `pulse-del-${channel.guild.id}`;
   const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: 0 };
 
-  if (now - pulse.last < 3000) pulse.count++; else pulse.count = 1;
+  // 🎯 Pulse window set to 5 seconds per user request
+  if (now - pulse.last < 5000) pulse.count++; else pulse.count = 1;
   pulse.last = now;
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
@@ -2918,19 +2919,19 @@ client.on("channelDelete", async channel => {
         const exec = entry.executor;
         if (!exec || exec.id === client.user.id) return;
 
-        // OWNER CHECK (Absolute Priority)
-        const { BOT_OWNER_ID } = require("./config"); // Ensure BOT_OWNER_ID is available
+        // 👑 OWNER PROTECTION (Architects are immune)
+        const { BOT_OWNER_ID } = require("./config");
         const extraOwners = ownerCacheStore[channel.guild.id] || [];
-        const isOwner = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
+        const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
 
-        if (isOwner) {
+        if (isArchitect) {
           client.lastAuthorizedAction = Date.now();
           return clearInterval(oracleId);
         }
 
-        // 🎯 TARGET IDENTIFIED: Execute immediately
-        console.log(`⚡ [Oracle] Culprit found: ${exec.tag}. Ejecting...`);
-        punishNuker(channel.guild, exec, "Mass Channel Deletion intercepted (Pulse Hunter)", 'ban');
+        // 🎯 TARGET IDENTIFIED (Whitelisted or not - Pulse = Ban)
+        console.log(`⚡ [Oracle] Pulse Culprit found: ${exec.tag}. Ejecting...`);
+        punishNuker(channel.guild, exec, "Mass Channel Deletion detected (Pulse Limit Exceeded)", 'ban');
         clearInterval(oracleId);
       });
     }, 100);
@@ -3090,43 +3091,71 @@ client.on("channelCreate", async channel => {
   if (!channel.guild) return;
   if (client.nukingGuilds?.has(channel.guild.id)) return;
 
-  // 1. Audit Interrogation
-  const auditLogs = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 }).catch(() => null); // 10 = CHANNEL_CREATE
-  const entry = auditLogs?.entries.first();
-  const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+  const now = Date.now();
+  const pulseKey = `pulse-cre-${channel.guild.id}`;
+  const pulse = client.pulseMap?.get(pulseKey) || { count: 0, last: 0 };
 
-  if (!executor || executor.id === client.user.id) return;
+  // 🎯 Pulse window set to 5 seconds per user request
+  if (now - pulse.last < 5000) pulse.count++; else pulse.count = 1;
+  pulse.last = now;
+  if (!client.pulseMap) client.pulseMap = new Map();
+  client.pulseMap.set(pulseKey, pulse);
 
-  // Immunity Check: Bot Owner, Server Owner, & Extra Owners
-  const { BOT_OWNER_ID } = require("./config");
-  const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
+  // 1. 🚨 RAPID RESPONSE (Pulse Detector)
+  if (pulse.count >= 2) {
+    emergencyLockdown(channel.guild, "Mass Channel Creation detected");
 
-  if (isImmune) return;
+    // RECURSIVE ORACLE: Poll the logs at HYPER-SPEED (100ms) to find the creator
+    let attempts = 0;
+    const oracleId = setInterval(async () => {
+      attempts++;
+      if (attempts > 15) return clearInterval(oracleId);
 
-  // 2. Anti-Nuke Check
-  const nukeCheck = checkNuke(channel.guild, executor, "channelCreate");
+      const logs = await channel.guild.fetchAuditLogs({ type: 10, limit: 10 }).catch(() => null);
+      if (!logs) return;
 
-  if (nukeCheck && nukeCheck.triggered) {
-    console.log(`🛡️ [Anti-Nuke] Unauthorized channel creation by ${executor.tag}. Deleting and punishing...`);
+      logs.entries.forEach(entry => {
+        const exec = entry.executor;
+        if (!exec || exec.id === client.user.id) return;
 
-    // 🚀 IMMEDIATE RESPONSE: Delete the unauthorized channel
-    await channel.delete("🛡️ Sovereign Security: Unauthorized channel creation intercepted.").catch(() => { });
+        const { BOT_OWNER_ID } = require("./config");
+        const extraOwners = ownerCacheStore[channel.guild.id] || [];
+        const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
 
-    // 🔨 PUNISHMENT
-    punishNuker(channel.guild, executor, "Mass Channel Creation", 'ban', nukeCheck.whitelistedGranter);
+        if (isArchitect) return clearInterval(oracleId);
 
-    // 📝 LOGGING
-    const V2 = require("./utils/v2Utils");
-    const { V2_RED } = require("./config");
-    const breachEmbed = V2.container([
-      V2.section([
-        V2.heading("🚨 CHANNEL CREATION INTERCEPTED", 2),
-        V2.text(`**Intrusion Detected:** Unauthorized Channel Creation.\n\n**Executor:** @${executor.username} (\`${executor.id}\`)\n**Target Sector:** ${channel.name}\n\n**RESPONSE:** Channel dissolved. Entity neutralized.`)
-      ], "https://cdn-icons-png.flaticon.com/512/9167/9167385.png"),
-      V2.separator(),
-      V2.text(`*Protocol: ZERO_TRUST_CHANNELS • Status: SECURED*`)
-    ], V2_RED);
-    logToChannel(channel.guild, "security", breachEmbed);
+        // 🎯 TARGET IDENTIFIED: Instant dissolve and ban
+        console.log(`⚡ [Oracle] Creation Pulse found: ${exec.tag}. Ejecting...`);
+
+        // Parallel Dissolve & Ban
+        channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
+        punishNuker(channel.guild, exec, "Mass Channel Creation (Pulse Limit Exceeded)", 'ban');
+
+        clearInterval(oracleId);
+      });
+    }, 100);
+  }
+
+  // 2. 🕵️ INDIVIDUAL CHECK
+  if (pulse.count === 1) {
+    (async () => {
+      const auditLogs = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 }).catch(() => null);
+      const entry = auditLogs?.entries.first();
+      const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+
+      if (!executor || executor.id === client.user.id) return;
+
+      const { BOT_OWNER_ID } = require("./config");
+      const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
+
+      if (isImmune) return;
+
+      const nukeCheck = checkNuke(channel.guild, executor, "channelCreate");
+      if (nukeCheck && nukeCheck.triggered) {
+        await channel.delete("🛡️ Sovereign Security: Unauthorized creation.").catch(() => { });
+        punishNuker(channel.guild, executor, "Exceeded creation threshold", 'ban', nukeCheck.whitelistedGranter);
+      }
+    })();
   }
 });
 
