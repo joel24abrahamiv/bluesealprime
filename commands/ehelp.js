@@ -164,6 +164,26 @@ module.exports = {
                         V2.heading("📡 [ SYSTEM_VERIFICATION ]", 3),
                         V2.text("> • **ping** - Core latency and status\n> • **debugavatar** - Troubleshoot and sync identity\n> • **ediagnose** - Deep Module Integrity Scan")
                     ]
+                },
+                {
+                    label: "Project Credits",
+                    value: "credits",
+                    emoji: "🛡️",
+                    description: "Developer & Architect Data",
+                    content: [
+                        V2.heading("🛡️ BLUESEALPRIME: THE ARCHITECTS", 2),
+                        V2.text(
+                            `**[ CORE_DEVELOPER ]**\n` +
+                            `> 👤 **Lead Developer:** <@${BOT_OWNER_ID}>\n` +
+                            `> 🛠️ **System:** Node.js / Discord.js v14\n\n` +
+                            `**[ THE_ARCHITECT_GUIDE ]**\n` +
+                            `> 🧠 **Architect's Guide:** <@1327564898460242015>\n` +
+                            `> *"Respect to the foundations."*\n\n` +
+                            `**[ OPERATIONAL_STRENGTH ]**\n` +
+                            `> 🚀 **Node:** Quantum Cloud State\n` +
+                            `> 🛡️ **Anti-Nuke:** Military Grade protocols`
+                        )
+                    ]
                 }
             ];
 

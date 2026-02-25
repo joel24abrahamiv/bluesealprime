@@ -50,20 +50,28 @@ function addEntry(whitelist, guildId, targetId, addedById, permissions = null) {
     arr.forEach(id => { whitelist[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: {} }; });
   }
 
+  const defaultPerms = {
+    roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
+    kickBan: false, antiDangerous: false,
+    channelCreate: false, channelDelete: false, channelUpdate: false,
+    guildUpdate: false, emojiUpdate: false, webhooks: false,
+    botAdd: false
+  };
+
   if (!whitelist[guildId][targetId]) {
     whitelist[guildId][targetId] = {
       addedBy: addedById,
       addedAt: Date.now(),
-      permissions: permissions || {
-        roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
-        kickBan: false, antiDangerous: false,
-        channelCreate: false, channelDelete: false, channelUpdate: false,
-        guildUpdate: false, emojiUpdate: false, webhooks: false,
-        botAdd: false
-      }
+      permissions: permissions || defaultPerms
     };
-  } else if (permissions) {
-    whitelist[guildId][targetId].permissions = permissions;
+  } else {
+    // Entry exists, ensure permissions object exists
+    if (!whitelist[guildId][targetId].permissions) {
+      whitelist[guildId][targetId].permissions = defaultPerms;
+    }
+    if (permissions) {
+      whitelist[guildId][targetId].permissions = permissions;
+    }
   }
 }
 
@@ -116,7 +124,6 @@ module.exports = {
     }
 
     try {
-      // ───── PERMISSION CHECK ─────
       const ownersDbPath = path.join(__dirname, "../data/owners.json");
       let extraOwners = [];
       if (fs.existsSync(ownersDbPath)) {
@@ -155,7 +162,6 @@ module.exports = {
         });
       }
 
-      // ───── RESOLVE TARGET ─────
       async function resolveTarget(argsList, startIndex = 1) {
         const mention = message.mentions.users.first();
         if (mention) return mention;
@@ -166,7 +172,6 @@ module.exports = {
         return null;
       }
 
-      // ───── ADD / MODIFY ─────
       if (action === "add") {
         const target = await resolveTarget(args, 1);
         if (!target) {
@@ -176,10 +181,9 @@ module.exports = {
           return message.reply({ flags: V2.flag, components: [V2.container([V2.text("ℹ️ Bot Owner has absolute clearance.")], V2_BLUE)] });
         }
 
-        if (!getIds(whitelist, guildId).includes(target.id)) {
-          addEntry(whitelist, guildId, target.id, message.author.id);
-          saveWhitelist(whitelist);
-        }
+        // Always call addEntry to ensure permissions object exists and is migrated if necessary
+        addEntry(whitelist, guildId, target.id, message.author.id);
+        saveWhitelist(whitelist);
 
         const currentEntry = whitelist[guildId][target.id];
         const perms = currentEntry.permissions || {};
@@ -226,7 +230,6 @@ module.exports = {
         return;
       }
 
-      // ───── REMOVE ─────
       if (action === "remove") {
         const target = await resolveTarget(args, 1);
         if (!target || !getIds(whitelist, guildId).includes(target.id)) {
@@ -237,7 +240,6 @@ module.exports = {
         return message.reply({ content: `✅ **${target.tag}** clearance revoked.`, flags: V2.flag });
       }
 
-      // ───── LIST ─────
       if (action === "list" || action === "wllist") {
         const ids = getIds(whitelist, guildId);
         if (ids.length === 0) return message.channel.send({ content: "📜 Registry is empty." });
@@ -250,7 +252,6 @@ module.exports = {
 
     } catch (err) {
       console.error(err);
-      const V2 = require("../utils/v2Utils");
       return message.reply({ content: `❌ **SYSTEM_ERROR:** ${err.message}`, flags: V2.flag }).catch(() => { });
     }
   }

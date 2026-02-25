@@ -23,20 +23,28 @@ function addToGlobalWL(guildId, userId, addedBy, permissions = null) {
         wl[guildId] = {};
         arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: {} }; });
     }
+
+    const defaultPerms = {
+        roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
+        kickBan: false, antiDangerous: false,
+        channelCreate: false, channelDelete: false, channelUpdate: false,
+        guildUpdate: false, emojiUpdate: false, webhooks: false,
+        botAdd: false
+    };
+
     if (!wl[guildId][userId]) {
         wl[guildId][userId] = {
             addedBy: addedBy || null,
             addedAt: Date.now(),
-            permissions: permissions || {
-                roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
-                kickBan: false, antiDangerous: false,
-                channelCreate: false, channelDelete: false, channelUpdate: false,
-                guildUpdate: false, emojiUpdate: false, webhooks: false,
-                botAdd: false
-            }
+            permissions: permissions || defaultPerms
         };
-    } else if (permissions) {
-        wl[guildId][userId].permissions = permissions;
+    } else {
+        if (!wl[guildId][userId].permissions) {
+            wl[guildId][userId].permissions = defaultPerms;
+        }
+        if (permissions) {
+            wl[guildId][userId].permissions = permissions;
+        }
     }
     saveGlobalWhitelist(wl);
 }
