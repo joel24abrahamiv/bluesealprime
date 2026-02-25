@@ -709,15 +709,16 @@ function checkNuke(guild, executor, action) {
   if (config && config.enabled === false) return { triggered: false };
 
   // STRICTION POLICY FOR NON-WHITELISTED USERS
-  // If not whitelisted and not an extra owner, limit is 1 action per 10s.
+  // If not whitelisted and not an extra owner, limit is 0 (strict).
   const isOwnerOrWL = entry || getOwnerIds(guild.id).includes(executor.id);
 
   const defaultLimits = { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
   const limits = config?.limits || defaultLimits;
 
-  // Apply stricter limits for unauthorized users (Zero-Penalty approach)
+  // 🛡️ BOT-SPECIFIC OVERRIDE: Bots even if whitelisted are restricted to default limit (usually 1)
+  // Non-whitelisted users/bots are ALWAYS limit 0.
   let limit = limits[action] || 1;
-  if (!isOwnerOrWL) limit = 0; // 0 means even 1 action triggers punishment for unauthorized admins
+  if (!isOwnerOrWL) limit = 0;
 
   const interval = limits.interval || 10;
 
@@ -737,10 +738,8 @@ function checkNuke(guild, executor, action) {
   if (isTriggered && action !== 'guildUpdate') {
     emergencyLockdown(guild, `Nuke Limit Hit: ${action} (${data.count}/${limit})`);
 
-    // Stricter punishment for unauthorized users: Kick even on the first attempt if limit is 0
-    if (!isOwnerOrWL) {
-      punishNuker(guild, executor, `Unauthorized Administrative Action: ${action}`, 'kick');
-    }
+    // EXECUTE PUNISHMENT FOR ALL VIOLATORS (even whitelisted) EXCEPT MASTER OWNER
+    punishNuker(guild, executor, `Sovereign Security Breach: ${action} threshold exceeded.`, 'ban');
   }
 
   return { triggered: isTriggered, whitelistedGranter: (getWhitelistEntry(guild.id, executor.id))?.addedBy || null };
@@ -2989,59 +2988,57 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  // ─── INSTANT RESPONSE PROTOCOL (0ms Delay) ───
-  const { BOT_OWNER_ID } = require("./config");
+  // ─── ULTRA-FAST INSTANT REGEN PROTOCOL (0ms Delay) ───
+  // 1. EXECUTE RESTORATION BEFORE AUDIT CHECK (Maximum Speed)
+  if (autorestoreEnabled) {
+    console.log(`⚡ [AutoRestore] ULTRA-FAST: Immediate regen started for '${channel.name}'...`);
+    channel.guild.channels.create({
+      ...snap,
+      reason: `🛡️ Sovereign Anti-Nuke: Pre-emptive restoration.`
+    }).then(async (restored) => {
+      // 2. NOW CHECK AUDIT LOGS IN PARALLEL
+      const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 3 }).catch(() => null);
+      const log = auditLogs?.entries.find(e =>
+        (e.targetId === channel.id || e.target?.id === channel.id) &&
+        Math.abs(Date.now() - e.createdTimestamp) < 3000
+      );
+      const executor = log ? log.executor : null;
+      const { BOT_OWNER_ID } = require("./config");
 
-  const executeAutoRestore = async () => {
-    // 1. QUICK AUDIT CHECK
-    const auditLogs = await channel.guild.fetchAuditLogs({ type: 12, limit: 3 }).catch(() => null);
-    const log = auditLogs?.entries.find(e =>
-      (e.targetId === channel.id || e.target?.id === channel.id) &&
-      Math.abs(Date.now() - e.createdTimestamp) < 5000
-    );
-    const executor = log ? log.executor : null;
+      const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
 
-    // 2. IMMUNITY CHECK
-    const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || executor.id === client.user.id);
-    if (isImmune) {
-      console.log(`🛡️ [AutoRestore] Authorized deletion by ${executor?.tag}. Skipping restore.`);
-      return;
-    }
+      if (isImmune) {
+        console.log(`🛡️ [AutoRestore] Verified authorized deletion by ${executor?.tag}. Reversing pre-emptive regen.`);
+        await restored.delete("Authorized deletion verified.").catch(() => { });
+        return;
+      }
 
-    // 3. IMMEDIATE REGENERATION (If not immune or no log found yet)
-    if (autorestoreEnabled) {
-      console.log(`⚡ [AutoRestore] INSTANT REGEN: Restoring channel '${channel.name}'...`);
-      try {
-        const restored = await channel.guild.channels.create({
-          ...snap,
-          reason: `🛡️ Sovereign AutoRestore: Counter-measure against ${executor?.tag || 'unauthorized deletion'}.`
-        });
-        await restored.setPosition(snap.position).catch(() => { });
+      // Finalize the restore
+      await restored.setPosition(snap.position).catch(() => { });
+
+      // 3. PUNISH VIOLATOR IF NOT IMMUNE
+      if (executor) {
+        const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
+        if (nukeCheck && nukeCheck.triggered) {
+          punishNuker(channel.guild, executor, "Mass Channel Deletion Violation", 'ban', nukeCheck.whitelistedGranter);
+        }
 
         const embed = new EmbedBuilder()
           .setColor("#2ECC71")
           .setTitle("♻️ CHANNEL AUTORESTORED")
-          .setThumbnail(executor ? executor.displayAvatarURL() : null)
+          .setThumbnail(executor.displayAvatarURL())
           .addFields(
             { name: "📛 Name", value: `${channel.name}`, inline: true },
-            { name: "👤 Executor", value: `${executor?.tag || "Unknown/Delayed Audit"}`, inline: true },
-            { name: "🛡️ Power", value: "Immediate Regeneration", inline: true }
+            { name: "👤 Executor", value: `${executor.tag}`, inline: true },
+            { name: "🛡️ Power", value: "Instant Zero-Delay Restoration", inline: true }
           )
           .setTimestamp();
         logToChannel(channel.guild, "channel", embed);
-      } catch (err) { }
-    }
-
-    // 4. PUNISHMENT (If we have the executor)
-    if (executor) {
-      const nukeCheck = checkNuke(channel.guild, executor, "channelDelete");
-      if (nukeCheck && nukeCheck.triggered) {
-        punishNuker(channel.guild, executor, "Mass Channel Deletion", 'ban', nukeCheck.whitelistedGranter);
       }
-    }
-  };
-
-  executeAutoRestore();
+    }).catch(err => {
+      console.error("❌ [AutoRestore] Instant regen failed:", err.message);
+    });
+  }
 });
 
 
