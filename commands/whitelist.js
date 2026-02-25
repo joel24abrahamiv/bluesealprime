@@ -1,55 +1,39 @@
 const fs = require("fs");
 const path = require("path");
-const { EmbedBuilder, ActionRowBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require("discord.js");
-const { BOT_OWNER_ID, EMBED_COLOR } = require("../config");
+const { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionsBitField, ComponentType, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { BOT_OWNER_ID, V2_BLUE, V2_RED, WARN_COLOR, ERROR_COLOR } = require("../config");
+const V2 = require("../utils/v2Utils");
+const mainProcess = require("../index");
 
 const WHITELIST_PATH = path.join(__dirname, "../data/whitelist.json");
-const LOGS_DB = path.join(__dirname, "../data/logs.json");
+const ANTINUKE_PATH = path.join(__dirname, "../data/antinuke.json");
 
-function getLogChannel(guildId, type) {
-  if (!fs.existsSync(LOGS_DB)) return null;
-  try {
-    const data = JSON.parse(fs.readFileSync(LOGS_DB, "utf8"));
-    const guildData = data[guildId];
-    if (!guildData) return null;
-    return guildData[type];
-  } catch (e) { return null; }
-}
+// ────── GLOBAL DATABASE MANAGERS ──────
 
-// ───── LOAD WHITELIST ─────
 function loadWhitelist() {
-  if (!fs.existsSync(WHITELIST_PATH)) {
-    fs.writeFileSync(WHITELIST_PATH, JSON.stringify({}, null, 2));
-    return {};
-  }
+  if (!fs.existsSync(WHITELIST_PATH)) return {};
   try {
-    const content = fs.readFileSync(WHITELIST_PATH, "utf8");
-    return content.trim() ? JSON.parse(content) : {};
-  } catch (error) {
-    console.error("❌ Failed to parse whitelist.json:", error);
-    return {};
-  }
+    const data = JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8"));
+    return data || {};
+  } catch { return {}; }
 }
 
-// ───── SAVE WHITELIST ─────
 function saveWhitelist(data) {
-  if (!fs.existsSync(path.dirname(WHITELIST_PATH))) {
-    fs.mkdirSync(path.dirname(WHITELIST_PATH), { recursive: true });
-  }
+  if (!fs.existsSync(path.dirname(WHITELIST_PATH))) fs.mkdirSync(path.dirname(WHITELIST_PATH), { recursive: true });
   fs.writeFileSync(WHITELIST_PATH, JSON.stringify(data, null, 2));
 }
 
-// ───── ADD TO WHITELIST (object format: {addedBy, addedAt, permissions}) ─────
-function addEntry(whitelist, guildId, targetId, addedById, permissions = null) {
-  if (!whitelist[guildId]) whitelist[guildId] = {};
+function loadAntinuke() {
+  if (!fs.existsSync(ANTINUKE_PATH)) return {};
+  try { return JSON.parse(fs.readFileSync(ANTINUKE_PATH, "utf8")); } catch { return {}; }
+}
 
-  // Migrate old array format if needed
-  if (Array.isArray(whitelist[guildId])) {
-    const arr = whitelist[guildId];
-    whitelist[guildId] = {};
-    arr.forEach(id => { whitelist[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: {} }; });
-  }
+function saveAntinuke(data) {
+  if (!fs.existsSync(path.dirname(ANTINUKE_PATH))) fs.mkdirSync(path.dirname(ANTINUKE_PATH), { recursive: true });
+  fs.writeFileSync(ANTINUKE_PATH, JSON.stringify(data, null, 2));
+}
 
+function getSafePerms(entry) {
   const defaultPerms = {
     roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
     kickBan: false, antiDangerous: false,
@@ -57,56 +41,82 @@ function addEntry(whitelist, guildId, targetId, addedById, permissions = null) {
     guildUpdate: false, emojiUpdate: false, webhooks: false,
     botAdd: false
   };
+  if (!entry || !entry.permissions) return defaultPerms;
+  return { ...defaultPerms, ...entry.permissions };
+}
 
-  if (!whitelist[guildId][targetId]) {
-    whitelist[guildId][targetId] = {
-      addedBy: addedById,
+function syncWhitelistAdd(guildId, userId, addedBy, permissions = null) {
+  // Sync Whitelist.json
+  let wl = loadWhitelist();
+  if (!wl[guildId]) wl[guildId] = {};
+
+  // Migrate array to object if needed
+  if (Array.isArray(wl[guildId])) {
+    const arr = wl[guildId];
+    wl[guildId] = {};
+    arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: getSafePerms() }; });
+  }
+
+  if (!wl[guildId][userId]) {
+    wl[guildId][userId] = {
+      addedBy: addedBy,
       addedAt: Date.now(),
-      permissions: permissions || defaultPerms
+      permissions: getSafePerms()
     };
-  } else {
-    // Entry exists, ensure permissions object exists
-    if (!whitelist[guildId][targetId].permissions) {
-      whitelist[guildId][targetId].permissions = defaultPerms;
+  }
+
+  if (permissions) {
+    wl[guildId][userId].permissions = { ...wl[guildId][userId].permissions, ...permissions };
+  }
+  saveWhitelist(wl);
+
+  // Sync Antinuke.json
+  let an = loadAntinuke();
+  if (!an[guildId]) an[guildId] = { enabled: false, whitelisted: [], autorestore: true, limits: {} };
+  if (!an[guildId].whitelisted) an[guildId].whitelisted = [];
+  if (!an[guildId].whitelisted.includes(userId)) {
+    an[guildId].whitelisted.push(userId);
+    saveAntinuke(an);
+  }
+
+  return wl[guildId][userId];
+}
+
+function syncWhitelistRemove(guildId, userId) {
+  // Sync Whitelist.json
+  let wl = loadWhitelist();
+  if (wl[guildId]) {
+    if (Array.isArray(wl[guildId])) {
+      wl[guildId] = wl[guildId].filter(id => id !== userId);
+    } else {
+      delete wl[guildId][userId];
     }
-    if (permissions) {
-      whitelist[guildId][targetId].permissions = permissions;
-    }
+    saveWhitelist(wl);
+  }
+
+  // Sync Antinuke.json
+  let an = loadAntinuke();
+  if (an[guildId] && an[guildId].whitelisted) {
+    an[guildId].whitelisted = an[guildId].whitelisted.filter(id => id !== userId);
+    saveAntinuke(an);
   }
 }
 
-// ───── REMOVE FROM WHITELIST ─────
-function removeEntry(whitelist, guildId, targetId) {
-  if (!whitelist[guildId]) return;
-  if (Array.isArray(whitelist[guildId])) {
-    whitelist[guildId] = whitelist[guildId].filter(id => id !== targetId);
-  } else {
-    delete whitelist[guildId][targetId];
-  }
-}
-
-// ───── GET ALL IDS ─────
-function getIds(whitelist, guildId) {
-  const g = whitelist[guildId];
-  if (!g) return [];
-  if (Array.isArray(g)) return g;
-  return Object.keys(g);
-}
+// ────── COMMAND BODY ──────
 
 module.exports = {
   name: "whitelist",
-  aliases: ["wl", "wllist"],
-  description: "Manage the anti-nuke bot whitelist with granular permissions",
+  aliases: ["wl", "wllist", "unwhitelist"],
+  description: "Manage Sovereign Anti-Nuke Whitelist & Clearances.",
+  usage: "!whitelist <add|remove|list> [@user/ID]",
 
-  async execute(message, args, commandName) {
+  async execute(message, args, commandAlias) {
     const EXECUTION_START_TIME = Date.now();
-    const { V2_BLUE, V2_RED, WARN_COLOR, ERROR_COLOR } = require("../config");
-    const V2 = require("../utils/v2Utils");
-    const mainProcess = require("../index");
 
     if (!message || !message.guild) return;
-    const botMember = message.guild.members.me;
 
+    // Ensure Bot Admin
+    const botMember = message.guild.members.me;
     if (!botMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply({
         flags: V2.flag,
@@ -114,145 +124,365 @@ module.exports = {
       }).catch(() => { });
     }
 
-    if (mainProcess.REACTOR) {
-      await mainProcess.REACTOR.checkBucket(message.guild.id, message.author.id);
-      const cooldown = 3;
-      const remaining = mainProcess.REACTOR.isCooledDown(message.author.id, "whitelist", cooldown);
-      if (remaining && message.author.id !== BOT_OWNER_ID) {
-        return message.reply({ content: `⚠️ **THROTTLED:** Wait ${remaining}s.`, flags: V2.flag }).catch(() => { });
-      }
+    // Auth Checks (Owner Level required ONLY for Advanced config)
+    const isBotOwner = message.author.id === BOT_OWNER_ID;
+    const isServerOwner = message.author.id === message.guild.ownerId;
+    const OWNERS_DB = path.join(__dirname, "../data/owners.json");
+    let extraOwners = [];
+    if (fs.existsSync(OWNERS_DB)) {
+      try {
+        const db = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
+        if (db[message.guild.id]) extraOwners = db[message.guild.id].map(o => typeof o === 'string' ? o : o.id);
+      } catch (e) { }
+    }
+    const isOwner = isBotOwner || isServerOwner || extraOwners.includes(message.author.id);
+    const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+    if (!isAdmin) {
+      return message.reply({
+        flags: V2.flag,
+        components: [V2.container([V2.text("🚫 **Security Alert:** Access Denied. Administrator clearance required.")], V2_RED)]
+      }).catch(() => { });
     }
 
     try {
-      const ownersDbPath = path.join(__dirname, "../data/owners.json");
-      let extraOwners = [];
-      if (fs.existsSync(ownersDbPath)) {
-        try {
-          const db = JSON.parse(fs.readFileSync(ownersDbPath, "utf8"));
-          extraOwners = db[message.guild.id] || [];
-        } catch (e) { }
+      const isAdvanced = message.content.includes(`<@${message.client.user.id}>`);
+      let shiftIndex = 0;
+
+      // If the very first argument is the bot mention, shift everything by 1 so we correctly read 'add' or 'remove'
+      if (args[0] && args[0].includes(message.client.user.id)) {
+        shiftIndex = 1;
       }
 
-      const isBotOwner = message.author.id === BOT_OWNER_ID;
-      const isServerOwner = message.guild.ownerId === message.author.id;
-      const isExtraOwner = extraOwners.includes(message.author.id);
+      // Determine action based on alias
+      let action = args[shiftIndex]?.toLowerCase();
+      let targetArg = args[shiftIndex + 1];
 
-      if (!isBotOwner && !isServerOwner && !isExtraOwner) {
-        return message.reply({
-          flags: V2.flag,
-          components: [V2.container([V2.heading("🚫 ACCESS DENIED", 3), V2.text("Unauthorized access. Admin privileges required.")], ERROR_COLOR || "#FF3030")]
-        });
+      if (commandAlias === "unwhitelist") {
+        action = "remove";
+        targetArg = args[shiftIndex];
+      } else if (commandAlias === "wllist") {
+        action = "list";
       }
 
-      const action = args[0]?.toLowerCase();
-      const whitelist = loadWhitelist();
-      const guildId = message.guild.id;
-
-      if (!action) {
+      if (!action || !["add", "remove", "list"].includes(action)) {
         return message.reply({
           flags: V2.flag,
           components: [V2.container([
-            V2.section([V2.heading("📜 SECURITY WHITELIST", 2), V2.text("Manage authorized agents with granular security clearances.")], message.client.user.displayAvatarURL()),
+            V2.section(
+              [V2.heading("🛡️ SOVEREIGN CLEARANCE REGISTRY", 2), V2.text("Manage immune agents across the server architecture.")],
+              message.client.user.displayAvatarURL()
+            ),
             V2.separator(),
-            V2.heading("⚙️ USAGE", 3),
-            V2.text("> `!whitelist add @user` — Configure permissions\n> `!whitelist remove @user` — Remove clearance\n> `!whitelist list` — View registry"),
+            V2.heading("⚙️ TIER 1: AUTO-MOD WHITELIST", 3),
+            V2.text("> `!whitelist add @user` — Grant Spam/BadWord Immunity\n> `!whitelist remove @user` — Revoke AI immunities"),
             V2.separator(),
-            V2.text("*BlueSealPrime Security Matrix*")
-          ], V2_BLUE || "#0099ff")]
+            V2.heading("⚙️ TIER 2: ANTI-NUKE MATRIX (OWNERS ONLY)", 3),
+            V2.text(`> \`@${message.client.user.username} !whitelist add @user\` — Open Granular Settings`),
+            V2.separator(),
+            V2.text("*BlueSealPrime Identity Protocol*")
+          ], V2_BLUE)]
         });
       }
 
-      async function resolveTarget(argsList, startIndex = 1) {
-        const mention = message.mentions.users.first();
+      // Target Resolver function
+      const resolveTarget = async (idOrMention) => {
+        // Must filter out the bot if it was tagged for advanced mode
+        const mention = message.mentions.users.filter(u => u.id !== message.client.user.id).first();
         if (mention) return mention;
-        const id = argsList[startIndex];
-        if (id && /^\d{17,20}$/.test(id)) {
-          try { return await message.client.users.fetch(id); } catch (e) { return null; }
+        if (idOrMention && /^\d{17,20}$/.test(idOrMention)) {
+          try { return await message.client.users.fetch(idOrMention); } catch { return null; }
         }
-        return null;
-      }
+        return null; // Silent fallthrough handled by checks below
+      };
 
-      if (action === "add") {
-        const target = await resolveTarget(args, 1);
+      // ── ADD TO WHITELIST & SETUP CLEARANCES ──
+      if (action === "add" || (isAdvanced && action === "remove")) {
+        const target = await resolveTarget(targetArg);
         if (!target) {
-          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ Identify a target user or bot.")], WARN_COLOR)] });
+          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Invalid Target:** Please mention a user/bot or provide their ID.")], WARN_COLOR || "#FFCC00")] });
         }
-        if (target.id === BOT_OWNER_ID) {
-          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("ℹ️ Bot Owner has absolute clearance.")], V2_BLUE)] });
+        if (target.id === BOT_OWNER_ID || target.id === message.guild.ownerId) {
+          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("ℹ️ **Sovereign Override:** Target already possesses maximum absolute clearance.")], V2_BLUE)] });
         }
 
-        // Always call addEntry to ensure permissions object exists and is migrated if necessary
-        addEntry(whitelist, guildId, target.id, message.author.id);
-        saveWhitelist(whitelist);
+        // ── NORMAL FLOW: INSTANT AUTO-MOD IMMUNITY ──
+        if (!isAdvanced) {
+          let wl = loadWhitelist();
+          if (!wl[message.guild.id]) wl[message.guild.id] = {};
+          if (!wl[message.guild.id][target.id]) {
+            wl[message.guild.id][target.id] = { addedBy: message.author.id, addedAt: Date.now(), permissions: getSafePerms() };
+          }
+          if (!wl[message.guild.id][target.id].permissions) wl[message.guild.id][target.id].permissions = getSafePerms();
 
-        const currentEntry = (whitelist[guildId] && whitelist[guildId][target.id]) || { permissions: {} };
-        const perms = currentEntry.permissions || {};
+          wl[message.guild.id][target.id].permissions.antiSpam = true;
+          wl[message.guild.id][target.id].permissions.antiBadwords = true;
+          saveWhitelist(wl);
 
-        const createButton = (id, label, enabled) => {
-          return V2.button(`wl_${target.id}_${id}`, label, enabled ? ButtonStyle.Danger : ButtonStyle.Secondary).setEmoji(enabled ? "🔴" : "🔘");
+          return message.reply({
+            flags: V2.flag,
+            components: [V2.container([
+              V2.section([
+                V2.heading("✅ AUTO-MOD EXEMPTION GRANTED", 2),
+                V2.text(`**Target:** ${target.tag || target.username}\n> Agent is now immune to Chat Filters (Spam/BadWords).`)
+              ], target.displayAvatarURL({ dynamic: true }))
+            ], "#2ECC71")]
+          });
+        }
+
+        // ── ADVANCED FLOW: DROPDOWN MATRIX (Requires Owner) ──
+        if (isAdvanced && !isOwner) {
+          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **Security Alert:** Advanced Dropdown Matrix restricted to System Owners.")], V2_RED)] });
+        }     // Add to registry with default perms to begin interacting
+        const entry = syncWhitelistAdd(message.guild.id, target.id, message.author.id);
+        let currentPerms = getSafePerms(entry);
+
+        const buildMenu = (perms) => {
+          // Mappings for UI
+          const optionsData = [
+            { id: "roleCreate", label: "Create Roles", desc: "Allow creating new server roles" },
+            { id: "roleDelete", label: "Delete Roles", desc: "Allow omitting existing server roles" },
+            { id: "roleUpdate", label: "Update Roles", desc: "Allow modify role details and hierarchy" },
+            { id: "roleAdd", label: "Assign Roles", desc: "Allow giving roles to members" },
+            { id: "channelCreate", label: "Create Channels", desc: "Allow building new text/voice channels" },
+            { id: "channelDelete", label: "Delete Channels", desc: "Allow removing existing channels" },
+            { id: "channelUpdate", label: "Update Channels", desc: "Allow modifying channel overrides" },
+            { id: "kickBan", label: "Ban & Kick", desc: "Allow moderating and expelling users" },
+            { id: "antiDangerous", label: "Anti-Dangerous", desc: "Bypass anti-dangerous permission filters" },
+            { id: "botAdd", label: "Invite Bots", desc: "Allow executing bot invites to server" },
+            { id: "guildUpdate", label: "Server Settings", desc: "Allow updating guild name, icon, vanity" },
+            { id: "webhooks", label: "Manage Webhooks", desc: "Allow creation and deletion of webhooks" }
+          ];
+
+          const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId(`wl_select_${target.id}`)
+            .setPlaceholder("Select Immunities for this target...")
+            .setMinValues(0)
+            .setMaxValues(optionsData.length);
+
+          optionsData.forEach(opt => {
+            const isEnabled = !!perms[opt.id];
+            selectMenu.addOptions(
+              new StringSelectMenuOptionBuilder()
+                .setLabel(opt.label)
+                .setDescription(opt.desc)
+                .setValue(opt.id)
+                .setDefault(isEnabled)
+            );
+          });
+
+          const buttonsRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`wl_save_${target.id}`)
+              .setLabel("Save Clearance")
+              .setStyle(ButtonStyle.Success)
+              .setEmoji("✅"),
+            new ButtonBuilder()
+              .setCustomId(`wl_terminate_${target.id}`)
+              .setLabel("Terminate")
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji("🛑")
+          );
+
+          return [
+            V2.section([
+              V2.heading(`Clearance Matrix: ${target.tag || target.username}`, 2),
+              V2.text("Configure specific actions this agent is immune against.")
+            ], target.displayAvatarURL({ dynamic: true })),
+            V2.separator(),
+            new ActionRowBuilder().addComponents(selectMenu),
+            buttonsRow
+          ];
         };
 
-        const generateComponents = (currentPerms) => [
-          V2.section([V2.heading(`Clearance: ${target.tag || target.username}`, 2), V2.text("Toggle specific authorizations for this agent.")], target.displayAvatarURL({ dynamic: true })),
-          V2.separator(),
-          V2.text("**Roles**"),
-          new ActionRowBuilder().addComponents(createButton("roleCreate", "Create", currentPerms.roleCreate), createButton("roleDelete", "Delete", currentPerms.roleDelete), createButton("roleUpdate", "Update", currentPerms.roleUpdate), createButton("roleAdd", "Give", currentPerms.roleAdd)),
-          V2.text("**Moderation**"),
-          new ActionRowBuilder().addComponents(createButton("kickBan", "Ban/Kick", currentPerms.kickBan), createButton("antiDangerous", "Dangerous", currentPerms.antiDangerous)),
-          V2.text("**Channels**"),
-          new ActionRowBuilder().addComponents(createButton("channelCreate", "Create", currentPerms.channelCreate), createButton("channelDelete", "Delete", currentPerms.channelDelete), createButton("channelUpdate", "Update", currentPerms.channelUpdate)),
-          V2.text("**Server**"),
-          new ActionRowBuilder().addComponents(createButton("guildUpdate", "Settings", currentPerms.guildUpdate), createButton("emojiUpdate", "Emoji", currentPerms.emojiUpdate), createButton("webhooks", "Webhooks", currentPerms.webhooks)),
-          V2.text("**System**"),
-          new ActionRowBuilder().addComponents(createButton("botAdd", "Add/Rem Bots", currentPerms.botAdd)),
-          V2.separator(),
-          new ActionRowBuilder().addComponents(V2.button(`wl_${target.id}_save`, "SAVE CLEARANCE", ButtonStyle.Primary))
-        ];
+        const msgResponse = await message.reply({ components: [V2.container(buildMenu(currentPerms), V2_BLUE)], flags: V2.flag });
 
-        const response = await message.reply({ components: [V2.container(generateComponents(perms), V2_BLUE)] });
-        const collector = response.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60000, filter: i => i.user.id === message.author.id });
-        let activePerms = { ...perms };
-
-        collector.on("collect", async i => {
-          const parts = i.customId.split("_");
-          const subAction = parts[2];
-
-          if (subAction === "save") {
-            const fresh = loadWhitelist();
-            addEntry(fresh, guildId, target.id, message.author.id, activePerms);
-            saveWhitelist(fresh);
-            await i.update({ components: [V2.container([V2.heading("✅ REGISTRY UPDATED", 2), V2.text(`Clearance levels for **${target.tag}** have been secured.`)], "#2ECC71")] });
-            return collector.stop();
-          }
-          activePerms[subAction] = !activePerms[subAction];
-          await i.update({ components: [V2.container(generateComponents(activePerms), V2_BLUE)] });
+        const collector = msgResponse.createMessageComponentCollector({
+          time: 90000,
+          filter: i => i.user.id === message.author.id
         });
-        return;
-      }
 
-      if (action === "remove") {
-        const target = await resolveTarget(args, 1);
-        if (!target || !getIds(whitelist, guildId).includes(target.id)) {
-          return message.reply({ content: "⚠️ Agent not found in registry.", flags: V2.flag });
+        collector.on("collect", async (i) => {
+          if (i.componentType === ComponentType.StringSelect) {
+            const selected = i.values || []; // Array of selected option IDs
+
+            // Reset all
+            const newPerms = getSafePerms();
+            // Apply selected
+            selected.forEach(optId => {
+              newPerms[optId] = true;
+            });
+
+            // Save properties dynamically without closing
+            currentPerms = newPerms;
+            syncWhitelistAdd(message.guild.id, target.id, message.author.id, currentPerms);
+
+            await i.update({ components: [V2.container(buildMenu(currentPerms), V2_BLUE)] });
+          } else if (i.componentType === ComponentType.Button) {
+            if (i.customId.startsWith("wl_save_")) {
+              // Already synced on dropdown change, simply close
+              await i.update({
+                components: [V2.container([
+                  V2.section([
+                    V2.heading("✅ REGISTRY SYNCHRONIZED", 2),
+                    V2.text(`Clearance architecture for **${target.tag || target.username}** successfully archived.`)
+                  ])
+                ], "#2ECC71")]
+              });
+              collector.stop("saved");
+            } else if (i.customId.startsWith("wl_terminate_")) {
+              await i.update({
+                components: [V2.container([
+                  V2.section([
+                    V2.heading("🛑 CONFIGURATION TERMINATED", 2),
+                    V2.text(`Clearance interface for **${target.tag || target.username}** was aborted by the administrator.`)
+                  ])
+                ], V2_RED)]
+              });
+              collector.stop("terminated");
+            }
+          }
+        });
+
+        collector.on("end", (collected, reason) => {
+          if (reason === "time") {
+            const savedText = `Clearance interface for **${target.tag || target.username}** timed out. Changes previously made were saved.`;
+            msgResponse.edit({
+              components: [V2.container([
+                V2.section([
+                  V2.heading("⚠️ SESSION TIMEOUT", 2),
+                  V2.text(savedText)
+                ])
+              ], WARN_COLOR || "#FFCC00")]
+            }).catch(() => { });
+          }
+        });
+      } // <--- Added missing bracket closing the `add` logical block
+
+      // ── REMOVE FROM WHITELIST (NORMAL ROUTE) ──
+      if (action === "remove" && !isAdvanced) {
+        const target = await resolveTarget(targetArg);
+        if (!target) {
+          return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Invalid Target:** Please mention a user/bot or provide their ID.")], WARN_COLOR || "#FFCC00")] });
         }
-        removeEntry(whitelist, guildId, target.id);
-        saveWhitelist(whitelist);
-        return message.reply({ content: `✅ **${target.tag}** clearance revoked.`, flags: V2.flag });
+
+        let wl = loadWhitelist();
+        if (wl[message.guild.id] && wl[message.guild.id][target.id]) {
+          // Just revoke specific auto-mod perms instead of full nuke
+          if (wl[message.guild.id][target.id].permissions) {
+            wl[message.guild.id][target.id].permissions.antiSpam = false;
+            wl[message.guild.id][target.id].permissions.antiBadwords = false;
+            saveWhitelist(wl);
+          }
+        }
+
+        return message.reply({
+          flags: V2.flag,
+          components: [V2.container([
+            V2.section([
+              V2.heading("🗑️ AUTO-MOD EXEMPTION REVOKED", 2),
+              V2.text(`**Target:** ${target.tag || target.username}\n> Spam & Chat Filter immunities successfully stripped.`)
+            ], target.displayAvatarURL({ dynamic: true }))
+          ], V2_RED)]
+        });
       }
 
-      if (action === "list" || action === "wllist") {
-        const ids = getIds(whitelist, guildId);
-        if (ids.length === 0) return message.channel.send({ content: "📜 Registry is empty." });
-        const lines = await Promise.all(ids.map(async (id, i) => {
+      // ── LIST WHITELISTED ENTITIES ──
+      if (action === "list") {
+        const wl = loadWhitelist();
+        const guildWl = wl[message.guild.id];
+        let ids = [];
+
+        if (guildWl) {
+          if (Array.isArray(guildWl)) ids = guildWl;
+          else ids = Object.keys(guildWl);
+        }
+
+        let targetIds = [];
+        if (!Array.isArray(guildWl) && guildWl) {
+          for (const id of ids) {
+            const perms = guildWl[id].permissions || {};
+            const hasAdvanced = ['roleCreate', 'roleDelete', 'roleUpdate', 'roleAdd', 'channelCreate', 'channelDelete', 'channelUpdate', 'kickBan', 'antiDangerous', 'botAdd', 'guildUpdate', 'webhooks'].some(p => perms[p]);
+            const hasNormal = perms.antiSpam || perms.antiBadwords;
+
+            if (isAdvanced && hasAdvanced) targetIds.push(id);
+            else if (!isAdvanced && hasNormal) targetIds.push(id);
+          }
+        } else {
+          targetIds = ids; // Legacy mapping
+        }
+
+        const title = isAdvanced ? "🛡️ ANTI-NUKE MATRIX REGISTRY" : "🛡️ AUTO-MOD EXEMPTION REGISTRY";
+        const desc = isAdvanced ? "**Agents holding Dangerous Clearances:**" : "**Agents holding Chat Filter Immunities:**";
+        const emptyDesc = isAdvanced ? "No agents possess advanced Anti-Nuke clearances." : "No agents possess basic Auto-Mod immunities.";
+
+        if (targetIds.length === 0) {
+          return message.reply({
+            flags: V2.flag,
+            components: [V2.container([
+              V2.section(
+                [V2.heading(title, 2), V2.text(emptyDesc)],
+                message.client.user.displayAvatarURL()
+              )
+            ], V2_BLUE)]
+          });
+        }
+
+        const linesPromises = targetIds.map(async (id, i) => {
           const u = message.client.users.cache.get(id) || await message.client.users.fetch(id).catch(() => null);
-          return `**${i + 1}.** ${u ? (u.bot ? "🤖" : "👤") + " " + u.tag : "❓ Unknown"} (\`${id}\`)`;
-        }));
-        return message.channel.send({ components: [V2.container([V2.heading("📜 AUTHORIZED PERSONNEL", 2), V2.text(lines.join("\n"))], V2_BLUE)] });
+          const icon = u ? (u.bot ? "🤖" : "👤") : "❓";
+          const name = u ? (u.tag || u.username) : "Unknown Entity";
+
+          if (!isAdvanced) {
+            return `> **${i + 1}.** ${icon} **${name}** (\`${id}\`)`;
+          }
+
+          // Advanced Mode: Show spacious granular permissions mapping
+          const perms = guildWl[id]?.permissions || {};
+          let heldPerms = [];
+          if (perms.roleCreate) heldPerms.push("RoleCreate");
+          if (perms.roleDelete) heldPerms.push("RoleDelete");
+          if (perms.roleUpdate) heldPerms.push("RoleUpdate");
+          if (perms.roleAdd) heldPerms.push("RoleAdd");
+          if (perms.channelCreate) heldPerms.push("ChannelCreate");
+          if (perms.channelDelete) heldPerms.push("ChannelDelete");
+          if (perms.channelUpdate) heldPerms.push("ChannelUpdate");
+          if (perms.kickBan) heldPerms.push("Kick/Ban");
+          if (perms.antiDangerous) heldPerms.push("Anti-Dangerous");
+          if (perms.botAdd) heldPerms.push("Bot Add");
+          if (perms.guildUpdate) heldPerms.push("Guild Settings");
+          if (perms.webhooks) heldPerms.push("Webhooks");
+
+          const permString = heldPerms.length > 0 ? heldPerms.join(" • ") : "No specific clearances identified";
+
+          return `> **${i + 1}.** ${icon} **${name}**\n> └ 🆔 \`${id}\`\n> └ ⚙️ \`${permString}\`\n`;
+        });
+
+        const lines = await Promise.all(linesPromises);
+
+        return message.reply({
+          flags: V2.flag,
+          components: [V2.container([
+            V2.section(
+              [V2.heading(title, 2), V2.text(desc)],
+              message.guild.iconURL({ dynamic: true })
+            ),
+            V2.text("\n" + lines.join("\n")),
+            V2.separator(),
+            V2.text("*BlueSealPrime Identity Protocol*")
+          ], V2_BLUE)]
+        });
       }
 
     } catch (err) {
-      console.error(err);
-      return message.reply({ content: `❌ **SYSTEM_ERROR:** ${err.message}`, flags: V2.flag }).catch(() => { });
+      console.error("[WHITELIST COMMAND ERROR]", err);
+      return message.reply({
+        flags: V2.flag,
+        components: [V2.container([
+          V2.heading("🛑 CRITICAL EXCEPTION", 2),
+          V2.text(`\`${err.message}\``)
+        ], ERROR_COLOR || V2_RED)]
+      }).catch(() => { });
     }
   }
 };

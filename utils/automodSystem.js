@@ -45,20 +45,27 @@ async function checkAutomod(message, client) {
     // Load Whitelist (both Global & Anti-Nuke)
     const WHITELIST_DB = path.join(__dirname, "../data/whitelist.json");
     const ANTINUKE_DB = path.join(__dirname, "../data/antinuke.json");
-    let whitelist = [];
-    if (fs.existsSync(WHITELIST_DB)) {
-        try {
-            const wlData = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-            whitelist.push(...(wlData[message.guild.id] || []));
-        } catch (e) { }
-    }
+    let hasAntiNukeWL = false;
+    let whitelistPerms = {}; // Granular permissions
+
     if (fs.existsSync(ANTINUKE_DB)) {
         try {
             const anData = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
-            whitelist.push(...(anData[message.guild.id]?.whitelisted || []));
+            hasAntiNukeWL = (anData[message.guild.id]?.whitelisted || []).includes(message.author.id);
         } catch (e) { }
     }
-    if (whitelist.includes(message.author.id)) return;
+
+    if (fs.existsSync(WHITELIST_DB)) {
+        try {
+            const wlData = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
+            if (wlData[message.guild.id] && wlData[message.guild.id][message.author.id]) {
+                whitelistPerms = wlData[message.guild.id][message.author.id].permissions || {};
+            }
+        } catch (e) { }
+    }
+
+    // Fully bypassed if they are in the Advanced Anti-Nuke list
+    if (hasAntiNukeWL) return;
 
     // Load Config
     const AUTOMOD_DB = path.join(__dirname, "../data/automod.json");
@@ -90,7 +97,7 @@ async function checkAutomod(message, client) {
         .replace(/[\W_]+/g, ""); // Keep alphanumeric
 
     // ───── 2. ANTI-LINKS ─────
-    if (settings.antiLinks) {
+    if (settings.antiLinks && !whitelistPerms.antiBadwords) {
         const linkRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/ig;
         if (linkRegex.test(content)) {
             const allowedDomains = ["tenor.com", "giphy.com", "discord.com", "discord.gg", "youtube.com", "spotify.com"];
@@ -100,7 +107,7 @@ async function checkAutomod(message, client) {
     }
 
     // ───── 3. ANTI-BAD WORDS / SCAMS ─────
-    if (settings.antiBadWords) {
+    if (settings.antiBadWords && !whitelistPerms.antiBadwords) {
         // Double Check: Exact matches + Normalized matches
         const wordsInContent = content.toLowerCase().split(/\s+/);
         let foundWord = ORIGINAL_BAD_WORDS.find(word => normalized.includes(word) || wordsInContent.includes(word));
@@ -120,7 +127,7 @@ async function checkAutomod(message, client) {
     }
 
     // ───── 5. ANTI-SPAM ─────
-    if (settings.antiSpam) {
+    if (settings.antiSpam && !whitelistPerms.antiSpam) {
         const userId = message.author.id;
         const now = Date.now();
         const userData = spamMap.get(userId) || { count: 0, lastMsg: now, firstMsg: now };

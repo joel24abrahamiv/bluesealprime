@@ -152,13 +152,24 @@ module.exports = {
         }
 
         // ───── MANUAL COMMAND OVERRIDES (Legacy support) ─────
-        const sub = args[0].toLowerCase();
+        if (!args || !args[0]) return;
         let changed = false;
 
-        if (sub === "links") { settings.antiLinks = !settings.antiLinks; changed = true; }
-        if (sub === "spam") { settings.antiSpam = !settings.antiSpam; changed = true; }
-        if (sub === "badwords") { settings.antiBadWords = !settings.antiBadWords; changed = true; }
-        if (sub === "mentions") { settings.antiMassMentions = !settings.antiMassMentions; changed = true; }
+        for (const arg of args) {
+            const sub = arg.toLowerCase();
+            if (sub === "links_true") { settings.antiLinks = true; changed = true; }
+            else if (sub === "links_false") { settings.antiLinks = false; changed = true; }
+            else if (sub === "spam_true") { settings.antiSpam = true; changed = true; }
+            else if (sub === "spam_false") { settings.antiSpam = false; changed = true; }
+            else if (sub === "badwords_true") { settings.antiBadWords = true; changed = true; }
+            else if (sub === "badwords_false") { settings.antiBadWords = false; changed = true; }
+            else if (sub === "mentions_true") { settings.antiMassMentions = true; changed = true; }
+            else if (sub === "mentions_false") { settings.antiMassMentions = false; changed = true; }
+            else if (sub === "links") { settings.antiLinks = !settings.antiLinks; changed = true; }
+            else if (sub === "spam") { settings.antiSpam = !settings.antiSpam; changed = true; }
+            else if (sub === "badwords") { settings.antiBadWords = !settings.antiBadWords; changed = true; }
+            else if (sub === "mentions") { settings.antiMassMentions = !settings.antiMassMentions; changed = true; }
+        }
 
         if (changed) {
             data[guildId] = settings;

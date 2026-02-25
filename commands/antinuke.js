@@ -4,60 +4,6 @@ const path = require("path");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 
 const DB_PATH = path.join(__dirname, "../data/antinuke.json");
-const WHITELIST_PATH = path.join(__dirname, "../data/whitelist.json");
-
-// ── Shared whitelist.json helpers (this is what checkNuke reads) ──
-function loadGlobalWhitelist() {
-    if (!fs.existsSync(WHITELIST_PATH)) return {};
-    try { return JSON.parse(fs.readFileSync(WHITELIST_PATH, "utf8")); } catch { return {}; }
-}
-function saveGlobalWhitelist(data) {
-    if (!fs.existsSync(path.dirname(WHITELIST_PATH))) fs.mkdirSync(path.dirname(WHITELIST_PATH), { recursive: true });
-    fs.writeFileSync(WHITELIST_PATH, JSON.stringify(data, null, 2));
-}
-function addToGlobalWL(guildId, userId, addedBy, permissions = null) {
-    const wl = loadGlobalWhitelist();
-    if (!wl[guildId]) wl[guildId] = {};
-    if (Array.isArray(wl[guildId])) {
-        const arr = wl[guildId];
-        wl[guildId] = {};
-        arr.forEach(id => { wl[guildId][id] = { addedBy: null, addedAt: Date.now(), permissions: {} }; });
-    }
-
-    const defaultPerms = {
-        roleCreate: false, roleDelete: false, roleUpdate: false, roleAdd: false,
-        kickBan: false, antiDangerous: false,
-        channelCreate: false, channelDelete: false, channelUpdate: false,
-        guildUpdate: false, emojiUpdate: false, webhooks: false,
-        botAdd: false
-    };
-
-    if (!wl[guildId][userId]) {
-        wl[guildId][userId] = {
-            addedBy: addedBy || null,
-            addedAt: Date.now(),
-            permissions: permissions || defaultPerms
-        };
-    } else {
-        if (!wl[guildId][userId].permissions) {
-            wl[guildId][userId].permissions = defaultPerms;
-        }
-        if (permissions) {
-            wl[guildId][userId].permissions = permissions;
-        }
-    }
-    saveGlobalWhitelist(wl);
-}
-function removeFromGlobalWL(guildId, userId) {
-    const wl = loadGlobalWhitelist();
-    if (!wl[guildId]) return;
-    if (Array.isArray(wl[guildId])) {
-        wl[guildId] = wl[guildId].filter(id => id !== userId);
-    } else {
-        delete wl[guildId][userId];
-    }
-    saveGlobalWhitelist(wl);
-}
 
 function loadDB() {
     if (!fs.existsSync(DB_PATH)) return {};
@@ -187,8 +133,8 @@ module.exports = {
                     });
                 }
 
-                // ───── STATUS ─────
-                if (sub === "status") {
+                // ───── STATUS / VIEW ─────
+                if (sub === "status" || sub === "view") {
                     return message.reply({
                         content: null, flags: V2.flag,
                         components: [V2.container([
@@ -231,220 +177,36 @@ module.exports = {
                     });
                 }
 
-                // ───── WHITELIST (WL) ─────
-                if (sub === "wl" || sub === "whitelist") {
-                    const action = args[1]?.toLowerCase();
 
-                    // ── Resolve target: mention OR raw bot/user ID ──
-                    async function resolveWLTarget(rawId) {
-                        const mentioned = message.mentions.users.first();
-                        if (mentioned) return mentioned;
-                        if (rawId && /^\d{17,20}$/.test(rawId)) {
-                            try { return await message.client.users.fetch(rawId); } catch { return null; }
-                        }
-                        return null;
+                // ───── WHITELIST (WL) / UNWHITELIST ─────
+                if (sub === "wl" || sub === "whitelist" || sub === "unwhitelist") {
+                    const wlCommand = message.client.commands.get("whitelist");
+                    if (wlCommand) {
+                        return wlCommand.execute(message, args.slice(1), sub);
+                    } else {
+                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("❌ Whitelist module is offline.")], V2_RED)] });
                     }
-
-                    // Add
-                    if (action === "add") {
-                        const user = await resolveWLTarget(args[2]);
-                        if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl add @bot` or `!antinuke wl add <botID>`")], V2_RED)] });
-
-                        // Ensure they are in the local config
-                        if (!config.whitelisted.includes(user.id)) {
-                            config.whitelisted.push(user.id);
-                            saveDB(db);
-                        }
-
-                        // ALWAYS ensure they are in the global registry with correct structure
-                        addToGlobalWL(message.guild.id, user.id, message.author.id);
-
-                        // ── GRANULAR PERMISSIONS UI (BUTTONS) ──
-                        const V2 = require("../utils/v2Utils");
-                        const { ActionRowBuilder, ButtonStyle, ComponentType } = require("discord.js");
-
-                        const globalWL = loadGlobalWhitelist();
-                        const guildWL = globalWL[message.guild.id] || {};
-                        const entry = guildWL[user.id] || { permissions: {} };
-                        const perms = entry.permissions || {};
-
-                        const createButton = (id, label, enabled) => {
-                            return V2.button(`wl_${user.id}_${id}`, label, enabled ? ButtonStyle.Danger : ButtonStyle.Secondary)
-                                .setEmoji(enabled ? "🔴" : "🔘");
-                        };
-
-                        const generateComponents = (currentPerms) => {
-                            return [
-                                V2.section([V2.heading(`Whitelist Management: ${user.tag || user.username}`, 2), V2.text("Select specific actions this user is authorized to perform.")], user.displayAvatarURL({ dynamic: true })),
-                                V2.separator(),
-                                V2.text("**Roles Management**"),
-                                new ActionRowBuilder().addComponents(
-                                    createButton("roleCreate", "Role Create", currentPerms.roleCreate),
-                                    createButton("roleDelete", "Role Delete", currentPerms.roleDelete),
-                                    createButton("roleUpdate", "Role Update", currentPerms.roleUpdate),
-                                    createButton("roleAdd", "Give Roles", currentPerms.roleAdd)
-                                ),
-                                V2.text("**Moderation**"),
-                                new ActionRowBuilder().addComponents(
-                                    createButton("kickBan", "Ban / Kick", currentPerms.kickBan),
-                                    createButton("antiDangerous", "Dangerous", currentPerms.antiDangerous)
-                                ),
-                                V2.text("**Channel Management**"),
-                                new ActionRowBuilder().addComponents(
-                                    createButton("channelCreate", "Chan Create", currentPerms.channelCreate),
-                                    createButton("channelDelete", "Chan Delete", currentPerms.channelDelete),
-                                    createButton("channelUpdate", "Chan Update", currentPerms.channelUpdate)
-                                ),
-                                V2.text("**Server Management**"),
-                                new ActionRowBuilder().addComponents(
-                                    createButton("guildUpdate", "Server Mod", currentPerms.guildUpdate),
-                                    createButton("emojiUpdate", "Emoji Update", currentPerms.emojiUpdate),
-                                    createButton("webhooks", "Webhooks", currentPerms.webhooks)
-                                ),
-                                V2.text("**Bot Management**"),
-                                new ActionRowBuilder().addComponents(
-                                    createButton("botAdd", "Bot Add/Rem", currentPerms.botAdd)
-                                ),
-                                V2.separator(),
-                                new ActionRowBuilder().addComponents(V2.button(`wl_${user.id}_save`, "SAVE CHANGES", ButtonStyle.Primary))
-                            ];
-                        };
-
-                        const response = await message.reply({
-                            content: null, flags: V2.flag,
-                            components: [V2.container(generateComponents(perms), V2_BLUE)]
-                        });
-
-                        const collector = response.createMessageComponentCollector({
-                            componentType: ComponentType.Button,
-                            time: 60000,
-                            filter: (i) => i.user.id === message.author.id
-                        });
-
-                        let activePerms = { ...perms };
-
-                        collector.on("collect", async (i) => {
-                            const parts = i.customId.split("_");
-                            const targetId = parts[1];
-                            const action = parts[2];
-
-                            if (action === "save") {
-                                addToGlobalWL(message.guild.id, targetId, message.author.id, activePerms);
-                                await i.update({
-                                    components: [V2.container([V2.section([V2.heading("✅ PERMISSIONS SECURED", 2), V2.text(`Settings for **${user.tag}** have been updated successfully.`)])], "#2ECC71")]
-                                });
-                                return collector.stop();
-                            }
-
-                            // Toggle
-                            activePerms[action] = !activePerms[action];
-                            await i.update({
-                                components: [V2.container(generateComponents(activePerms), V2_BLUE)]
-                            });
-                        });
-                    }
-
-                    // Remove
-                    if (action === "remove") {
-                        const user = await resolveWLTarget(args[2]);
-                        if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke wl remove @bot` or `!antinuke wl remove <botID>`")], V2_RED)] });
-
-                        const globalWL = loadGlobalWhitelist();
-                        const inGlobal = globalWL[message.guild.id] && (
-                            Array.isArray(globalWL[message.guild.id])
-                                ? globalWL[message.guild.id].includes(user.id)
-                                : !!globalWL[message.guild.id][user.id]
-                        );
-
-                        if (config.whitelisted.includes(user.id) || inGlobal) {
-                            if (config.whitelisted.includes(user.id)) {
-                                config.whitelisted = config.whitelisted.filter(id => id !== user.id);
-                                saveDB(db);
-                            }
-                            // ✅ CRITICAL: also remove from whitelist.json
-                            removeFromGlobalWL(message.guild.id, user.id);
-                            return message.reply({
-                                content: null, flags: V2.flag,
-                                components: [V2.container([
-                                    V2.section([
-                                        V2.heading("🗑️ CLEARANCE REVOKED", 2),
-                                        V2.text(`**${user.bot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> Anti-Nuke will now monitor this ${user.bot ? "bot" : "user"} normally.`)
-                                    ], user.displayAvatarURL({ dynamic: true }))
-                                ], V2_RED)]
-                            });
-                        } else {
-                            return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Not currently whitelisted.")], "#FFCC00")] });
-                        }
-                    }
-
-                    // List
-                    if (action === "list") {
-                        if (config.whitelisted.length === 0) {
-                            return message.reply({
-                                content: null, flags: V2.flag,
-                                components: [V2.container([
-                                    V2.section(
-                                        [
-                                            V2.heading("🛡️ SOVEREIGN WHITELIST", 2),
-                                            V2.text("The clearance registry is currently empty.")
-                                        ],
-                                        message.client.user.displayAvatarURL({ dynamic: true, size: 512 })
-                                    )
-                                ], V2_BLUE)]
-                            });
-                        }
-
-                        const wlLines = await Promise.all(config.whitelisted.map(async (id, i) => {
-                            const u = message.client.users.cache.get(id) || await message.client.users.fetch(id).catch(() => null);
-                            if (u) return `> **${i + 1}.** ${u.bot ? "🤖 Bot" : "👤 User"} — ${u.tag || u.username} (\`${id}\`)`;
-                            return `> **${i + 1}.** ❓ Unknown — \`${id}\``;
-                        }));
-
-                        return message.reply({
-                            content: null, flags: V2.flag,
-                            components: [V2.container([
-                                V2.section([
-                                    V2.heading("🛡️ IMPERIAL AGENT REGISTRY", 2),
-                                    V2.text("**Authorized Personnel with Anti-Nuke Immunity:**")
-                                ], message.guild.iconURL({ dynamic: true })),
-                                V2.text("\u200b"),
-                                V2.text(wlLines.join("\n")),
-                                V2.separator(),
-                                V2.text("*BlueSealPrime Identity Protocol*")
-                            ], V2_BLUE)]
-                        });
-                    }
-
-                    // Fallback usage hint for wl subcommand
-                    return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("Usage: `!antinuke wl add @bot/ID` | `remove @bot/ID` | `list`")], "#FFCC00")] });
                 }
 
-                // ───── UNWHITELIST ALIAS ─────
-                if (sub === "unwhitelist") {
-                    const targetArg = args[1];
-                    let user = message.mentions.users.first();
-                    if (!user && targetArg && /^\d{17,20}$/.test(targetArg)) {
-                        user = await message.client.users.fetch(targetArg).catch(() => null);
+                // ───── EDIT (Slash Command Shim) ─────
+                if (sub === "edit") {
+                    let changed = false;
+                    for (let i = 1; i < args.length; i++) {
+                        if (args[i] === "limit") {
+                            const type = args[i + 1];
+                            const value = parseInt(args[i + 2]);
+                            if (type && !isNaN(value)) {
+                                config.limits[type] = value;
+                                changed = true;
+                                i += 2;
+                            }
+                        }
                     }
-
-                    if (!user) return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("⚠️ Specify a user or bot: `!antinuke unwhitelist @bot` or `!antinuke unwhitelist <botID>`")], V2_RED)] });
-
-                    if (config.whitelisted.includes(user.id)) {
-                        config.whitelisted = config.whitelisted.filter(id => id !== user.id);
+                    if (changed) {
                         saveDB(db);
-                        removeFromGlobalWL(message.guild.id, user.id);
-                        return message.reply({
-                            content: null, flags: V2.flag,
-                            components: [V2.container([
-                                V2.section([
-                                    V2.heading("🗑️ CLEARANCE REVOKED", 2),
-                                    V2.text(`**${user.bot ? "🤖 Bot" : "👤 User"}:** ${user.tag || user.username}\n**ID:** \`${user.id}\`\n> Anti-Nuke will now monitor this ${user.bot ? "bot" : "user"} normally.`)
-                                ], user.displayAvatarURL({ dynamic: true }))
-                            ], V2_RED)]
-                        });
-                    } else {
-                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.text("ℹ️ Not currently whitelisted.")], "#FFCC00")] });
+                        return message.reply({ content: null, flags: V2.flag, components: [V2.container([V2.heading("⚙️ CONFIGURATION UPDATED", 2), V2.text("All provided threshold limits have been synchronized.")], V2_BLUE)] });
                     }
+                    return;
                 }
 
                 // ───── LIMIT ─────

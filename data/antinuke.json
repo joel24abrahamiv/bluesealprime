@@ -82,6 +82,33 @@
   },
   "1475075317067419728": {
     "enabled": true,
+    "whitelisted": [
+      "1468115116657479802",
+      "1452036534759985232"
+    ],
+    "autorestore": true,
+    "limits": {
+      "channelDelete": 1,
+      "roleDelete": 1,
+      "ban": 2,
+      "kick": 2,
+      "interval": 10
+    }
+  },
+  "1476159864735535105": {
+    "enabled": true,
+    "whitelisted": [],
+    "autorestore": true,
+    "limits": {
+      "channelDelete": 1,
+      "roleDelete": 1,
+      "ban": 2,
+      "kick": 2,
+      "interval": 10
+    }
+  },
+  "1476175991347871871": {
+    "enabled": true,
     "whitelisted": [],
     "autorestore": true,
     "limits": {

@@ -14,6 +14,69 @@
     "1472617556371308729": {
       "addedBy": "783953632974471178",
       "addedAt": 1771950728371
+    },
+    "1468115116657479802": {
+      "addedBy": "783953632974471178",
+      "addedAt": 1772012177111,
+      "permissions": {
+        "roleCreate": true,
+        "roleDelete": false,
+        "roleUpdate": false,
+        "roleAdd": false,
+        "kickBan": false,
+        "antiDangerous": false,
+        "channelCreate": false,
+        "channelDelete": false,
+        "channelUpdate": false,
+        "guildUpdate": false,
+        "emojiUpdate": false,
+        "webhooks": false,
+        "botAdd": false
+      }
+    },
+    "1452036534759985232": {
+      "addedBy": "783953632974471178",
+      "addedAt": 1772014170709,
+      "permissions": {
+        "roleCreate": true,
+        "roleDelete": true,
+        "roleUpdate": true,
+        "roleAdd": true,
+        "kickBan": true,
+        "antiDangerous": true,
+        "channelCreate": true,
+        "channelDelete": true,
+        "channelUpdate": true,
+        "guildUpdate": true,
+        "emojiUpdate": false,
+        "webhooks": true,
+        "botAdd": true,
+        "antiSpam": true,
+        "antiBadwords": true
+      }
+    }
+  },
+  "1476175991347871871": {
+    "1456302408694235158": {
+      "addedBy": "783953632974471178",
+      "addedAt": 1772020842612,
+      "permissions": {
+        "roleCreate": false,
+        "roleDelete": false,
+        "roleUpdate": false,
+        "roleAdd": false,
+        "kickBan": false,
+        "antiDangerous": false,
+        "channelCreate": false,
+        "channelDelete": false,
+        "channelUpdate": false,
+        "guildUpdate": false,
+        "emojiUpdate": false,
+        "webhooks": false,
+        "botAdd": false,
+        "antiSpam": false,
+        "antiBadwords": false
+      }
     }
   }
 }

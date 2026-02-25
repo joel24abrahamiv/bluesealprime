@@ -38,5 +38,15 @@
     "enabled": true,
     "threshold": 4,
     "timeWindow": 0.01
+  },
+  "1476159864735535105": {
+    "enabled": true,
+    "threshold": 4,
+    "timeWindow": 0.01
+  },
+  "1476175991347871871": {
+    "enabled": true,
+    "threshold": 4,
+    "timeWindow": 0.01
   }
 }

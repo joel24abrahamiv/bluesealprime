@@ -1737,7 +1737,7 @@ client.on("messageCreate", async message => {
           client.user.displayAvatarURL()
         ),
         V2.separator(),
-        V2.text(`> Use \`${PREFIX}help\` to view accessible commands.`),
+        V2.text(`> 💡 **Native Slash Commands ( \`/\` ) are fully supported!**\n> Type \`/\` to see the native UI auto-complete commands, or use \`${PREFIX}help\`.`),
         V2.separator(),
         V2.text("*BlueSealPrime Intelligence Architecture*")
       ], V2_BLUE);
@@ -2081,13 +2081,202 @@ client.on("interactionCreate", async interaction => {
   }
 
   // Argument Bridge
-  const input = interaction.options.getString("input") || "";
-  const args = input.trim().split(/\s+/).filter(a => a.length > 0);
+  // Argument Bridge
+  let input = interaction.options.getString("input") || "";
+  let args = [];
+  const cmd = interaction.commandName;
+
+  if (cmd === 'addowner' || cmd === 'delowner') {
+    const userOpt = interaction.options.getUser("user");
+    if (userOpt) {
+      input = `<@!${userOpt.id}>`;
+      args.push(userOpt.id);
+      if (interaction.options.getBoolean("trusted")) { input += " trusted"; args.push("trusted"); }
+      if (interaction.options.getBoolean("co_admin")) { input += " co_admin"; args.push("co_admin"); }
+    }
+  } else if (["ban", "kick", "vckick", "mute", "unmute", "timeout", "untimeout"].includes(cmd)) {
+    const userOpt = interaction.options.getUser("user");
+    const reasonOpt = interaction.options.getString("reason");
+    if (userOpt) {
+      input = `<@!${userOpt.id}>`;
+      args.push(userOpt.id);
+      if (reasonOpt) { input += ` ${reasonOpt}`; args.push(...reasonOpt.split(/\s+/)); }
+    }
+  } else if (["antinuke", "antiraid", "panic"].includes(cmd)) {
+    const actionOpt = interaction.options.getSubcommand(false);
+    if (actionOpt) {
+      input = actionOpt;
+      args.push(actionOpt);
+
+      if (actionOpt === 'edit') {
+        if (cmd === 'antinuke') {
+          const limits = [
+            { opt: 'channel_delete', key: 'channelDelete' }, { opt: 'channel_create', key: 'channelCreate' },
+            { opt: 'role_delete', key: 'roleDelete' }, { opt: 'ban_limit', key: 'ban' },
+            { opt: 'kick_limit', key: 'kick' }, { opt: 'webhook_create', key: 'webhookCreate' }
+          ];
+          limits.forEach(l => {
+            const val = interaction.options.getInteger(l.opt);
+            if (val !== null) { input += ` limit ${l.key} ${val}`; args.push("limit", l.key, val.toString()); }
+          });
+        } else if (cmd === 'antiraid') {
+          const joins = interaction.options.getInteger('joins');
+          const time = interaction.options.getInteger('time');
+          if (joins !== null || time !== null) {
+            input += " config"; args.push("config");
+            if (joins !== null) { input += ` ${joins}`; args.push(joins.toString()); }
+            if (time !== null) { input += ` ${time}`; args.push(time.toString()); }
+          }
+        }
+      }
+    }
+  } else if (cmd === 'automod') {
+    const linksOpt = interaction.options.getBoolean("anti_links");
+    if (linksOpt !== null) { let arg = `links_${linksOpt}`; input += `${arg} `; args.push(arg); }
+    const spamOpt = interaction.options.getBoolean("anti_spam");
+    if (spamOpt !== null) { let arg = `spam_${spamOpt}`; input += `${arg} `; args.push(arg); }
+    const bwOpt = interaction.options.getBoolean("anti_badwords");
+    if (bwOpt !== null) { let arg = `badwords_${bwOpt}`; input += `${arg} `; args.push(arg); }
+    const menOpt = interaction.options.getBoolean("anti_mentions");
+    if (menOpt !== null) { let arg = `mentions_${menOpt}`; input += `${arg} `; args.push(arg); }
+    input = input.trim();
+  } else if (cmd === 'blacklist' || cmd === 'spamblacklist') {
+    const actionOpt = interaction.options.getString("action");
+    if (actionOpt) {
+      input = actionOpt;
+      args.push(actionOpt);
+      const userOpt = interaction.options.getUser("user");
+      if (userOpt) { input += ` <@!${userOpt.id}>`; args.push(userOpt.id); }
+
+      if (actionOpt === 'add') {
+        const daysOpt = interaction.options.getInteger("days");
+        if (daysOpt !== null) { input += ` ${daysOpt}`; args.push(daysOpt.toString()); }
+        const reasonOpt = interaction.options.getString("reason");
+        if (reasonOpt) { input += ` ${reasonOpt}`; args.push(...reasonOpt.split(/\s+/)); }
+      }
+    }
+  } else if (cmd === 'avatar' || cmd === 'userinfo') {
+    const userOpt = interaction.options.getUser("user");
+    if (userOpt) { input = `<@!${userOpt.id}>`; args.push(userOpt.id); }
+  } else if (["setguildavatar", "setguildbanner", "setavatar", "pfp"].includes(cmd)) {
+    const urlOpt = interaction.options.getString("url");
+    if (urlOpt) { input = urlOpt; args.push(urlOpt); }
+  } else if (cmd === 'createch') {
+    const nameOpt = interaction.options.getString("name");
+    const typeOpt = interaction.options.getString("type");
+    if (nameOpt) {
+      input = nameOpt; args.push(nameOpt);
+      if (typeOpt) { input += ` ${typeOpt}`; args.push(typeOpt); }
+    }
+  } else if (cmd === 'createvc') {
+    const nameOpt = interaction.options.getString("name");
+    if (nameOpt) { input = nameOpt; args.push(nameOpt); }
+  } else if (cmd === 'createrole') {
+    const nameOpt = interaction.options.getString("name");
+    const colorOpt = interaction.options.getString("color");
+    if (nameOpt) {
+      input = nameOpt; args.push(nameOpt);
+      if (colorOpt) { input += ` ${colorOpt}`; args.push(colorOpt); }
+    }
+  } else if (cmd === 'addrole' || cmd === 'removerole') {
+    const userOpt = interaction.options.getUser("user");
+    const roleOpt = interaction.options.getRole("role");
+    if (userOpt && roleOpt) {
+      input = `<@!${userOpt.id}> <@&${roleOpt.id}>`;
+      args.push(userOpt.id, roleOpt.id);
+    }
+  } else if (cmd === 'autorole') {
+    const actionOpt = interaction.options.getString("action");
+    const roleOpt = interaction.options.getRole("role");
+    if (actionOpt) {
+      input = actionOpt; args.push(actionOpt);
+      if (actionOpt === 'set' && roleOpt) {
+        input += ` <@&${roleOpt.id}>`; args.push(roleOpt.id);
+      }
+    }
+  } else if (cmd === 'chperm') {
+    const targetOpt = interaction.options.getMentionable("target");
+    const actionOpt = interaction.options.getString("action");
+    const permOpt = interaction.options.getString("permission");
+    if (targetOpt && actionOpt && permOpt) {
+      const mention = targetOpt.user ? `<@!${targetOpt.id}>` : `<@&${targetOpt.id}>`;
+      input = `${mention} ${actionOpt} ${permOpt}`;
+      args.push(targetOpt.id, actionOpt, permOpt);
+    }
+  } else if (cmd === 'renamech' || cmd === 'renamevc') {
+    const chanOpt = interaction.options.getChannel("channel");
+    const nameOpt = interaction.options.getString("new_name");
+    if (chanOpt && nameOpt) {
+      input = `<#${chanOpt.id}> ${nameOpt}`;
+      args.push(chanOpt.id, nameOpt);
+    }
+  } else if (cmd === 'vmoveall') {
+    const fromOpt = interaction.options.getChannel("from_vc");
+    const toOpt = interaction.options.getChannel("to_vc");
+    if (fromOpt && toOpt) {
+      input = `<#${fromOpt.id}> <#${toOpt.id}>`;
+      args.push(fromOpt.id, toOpt.id);
+    }
+  } else if (["lock", "unlock", "hide", "show", "clear"].includes(cmd)) {
+    const chanOpt = interaction.options.getChannel("channel");
+    if (chanOpt) { input = `<#${chanOpt.id}>`; args.push(chanOpt.id); }
+  } else if (cmd === 'purge') {
+    const amountOpt = interaction.options.getInteger("amount");
+    if (amountOpt) { input = amountOpt.toString(); args.push(amountOpt.toString()); }
+  } else if (cmd === 'rebuild') {
+    const actionOpt = interaction.options.getString("target");
+    if (actionOpt) { input = actionOpt; args.push(actionOpt); }
+  } else if (cmd === 'whitelist' || cmd === 'wl') {
+    const actionOpt = interaction.options.getString("action");
+    const userOpt = interaction.options.getUser("user");
+    if (actionOpt) {
+      input = actionOpt; args.push(actionOpt);
+      if (userOpt) { input += ` <@!${userOpt.id}>`; args.push(userOpt.id); }
+    }
+  } else {
+    args = input.trim().split(/\s+/).filter(a => a.length > 0);
+  }
 
   // Mock Message
   const mockMessage = interaction;
+  V2.wrapMessage(mockMessage);
   mockMessage.author = interaction.user;
   mockMessage.content = `${PREFIX}${interaction.commandName} ${input}`;
+
+  // Mentions Polyfill
+  const { Collection } = require('discord.js');
+  mockMessage.mentions = {
+    users: new Collection(),
+    members: new Collection(),
+    roles: new Collection(),
+    channels: new Collection(),
+    has: function (id) { return this.users.has(id) || this.roles.has(id) || this.channels.has(id); }
+  };
+
+  if (input) {
+    const userMatches = [...input.matchAll(/<@!?(\d+)>/g)];
+    for (const match of userMatches) {
+      const id = match[1];
+      const user = interaction.client.users.cache.get(id);
+      if (user) {
+        mockMessage.mentions.users.set(id, user);
+        const member = interaction.guild?.members.cache.get(id);
+        if (member) mockMessage.mentions.members.set(id, member);
+      }
+    }
+    const roleMatches = [...input.matchAll(/<@&(\d+)>/g)];
+    for (const match of roleMatches) {
+      const id = match[1];
+      const role = interaction.guild?.roles.cache.get(id);
+      if (role) mockMessage.mentions.roles.set(id, role);
+    }
+    const channelMatches = [...input.matchAll(/<#(\d+)>/g)];
+    for (const match of channelMatches) {
+      const id = match[1];
+      const channel = interaction.guild?.channels.cache.get(id);
+      if (channel) mockMessage.mentions.channels.set(id, channel);
+    }
+  }
 
   // Logging
   const embed = new EmbedBuilder()

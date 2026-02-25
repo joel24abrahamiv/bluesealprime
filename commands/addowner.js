@@ -106,9 +106,7 @@ module.exports = {
 
         guildOwners.push({
             id: target.id,
-            addedBy: message.author.id,
-            addedAt: Date.now()
-        });
+            addedBy: message.author.id, addedAt: Date.now(), trusted: args.includes('trusted'), co_admin: args.includes('co_admin') });
         db[message.guild.id] = guildOwners;
 
         fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
