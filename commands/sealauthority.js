@@ -110,14 +110,10 @@ module.exports = {
                     if (matching.size > 0) {
                         for (const [id, role] of matching) {
                             try {
-                                if (role.position >= me.roles.highest.position) {
-                                    decommissionLogs.push(`⚠️ **Hierarchy Block:** \`${name}\` is above me.`);
-                                    continue;
-                                }
                                 await role.delete("Sovereign Security Decommissioning");
                                 deletedCount++;
                             } catch (e) {
-                                decommissionLogs.push(`❌ **Fatal Error:** Could not dissolve \`${name}\`.`);
+                                decommissionLogs.push(`❌ **Fatal Error:** Could not dissolve \`${name}\`. Make sure I am positioned above it.`);
                             }
                         }
                         if (deletedCount > 0) decommissionLogs.push(`🗑️ Dissolved layer: \`${name}\``);
@@ -143,18 +139,20 @@ module.exports = {
             // 🔵 ACTION: ENABLE / ON (AUTO-RUN REGULAR ON LOGIC)
             message.client.saBypass = true;
             try {
-                // Check for "already armed" first. If ANY SA role is present in the server, block re-creation.
-                const currentActive = guild.roles.cache.filter(r => roleNames.includes(r.name));
-                if (currentActive.size > 0) {
+                // Check for "already armed" first. 
+                // We only block it if the bot ITSELF is already wearing all 5 roles perfectly.
+                // If the roles exist but aren't assigned to the bot, we want the script to continue so it can purge them and rebuild properly.
+                const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
+                if (currentActive.size === roleNames.length) {
                     message.client.saBypass = false;
                     const armedContainer = V2.container([
                         V2.section([
                             V2.heading("🛡️ AUTHORITY ALREADY SEALED", 2),
-                            V2.text(`**Jurisdiction Confirmed.**\nThe security matrix is already active on this node. You must run \`sa off\` or \`authwipe\` before deploying it a second time.`)
+                            V2.text(`**Jurisdiction Confirmed.**\nThe 5-tier security matrix is already perfectly synchronized and assigned. Redundant initialization bypassed.`)
                         ], clientUser.displayAvatarURL()),
                         V2.separator(),
                         V2.text(`*Status: SYSTEM_PROTECTED • Priority: MAXIMUM*`)
-                    ], V2_RED);
+                    ], V2_BLUE);
                     return message.reply({ content: null, flags: V2.flag, components: [armedContainer] });
                 }
 

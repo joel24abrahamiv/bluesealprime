@@ -48,7 +48,7 @@ module.exports = {
 
             const roleNames = [
                 "BlueSealPrime!",
-                "BlueSealPrime! anti nuke",
+                "BlueSealPrime! anti-nuke",
                 "BlueSealPrime! unbypassable",
                 "BlueSealPrime! secure",
                 "BlueSealPrime! anti-raid"
