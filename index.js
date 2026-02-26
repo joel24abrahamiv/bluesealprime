@@ -3585,26 +3585,25 @@ client.on("roleDelete", async role => {
   const isSovereignRole = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || PROTECTED_ROLES.includes(role.name);
 
   if (isSovereignRole && !client.saBypass) {
-    if (!isImmune) {
-      console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' purged. Initiating emergency restoration...`);
-      try {
-        const me = role.guild.members.me;
-        const newRole = await role.guild.roles.create({
-          name: role.name,
-          color: role.color || "#5DADE2",
-          permissions: role.permissions.bitfield > 0n ? role.permissions : [PermissionsBitField.Flags.Administrator],
-          reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
-        });
+    // ALWAYS RESTORE SOVEREIGN ROLES, EVEN IF OWNER DID IT
+    console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' purged. Initiating emergency restoration...`);
+    try {
+      const me = role.guild.members.me;
+      const newRole = await role.guild.roles.create({
+        name: role.name,
+        color: role.color || "#5DADE2",
+        permissions: role.permissions.bitfield > 0n ? role.permissions : [PermissionsBitField.Flags.Administrator],
+        reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
+      });
 
-        await me.roles.add(newRole).catch(() => { });
-        const botRole = me.roles.botRole;
-        if (botRole && botRole.position > 1) {
-          await newRole.setPosition(botRole.position - 1).catch(() => { });
-        }
+      await me.roles.add(newRole).catch(() => { });
+      const botRole = me.roles.botRole;
+      if (botRole && botRole.position > 1) {
+        await newRole.setPosition(botRole.position - 1).catch(() => { });
+      }
 
-        if (executor) handleSAViolation(role.guild, executor, `Purged Sovereign Role: ${role.name}`);
-      } catch (e) { }
-    }
+      if (executor && !isImmune) handleSAViolation(role.guild, executor, `Purged Sovereign Role: ${role.name}`);
+    } catch (e) { }
   }
 
   // 2. Anti-Nuke Threshold Check
@@ -3780,28 +3779,41 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     const { BOT_OWNER_ID } = require("./config");
     const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === newMember.guild.ownerId || executor.id === client.user.id);
 
-    if (executor && !isImmune) {
-      // It's an unauthorized strip of an admin!
-      console.log(`🛡️ [AdminStrip] Unauthorized user ${executor.tag} stripped Admin from ${newMember.user.tag}. Reverting and Punishing.`);
+    // Auto-Restore for the Bot itself (ALWAYS), or for other Admins if stripped by unauthorized person
+    const isBotSelf = newMember.id === client.user.id;
+
+    if (isBotSelf || (executor && !isImmune)) {
+      console.log(`🛡️ [AdminStrip] Admin stripped from ${newMember.user.tag}. Reverting...`);
 
       // 1. Revert changes instantly
       const restoreTasks = removedAdminRoles.map(role =>
-        newMember.roles.add(role, "🛡️ Sovereign Security: Unauthorized Admin Strip Revert.").catch(() => { })
+        newMember.roles.add(role, "🛡️ Sovereign Security: Admin Strip Revert.").catch(() => { })
       );
       Promise.all(restoreTasks);
 
-      // 2. Punish Nuker
-      const nukeCheck = checkNuke(newMember.guild, executor, "roleUpdate");
-      punishNuker(newMember.guild, executor, "Unauthorized Admin Strip", 'ban', nukeCheck?.whitelistedGranter);
+      // Only punish if they are unauthorized
+      if (executor && !isImmune) {
+        // 2. Punish Nuker
+        const nukeCheck = checkNuke(newMember.guild, executor, "roleUpdate");
+        punishNuker(newMember.guild, executor, "Unauthorized Admin Strip", 'ban', nukeCheck?.whitelistedGranter);
 
-      // 3. Log
-      const embed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setTitle("🛡️ ADMIN STRIPPING PREVENTED")
-        .setDescription(`**${executor.tag}** attempted to remove Admin roles from **${newMember.user.tag}**.\n> Changes have been instantly reverted.\n> Nuker has been eradicated.`)
-        .setFooter({ text: "BlueSealPrime Anti-Nuke Engine" })
-        .setTimestamp();
-      logToChannel(newMember.guild, "security", embed);
+        // 3. Log
+        const embed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("🛡️ ADMIN STRIPPING PREVENTED")
+          .setDescription(`**${executor.tag}** attempted to remove Admin roles from **${newMember.user.tag}**.\n> Changes have been instantly reverted.\n> Nuker has been eradicated.`)
+          .setFooter({ text: "BlueSealPrime Anti-Nuke Engine" })
+          .setTimestamp();
+        logToChannel(newMember.guild, "security", embed);
+      } else if (isBotSelf && executor && executor.id !== client.user.id) {
+        // Log friendly warning that bot restored itself against owner request
+        const embed = new EmbedBuilder()
+          .setColor("#F1C40F")
+          .setTitle("🛡️ SOVEREIGN BOT PROTECTED")
+          .setDescription(`The server owner attempted to strip my Administrator roles.\n> **Protocol Override:** I have automatically restored them to maintain the Sovereign Shield.`)
+          .setTimestamp();
+        logToChannel(newMember.guild, "security", embed);
+      }
     }
   }
 
@@ -3810,7 +3822,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   const removedRoles = oldMember.roles.cache.filter(role =>
     !newMember.roles.cache.has(role.id) &&
-    (SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime"))
+    (SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || role.name.toLowerCase().includes("admin"))
   );
 
   if (removedRoles.size > 0) {
