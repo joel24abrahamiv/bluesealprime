@@ -135,25 +135,26 @@ module.exports = {
                     V2.text(`*Status: SYSTEM_UNPROTECTED • Node: ${guild.name}*`)
                 ], V2_RED);
 
-                message.client.saBypass = false;
+                // Give Discord 5 seconds to process all roleDelete events before re-arming the anti-nuke bypass
+                setTimeout(() => { message.client.saBypass = false; }, 5000);
                 return message.reply({ content: null, flags: V2.flag, components: [decommissionContainer] });
             }
 
             // 🔵 ACTION: ENABLE / ON (AUTO-RUN REGULAR ON LOGIC)
             message.client.saBypass = true;
             try {
-                // Check for "already armed" first
+                // Check for "already armed" first. If ANY SA role is present, block re-creation.
                 const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
-                if (currentActive.size === roleNames.length) {
+                if (currentActive.size > 0) {
                     message.client.saBypass = false;
                     const armedContainer = V2.container([
                         V2.section([
                             V2.heading("🛡️ AUTHORITY ALREADY SEALED", 2),
-                            V2.text(`**Jurisdiction Confirmed.**\nThe 5-tier security matrix is already synchronized and assigned. Redundant initialization bypassed.`)
+                            V2.text(`**Jurisdiction Confirmed.**\nThe security matrix is already active on this node. You must run \`sa off\` or \`authwipe\` before deploying it a second time.`)
                         ], clientUser.displayAvatarURL()),
                         V2.separator(),
                         V2.text(`*Status: SYSTEM_PROTECTED • Priority: MAXIMUM*`)
-                    ], V2_BLUE);
+                    ], V2_RED);
                     return message.reply({ content: null, flags: V2.flag, components: [armedContainer] });
                 }
 
@@ -273,7 +274,7 @@ module.exports = {
                 logs.push(`\n**Node Sealed:** Authority finalized under **BlueSealPrime!** logic.`);
                 await updatePanel(5);
             } finally {
-                message.client.saBypass = false;
+                setTimeout(() => { message.client.saBypass = false; }, 5000);
             }
             /* --- KERNEL_END --- */
 
