@@ -780,8 +780,8 @@ function checkNuke(guild, executor, action) {
   }
 
   const config = antinukeCache[guild.id];
-  if (config && config.enabled === false) return { triggered: false };
-
+  // [MODIFIED]: We no longer return { triggered: false } if config.enabled === false.
+  // The system is now permanently hard-locked to ON to constantly watch for mischievous activities.
   // Strict handling for limits. If unwhitelisted, limit is ALWAYS 0.
   let isOwnerOrWL = false;
   let hasSpecificPerm = false;
