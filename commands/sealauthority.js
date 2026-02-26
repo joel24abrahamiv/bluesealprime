@@ -143,8 +143,8 @@ module.exports = {
             // 🔵 ACTION: ENABLE / ON (AUTO-RUN REGULAR ON LOGIC)
             message.client.saBypass = true;
             try {
-                // Check for "already armed" first. If ANY SA role is present, block re-creation.
-                const currentActive = guild.members.me.roles.cache.filter(r => roleNames.includes(r.name));
+                // Check for "already armed" first. If ANY SA role is present in the server, block re-creation.
+                const currentActive = guild.roles.cache.filter(r => roleNames.includes(r.name));
                 if (currentActive.size > 0) {
                     message.client.saBypass = false;
                     const armedContainer = V2.container([
