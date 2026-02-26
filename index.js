@@ -747,11 +747,21 @@ function checkNuke(guild, executor, action) {
   // Ensure caches are fresh before checking
   refreshAllCaches();
 
+  // HIGH-SPEED WHITELIST CHECKER FIX
+  function getWhitelistEntry(guildId, userId) {
+    if (!whitelistCache || !whitelistCache[guildId]) return null;
+    const guildWL = whitelistCache[guildId];
+    if (Array.isArray(guildWL)) {
+      return guildWL.find(id => id === userId) ? { id: userId } : null; // Emulate object if it's an array
+    }
+    return guildWL[userId] || null;
+  }
+  global.getWhitelistEntry = getWhitelistEntry;
+
   const isProbableAutomation = executor.bot || (Date.now() - executor.createdTimestamp < 1000 * 60 * 60 * 24 * 7) || !executor.avatar;
 
   // Use the memory-mapped cache (0-disk latency)
-  const guildWL = whitelistCache?.[guild.id] || [];
-  const entry = Array.isArray(guildWL) ? guildWL.find(id => id === executor.id) : guildWL[executor.id];
+  const entry = getWhitelistEntry(guild.id, executor.id);
 
   if (entry) {
     const actionMap = { roleCreate: 'roleCreate', roleDelete: 'roleDelete', ban: 'kickBan', kick: 'kickBan', channelCreate: 'channelCreate', channelDelete: 'channelDelete', webhookCreate: 'webhookCreate', webhookUpdate: 'webhookCreate' };
@@ -1971,6 +1981,9 @@ client.on("messageCreate", async message => {
         const V2 = require("./utils/v2Utils");
         const { V2_RED } = require("./config");
 
+        const isDangerous = ["ban", "kick", "timeout", "nuke", "strip", "demote", "warn", "mute"].some(w => commandName.includes(w));
+        const roast = isDangerous ? "Nice try. Did you really think you could overthrow the Architect?" : "You lack the clearance to target the Sovereign Authority.";
+
         let shieldContent = [
           V2.section(
             [
@@ -2526,15 +2539,16 @@ client.on("guildMemberAdd", async member => {
     const isVerified = member.user.flags?.has('VerifiedBot') ?? false;
 
     if (!isVerified) {
-      // ── UNVERIFIED BOT: KICK IMMEDIATELY ──
-      console.log(`🤖 [BotSecurity] Unverified bot joined: ${member.user.tag} — kicking.`);
-      await member.send(`🚫 **ACCESS DENIED:** Unverified bots are not permitted in **${guild.name}**. Contact the server admin.`).catch(() => { });
-      await member.kick("Security: Unverified bot not permitted.").catch(() => { });
+      // ── 0MS UNVERIFIED BOT KICK ──
+      console.log(`🤖 [BotSecurity] Unverified bot joined: ${member.user.tag} — executing 0ms kick.`);
+      // Kick first, DM later so there is ZERO delay
+      member.kick("Security: Unverified bot not permitted. 0ms Auto-Ban.").catch(() => { });
+      member.send(`🚫 **ACCESS DENIED:** Unverified bots are not permitted in **${guild.name}**.`).catch(() => { });
       return;
     }
 
     // ── VERIFIED BOT: Check who added it (audit log type 28 = BOT_ADD) ──
-    await new Promise(r => setTimeout(r, 1500));
+    // REMOVED 1.5s wait to ensure high-speed kicking. Fallback to audit log event stream if fetch misses.
     const auditLogs = await guild.fetchAuditLogs({ type: 28, limit: 1 }).catch(() => null);
     const botAddLog = auditLogs?.entries.first();
     const adder = (botAddLog && botAddLog.target?.id === member.id && Date.now() - botAddLog.createdTimestamp < 10000)
@@ -3121,21 +3135,19 @@ client.on("channelDelete", async channel => {
     }))
   };
 
-  // 1. 🕵️ FIND EXECUTOR (Retry with delay for Discord API sync)
+  // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
   let exec = null;
-  for (let i = 0; i < 4; i++) {
-    const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null);
-    const entry = logs?.entries.find(e => e.target.id === channel.id);
-    if (entry && Date.now() - entry.createdTimestamp < 15000) {
-      exec = entry.executor;
-      break;
+  const cachedLog = global.auditCache?.get(`${channel.guild.id}-12-${channel.id}`);
+  if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+    exec = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+  } else {
+    // Fallback API Fetch
+    for (let i = 0; i < 2; i++) {
+      const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
+      const entry = logs?.entries.find(e => e.target.id === channel.id);
+      if (entry && Date.now() - entry.createdTimestamp < 15000) { exec = entry.executor; break; }
+      await new Promise(r => setTimeout(r, 100)); // Reduced wait time
     }
-    const first = logs?.entries.first();
-    if (first && Date.now() - first.createdTimestamp < 3000) {
-      exec = first.executor;
-      break;
-    }
-    await new Promise(r => setTimeout(r, 250));
   }
 
   const { BOT_OWNER_ID } = require("./config");
@@ -3297,21 +3309,18 @@ client.on("channelCreate", async channel => {
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  // 1. 🕵️ FIND EXECUTOR (Retry with delay for Discord API sync)
+  // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
   let exec = null;
-  for (let i = 0; i < 4; i++) {
-    const logs = await channel.guild.fetchAuditLogs({ type: 10, limit: 5 }).catch(() => null);
-    const entry = logs?.entries.find(e => e.target.id === channel.id);
-    if (entry && Date.now() - entry.createdTimestamp < 15000) {
-      exec = entry.executor;
-      break;
+  const cachedLog = global.auditCache?.get(`${channel.guild.id}-10-${channel.id}`);
+  if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+    exec = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+  } else {
+    for (let i = 0; i < 2; i++) {
+      const logs = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 }).catch(() => null);
+      const entry = logs?.entries.find(e => e.target.id === channel.id);
+      if (entry && Date.now() - entry.createdTimestamp < 15000) { exec = entry.executor; break; }
+      await new Promise(r => setTimeout(r, 100));
     }
-    const first = logs?.entries.first();
-    if (first && Date.now() - first.createdTimestamp < 3000) {
-      exec = first.executor;
-      break;
-    }
-    await new Promise(r => setTimeout(r, 250));
   }
 
   const { BOT_OWNER_ID } = require("./config");
@@ -3552,10 +3561,16 @@ async function handleSAViolation(guild, executor, reason) {
 client.on("roleDelete", async role => {
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
-  // 1. Audit Log Check (0ms Instant Strike)
-  const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null);
-  const log = auditLogs?.entries.first();
-  const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+  // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
+  let executor = null;
+  const cachedLog = global.auditCache?.get(`${role.guild.id}-32-${role.id}`);
+  if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+    executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+  } else {
+    const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null);
+    const log = auditLogs?.entries.first();
+    executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+  }
 
   const { BOT_OWNER_ID } = require("./config");
   const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === role.guild.ownerId || executor.id === client.user.id);
@@ -3619,10 +3634,16 @@ client.on("roleCreate", async role => {
   if (!role.guild) return;
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
-  // 1. Audit Interrogation (0ms Instant Strike)
-  const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null);
-  const entry = auditLogs?.entries.first();
-  const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+  // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
+  let executor = null;
+  const cachedLog = global.auditCache?.get(`${role.guild.id}-30-${role.id}`);
+  if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+    executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+  } else {
+    const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null);
+    const entry = auditLogs?.entries.first();
+    executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+  }
 
   if (!executor || executor.id === client.user.id) return;
 
@@ -3645,6 +3666,49 @@ client.on("roleCreate", async role => {
 // 3.1 ROLE PROTECTION (Update/Tampering)
 client.on("roleUpdate", async (oldRole, newRole) => {
   if (client.saBypass) return;
+
+  // ─── ADMIN ROLE OFFED PROTECTION ───
+  const hadAdmin = oldRole.permissions.has(PermissionsBitField.Flags.Administrator);
+  const hasAdminNow = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
+
+  if (hadAdmin && !hasAdminNow) {
+    // An admin role had its permissions stripped!
+    // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
+    let executor = null;
+    const cachedLog = global.auditCache?.get(`${newRole.guild.id}-31-${newRole.id}`);
+    if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+      executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+    } else {
+      const auditLogs = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null); // 31 = ROLE_UPDATE
+      const log = auditLogs?.entries.first();
+      executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+    }
+
+    const { BOT_OWNER_ID } = require("./config");
+    const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === newRole.guild.ownerId || executor.id === client.user.id);
+
+    if (executor && !isImmune) {
+      console.log(`🛡️ [RoleUpdate] Unauthorized user ${executor.tag} stripped Admin from role ${newRole.name}. Reverting and Punishing.`);
+
+      // 1. Revert changes instantly
+      await newRole.setPermissions(oldRole.permissions, "🛡️ Sovereign Security: Unauthorized Admin Permission Removal Revert.").catch(() => { });
+
+      // 2. Punish Nuker
+      const nukeCheck = checkNuke(newRole.guild, executor, "roleUpdate");
+      punishNuker(newRole.guild, executor, "Unauthorized Admin Role Tampering", 'ban', nukeCheck?.whitelistedGranter);
+
+      // 3. Log
+      const embed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("🛡️ ADMIN ROLE TAMPERING PREVENTED")
+        .setDescription(`**${executor.tag}** attempted to remove the \`Administrator\` permission from the **${newRole.name}** role.\n> Changes have been instantly reverted.\n> Nuker has been eradicated.`)
+        .setFooter({ text: "BlueSealPrime Anti-Nuke Engine" })
+        .setTimestamp();
+      logToChannel(newRole.guild, "security", embed);
+      return; // We resolved it, don't cascade to the SA role checker
+    }
+  }
+
   const isSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === newRole.name.toLowerCase()) || newRole.name.toLowerCase().includes("bluesealprime");
   if (!isSovereign) return;
 
@@ -3670,19 +3734,79 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     }
 
     // Identify & Punish
-    const auditLogs = await newRole.guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
-    const log = auditLogs?.entries.first();
-    const executor = log ? log.executor : null;
+    let executor = null;
+    const cachedLog = global.auditCache?.get(`${newRole.guild.id}-31-${newRole.id}`);
+    if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+      executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+    } else {
+      const auditLogs = await newRole.guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
+      const log = auditLogs?.entries.first();
+      executor = log ? log.executor : null;
+    }
+
     if (executor && executor.id !== client.user.id) {
       handleSAViolation(newRole.guild, executor, `Tampered with Sovereign authority role: ${newRole.name}`);
     }
   }
 });
 
-// 3.2 ROLE STRIPPING PROTECTION (Bot Members)
+// 3.2 ROLE STRIPPING PROTECTION (Bot Members & Admins)
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  if (newMember.id !== client.user.id) return;
   if (client.saBypass) return;
+
+  // ─── ADMIN OFFED PROTECTION ───
+  // If the user used to have admin permissions because of a role, and now they don't
+  const oldAdminRoles = oldMember.roles.cache.filter(r => r.permissions.has(PermissionsBitField.Flags.Administrator));
+  const newAdminRoles = newMember.roles.cache.filter(r => r.permissions.has(PermissionsBitField.Flags.Administrator));
+
+  // If they had admin roles removed
+  if (oldAdminRoles.size > 0 && newAdminRoles.size < oldAdminRoles.size) {
+    const removedAdminRoles = oldAdminRoles.filter(r => !newAdminRoles.has(r.id));
+
+    // We don't protect regular users who just got demoted normally, UNLESS it's by a suspected nuker.
+    // But we DO protect the bot and server owners automatically.
+
+    // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
+    let executor = null;
+    const cachedLog = global.auditCache?.get(`${newMember.guild.id}-25-${newMember.id}`); // 25 = MEMBER_ROLE_UPDATE
+    if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
+      executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
+    } else {
+      const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null);
+      const log = auditLogs?.entries.first();
+      executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+    }
+
+    const { BOT_OWNER_ID } = require("./config");
+    const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === newMember.guild.ownerId || executor.id === client.user.id);
+
+    if (executor && !isImmune) {
+      // It's an unauthorized strip of an admin!
+      console.log(`🛡️ [AdminStrip] Unauthorized user ${executor.tag} stripped Admin from ${newMember.user.tag}. Reverting and Punishing.`);
+
+      // 1. Revert changes instantly
+      const restoreTasks = removedAdminRoles.map(role =>
+        newMember.roles.add(role, "🛡️ Sovereign Security: Unauthorized Admin Strip Revert.").catch(() => { })
+      );
+      Promise.all(restoreTasks);
+
+      // 2. Punish Nuker
+      const nukeCheck = checkNuke(newMember.guild, executor, "roleUpdate");
+      punishNuker(newMember.guild, executor, "Unauthorized Admin Strip", 'ban', nukeCheck?.whitelistedGranter);
+
+      // 3. Log
+      const embed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("🛡️ ADMIN STRIPPING PREVENTED")
+        .setDescription(`**${executor.tag}** attempted to remove Admin roles from **${newMember.user.tag}**.\n> Changes have been instantly reverted.\n> Nuker has been eradicated.`)
+        .setFooter({ text: "BlueSealPrime Anti-Nuke Engine" })
+        .setTimestamp();
+      logToChannel(newMember.guild, "security", embed);
+    }
+  }
+
+  // BOT SA PROTECTION
+  if (newMember.id !== client.user.id) return;
 
   const removedRoles = oldMember.roles.cache.filter(role =>
     !newMember.roles.cache.has(role.id) &&
@@ -3992,6 +4116,19 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
   const { action, executorId, targetId, reason } = entry;
   const { AuditLogEvent } = require("discord.js");
 
+  // ─── INSTANT AUDIT CACHE FOR ZERO-LATENCY NUKE DETECTION ───
+  if (!global.auditCache) global.auditCache = new Map();
+  // Key format: guildId-actionType-targetId
+  const cacheKey = `${guild.id}-${action}-${targetId}`;
+  global.auditCache.set(cacheKey, { executorId, timestamp: Date.now(), reason });
+  // Cleanup old cache entries periodically to avoid memory leaks
+  if (global.auditCache.size > 2000) {
+    const now = Date.now();
+    for (const [k, v] of global.auditCache.entries()) {
+      if (now - v.timestamp > 60000) global.auditCache.delete(k); // Delete if older than 1 minute
+    }
+  }
+
   const executor = client.users.cache.get(executorId) || await client.users.fetch(executorId).catch(() => null);
   const target = client.users.cache.get(targetId) || await client.users.fetch(targetId).catch(() => null);
 
@@ -4007,6 +4144,7 @@ client.on("guildAuditLogEntryCreate", async (entry, guild) => {
     AuditLogEvent.GuildUpdate,
     AuditLogEvent.EmojiDelete,
     AuditLogEvent.RoleCreate, // mass role creation = nuke prep
+    AuditLogEvent.MemberRoleUpdate // anti-strip / anti-admin give
   ]);
 
   if (executor?.bot && executor.id !== client.user.id && DANGEROUS_ACTIONS.has(action)) {
