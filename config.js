@@ -1,9 +1,9 @@
 module.exports = {
-  EMBED_COLOR: 0x1E40AF,        // Deep Royal Blue
-  SUCCESS_COLOR: 0x10B981,      // Emerald Green
-  ERROR_COLOR: 0xEF4444,        // Red
-  WARN_COLOR: 0xF59E0B,         // Amber
+  EMBED_COLOR: 0x000000,        // Black
+  SUCCESS_COLOR: 0x000000,      // Black
+  ERROR_COLOR: 0x000000,        // Black
+  WARN_COLOR: 0x000000,         // Black
   BOT_OWNER_ID: process.env.BOT_OWNER_ID || "783953632974471178",
-  V2_BLUE: "#0099ff",
-  V2_RED: "#FF0000"
+  V2_BLUE: "#000000",
+  V2_RED: "#000000"
 };

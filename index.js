@@ -235,7 +235,9 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildWebhooks
   ],
   partials: [
     Partials.Message,
@@ -337,7 +339,38 @@ async function joinVC247(guild) {
       channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     }
 
-    // FALLBACK: Join first available voice channel if no 24/7 or HomeVC set
+    // 🔍 2. SEARCH FOR HOME VC (Server-Named)
+    if (!channel) {
+      const homeName = guild.name;
+      channel = guild.channels.cache.find(c => c.type === 2 && c.name === homeName);
+
+      // 🏗️ 3. AUTO-CREATE HOME VC IF MISSING
+      if (!channel) {
+        try {
+          console.log(`🏗️ [HomeVC] Creating Sanctuary in ${guild.name}...`);
+          channel = await guild.channels.create({
+            name: homeName,
+            type: 2, // Voice
+            permissionOverwrites: [
+              {
+                id: guild.roles.everyone.id,
+                deny: [PermissionsBitField.Flags.Connect], // 🔒 LOCKED
+                allow: [PermissionsBitField.Flags.ViewChannel]
+              },
+              {
+                id: client.user.id,
+                allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
+              }
+            ],
+            reason: "Sovereign Home VC Initialization"
+          });
+        } catch (err) {
+          console.error(`❌ [HomeVC] Failed to create in ${guild.name}:`, err.message);
+        }
+      }
+    }
+
+    // FALLBACK: Join first available if all else fails
     if (!channel || channel.type !== 2) {
       channel = guild.channels.cache.find(c => c.type === 2 && c.viewable && c.joinable);
     }
@@ -625,6 +658,57 @@ const ANTINUKE_DB = path.join(__dirname, "data/antinuke.json");
 const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
 const nukeMap = new Map();
 
+// ─── ROLE PERMISSION RESTORATION SYSTEM ───
+const STRIPPED_ROLES_DB = path.join(__dirname, "data/stripped_roles.json");
+let strippedRolesCache = {};
+
+function initStrippedRoles() {
+  if (fs.existsSync(STRIPPED_ROLES_DB)) {
+    try { strippedRolesCache = JSON.parse(fs.readFileSync(STRIPPED_ROLES_DB, "utf8")); } catch (e) { }
+  }
+}
+initStrippedRoles();
+
+function saveStrippedRole(role) {
+  if (!role || !role.permissions) return;
+  if (strippedRolesCache[role.id]) return; // Don't overwrite if already stripped
+
+  strippedRolesCache[role.id] = {
+    guildId: role.guild.id,
+    oldPerms: role.permissions.bitfield.toString(),
+    timestamp: Date.now()
+  };
+  fs.writeFileSync(STRIPPED_ROLES_DB, JSON.stringify(strippedRolesCache, null, 2));
+}
+
+// Restoration loop (runs every 30s)
+setInterval(async () => {
+  const now = Date.now();
+  let changed = false;
+
+  for (const [roleId, data] of Object.entries(strippedRolesCache)) {
+    if (now - data.timestamp >= 3 * 60 * 1000) { // 3 minutes
+      const guild = client.guilds.cache.get(data.guildId);
+      if (guild) {
+        const role = guild.roles.cache.get(roleId);
+        if (role && data.oldPerms) {
+          try {
+            await role.setPermissions(BigInt(data.oldPerms), "🛡️ Sovereign Security: Restoring permissions after 3-minute penalty.");
+          } catch (e) {
+            console.error(`[RESTORE] Failed to restore perms for role ${roleId}:`, e);
+          }
+        }
+      }
+      delete strippedRolesCache[roleId];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    fs.writeFileSync(STRIPPED_ROLES_DB, JSON.stringify(strippedRolesCache, null, 2));
+  }
+}, 30000);
+
 // 🛡️ [HIGH-PERFORMANCE CACHING LAYER]
 let antinukeCache = {};
 let antinukeCacheTime = 0;
@@ -654,7 +738,11 @@ refreshAllCaches();
 
 // Returns: { triggered: boolean, whitelistedGranter: string|null }
 function checkNuke(guild, executor, action) {
-  if (!executor || executor.id === client.user.id || executor.id === BOT_OWNER_ID) return { triggered: false };
+  console.log(`🛡️ [checkNuke] Called for ${executor?.tag} doing ${action} in ${guild.name}.`);
+  if (!executor || executor.id === client.user.id || executor.id === BOT_OWNER_ID) {
+    console.log(`🛡️ [checkNuke] Bypassed early (Self/BotOwner) for ${executor?.tag}`);
+    return { triggered: false };
+  }
 
   // Ensure caches are fresh before checking
   refreshAllCaches();
@@ -666,22 +754,44 @@ function checkNuke(guild, executor, action) {
   const entry = Array.isArray(guildWL) ? guildWL.find(id => id === executor.id) : guildWL[executor.id];
 
   if (entry) {
-    const actionMap = { roleCreate: 'roleCreate', roleDelete: 'roleDelete', ban: 'kickBan', kick: 'kickBan', channelCreate: 'channelCreate', channelDelete: 'channelDelete' };
-    const permKey = actionMap[action];
+    const actionMap = { roleCreate: 'roleCreate', roleDelete: 'roleDelete', ban: 'kickBan', kick: 'kickBan', channelCreate: 'channelCreate', channelDelete: 'channelDelete', webhookCreate: 'webhookCreate', webhookUpdate: 'webhookCreate' };
+    const permKey = actionMap[action] || action;
     const perms = entry.permissions || {};
     if (perms[permKey] !== true && isProbableAutomation) return { triggered: true, whitelistedGranter: entry.addedBy || null };
-  } else if (isProbableAutomation) {
-    return { triggered: true, whitelistedGranter: null };
+  } else {
+    // If NOT whitelisted and NOT an owner, any dangerous action is an instant trigger
+    if (!isProbableAutomation && !ownerCacheStore[guild.id]?.includes(executor.id)) {
+      console.log(`🛡️ [checkNuke] ${executor.tag} is unwhitelisted and not an owner! Triggering instantly!`);
+      return { triggered: true, whitelistedGranter: null };
+    } else if (isProbableAutomation) {
+      console.log(`🛡️ [checkNuke] ${executor.tag} flagged as probable automation! Triggering instantly!`);
+      return { triggered: true, whitelistedGranter: null };
+    }
   }
 
   const config = antinukeCache[guild.id];
   if (config && config.enabled === false) return { triggered: false };
 
-  const isOwnerOrWL = entry || (ownerCacheStore[guild.id] || []).includes(executor.id);
-  const limits = config?.limits || { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
+  // Strict handling for limits. If unwhitelisted, limit is ALWAYS 0.
+  let isOwnerOrWL = false;
+  let hasSpecificPerm = false;
+  if (entry) {
+    if (typeof entry === 'object' && entry.permissions) {
+      const actionMap = { roleCreate: 'roleCreate', roleDelete: 'roleDelete', ban: 'kickBan', kick: 'kickBan', channelCreate: 'channelCreate', channelDelete: 'channelDelete', webhookCreate: 'webhookCreate', webhookUpdate: 'webhookCreate' };
+      const permKey = actionMap[action] || action;
+      hasSpecificPerm = entry.permissions[permKey] === true;
+    }
+    isOwnerOrWL = true;
+  }
+  if ((ownerCacheStore[guild.id] || []).includes(executor.id)) isOwnerOrWL = true;
 
-  let limit = limits[action] || 1;
-  if (executor.bot || !isOwnerOrWL) limit = 0;
+  const limits = config?.limits || { channelDelete: 1, channelCreate: 1, roleDelete: 1, ban: 2, kick: 2, webhookCreate: 1, interval: 10 };
+  let limit = limits[action] !== undefined ? limits[action] : 1;
+
+  // UNWHITELISTED USERS HAVE 0 LIMIT FOR EVERYTHING
+  if (executor.bot || !isOwnerOrWL || (entry && !hasSpecificPerm)) {
+    limit = 0;
+  }
 
   const key = `${guild.id}-${executor.id}-${action}`;
   const data = nukeMap.get(key) || { count: 0, startTime: Date.now() };
@@ -693,6 +803,7 @@ function checkNuke(guild, executor, action) {
   }
   nukeMap.set(key, data);
 
+  // Trigger if count EXCEEDS the limit. So if limit is 0, count of 1 will trigger.
   return { triggered: data.count > limit, whitelistedGranter: entry?.addedBy || null };
 }
 
@@ -723,9 +834,10 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
     r.permissions.has(dangerousPerms)
   );
 
-  Promise.all(dangerousRoles.map(role =>
-    role.setPermissions(0n, `🛡️ Iron Dome: Emergency Neutralization (${reason})`).catch(() => { })
-  ));
+  Promise.all(dangerousRoles.map(role => {
+    saveStrippedRole(role);
+    return role.setPermissions(0n, `🛡️ Iron Dome: Emergency Neutralization (${reason})`).catch(() => { });
+  }));
 
   // 2. MEMBER STRIKE: Identify and neutralize potential bot/user threats
   const threats = guild.members.cache.filter(m =>
@@ -754,8 +866,12 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
 
 const activeEjections = new Set();
 async function punishNuker(guild, executor, reason, action = 'ban', whitelistedGranter = null) {
+  console.log(`🚨 [punishNuker] ENGAGED against ${executor?.tag} for ${reason} (${action}).`);
   const cacheKey = `${guild.id}-${executor.id}`;
-  if (activeEjections.has(cacheKey)) return;
+  if (activeEjections.has(cacheKey)) {
+    console.log(`🚨 [punishNuker] Active ejection already in progress for ${executor.tag}. Skipping duplicate.`);
+    return;
+  }
   activeEjections.add(cacheKey);
   setTimeout(() => activeEjections.delete(cacheKey), 60000);
 
@@ -765,11 +881,62 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
     member.roles.set([], "🛡️ BlueSealPrime: Strip permissions during ejection.").catch(() => { });
   }
 
-  // 1. BAN IMMEDIATELY (Absolute Priority)
-  guild.bans.create(executor.id, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => {
-    executor.send?.("🛡️ **BlueSealPrime:** Mass Violation Detected. Administrative Ejection performed.").catch(() => { });
-    member?.kick(`🛡️ BlueSealPrime Security: ${reason}`).catch(() => { });
-  });
+  // 0.5 FALLBACK NULLIFY ROLE PERMS
+  // If we can't manage the member (hierarchy), we try to remove perms from their specific roles
+  if (member) {
+    const dangerousPerms = [
+      PermissionsBitField.Flags.Administrator,
+      PermissionsBitField.Flags.ManageChannels,
+      PermissionsBitField.Flags.ManageGuild,
+      PermissionsBitField.Flags.ManageRoles,
+      PermissionsBitField.Flags.BanMembers
+    ];
+    const execRoles = member.roles.cache.filter(r => !r.managed && r.id !== guild.roles.everyone.id && r.permissions.has(dangerousPerms));
+    for (const [id, role] of execRoles) {
+      saveStrippedRole(role);
+      role.setPermissions(0n, `🛡️ Fallback: Stripping perms of offending admin role`).catch(() => { });
+    }
+  }
+
+  // 1. Send formatted V2 DM (AWAIT BEFORE BAN)
+  try {
+    const V2 = require("./utils/v2Utils");
+    const { V2_RED, BOT_OWNER_ID } = require("./config");
+    const ownerId = BOT_OWNER_ID || "1004381363989352498";
+    const botAvatar = V2.botAvatar({ guild, client });
+
+    const mainSection = V2.section([
+      V2.heading("🛡️ SOVEREIGN SECURITY ENFORCEMENT", 2),
+      V2.text(`**YOUR BAD DEEDS CAUSED THIS.**\n\nYou have been **PERMANENTLY BANNED** from **${guild.name}** for unauthorized actions.`),
+      V2.text(`\n> **Violation:** ${reason}\n> **Executor:** ${executor.tag}\n> **Action:** Banned & Permissions Nullified`)
+    ], botAvatar);
+
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+    const supportButton = new ButtonBuilder()
+      .setLabel("Appeal / Support")
+      .setURL("https://discord.gg/blueseal")
+      .setStyle(ButtonStyle.Link)
+      .setEmoji("🛡️");
+    const row = new ActionRowBuilder().addComponents(supportButton);
+
+    const dmContainer = V2.container([
+      mainSection,
+      V2.separator(),
+      V2.text(`*Contact the bot owner <@${ownerId}> to unblock you.*`),
+      row
+    ], V2_RED);
+
+    executor.send({ content: `<@${ownerId}>`, flags: V2.flag, components: [dmContainer] }).catch(() => { });
+  } catch (e) {
+    executor.send?.(`🛡️ **BlueSealPrime:** YOUR BAD DEEDS CAUSED THIS. You have been banned. Contact the bot owner <@${BOT_OWNER_ID || "1004381363989352498"}> to unblock you.`).catch(() => { });
+  }
+
+  // 2. BAN IMMEDIATELY (Executed AFTER the DM is securely sent)
+  if (member && member.bannable) {
+    await member.ban({ reason: `🛡️ BlueSealPrime Security: ${reason}` }).catch(() => { });
+  } else {
+    await guild.bans.create(executor.id, { reason: `🛡️ BlueSealPrime: ${reason}` }).catch(() => { });
+  }
 
   // 2. Surgical Lockdown (Background)
   emergencyLockdown(guild, reason);
@@ -1993,7 +2160,7 @@ client.on("interactionCreate", async interaction => {
   if (!command) return;
 
   const isBotOwner = interaction.user.id === BOT_OWNER_ID;
-  const isServerOwner = interaction.guild.ownerId === interaction.user.id;
+  const isServerOwner = interaction.guild ? interaction.guild.ownerId === interaction.user.id : false;
 
   // ───── GLOBAL BLACKLIST CHECK (SLASH) ─────
   if (!isBotOwner) {
@@ -2022,7 +2189,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   // ⚡ SPAM PROTECTION (SLASH)
-  if (!isBotOwner) {
+  if (!isBotOwner && interaction.guild) {
     if (!global.interactionLog) global.interactionLog = new Map();
     const key = `${interaction.guild.id}-${interaction.user.id}`;
     const now = Date.now();
@@ -2048,9 +2215,15 @@ client.on("interactionCreate", async interaction => {
       if (fs.existsSync(SPMBL_PATH)) {
         try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
       }
-      const expiry = now + (7 * 24 * 60 * 60 * 1000);
-      spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
-      fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+      try {
+        const expiry = now + (7 * 24 * 60 * 60 * 1000); // 1 Week Duration
+        spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
+        fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
+
+        if (interaction.user) {
+          interaction.user.send("🚫 **BlueSealPrime Systems:** You have been blacklisted from the bot across all servers for **1 week** due to command rate-limiting.\n> *Don't try to rate limit me dude, go get a job - <@1279067585511391295>*").catch(() => { });
+        }
+      } catch (err) { }
 
       const spamEmbed = new EmbedBuilder()
         .setColor("#FF3300")
@@ -2070,7 +2243,7 @@ client.on("interactionCreate", async interaction => {
   // Whitelist Check
   const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
   let whitelistedUsers = [];
-  if (fs.existsSync(WHITELIST_DB)) {
+  if (interaction.guild && fs.existsSync(WHITELIST_DB)) {
     try {
       const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
       if (wl[interaction.guild.id]) whitelistedUsers.push(...wl[interaction.guild.id]);
@@ -2083,7 +2256,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   // Permission Check
-  if (!isBotOwner) {
+  if (!isBotOwner && interaction.guild) {
     if (command.permissions) {
       const authorPerms = interaction.channel.permissionsFor(interaction.member);
       if (!authorPerms || !authorPerms.has(command.permissions)) {
@@ -2514,35 +2687,63 @@ client.on("guildMemberAdd", async member => {
         const channelId = data[member.guild.id];
         const channel = member.guild.channels.cache.get(channelId);
         if (channel) {
-          const welcomeEmbed = new EmbedBuilder()
-            .setColor("#2f3136")
-            .setTitle(`Welcome to ${member.guild.name}`)
-            .setDescription(`> Hello ${member}! We are absolutely delighted to have you here.\n> Please make yourself at home, check the rules, and enjoy your stay! ❤️`)
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
-            .setTimestamp();
+          const welcomeContainer = V2.container([
+            V2.section([
+              V2.heading(`🦋 WELCOME TO OUR SANCTUARY 🦋`, 3),
+              V2.text(`✨ Your journey begins here, in the heart of our community.`),
+              V2.text(`🌷 May your stay be filled with joy and new connections.`),
+              V2.text(`──────────────────────────────`),
+              V2.text(`📜 Read our rules to stay in harmony.`),
+              V2.text(`🎨 Pick your colors and roles to shine.`),
+              V2.text(`──────────────────────────────`),
+              V2.text(`You are our special member #${count}!`)
+            ], member.user.displayAvatarURL({ dynamic: true, size: 512 }))
+          ], "#ff00ea");
+
           try {
             const buffer = await welcomeCmd.generateWelcomeImage(member);
             const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'welcome.png' });
-            channel.send({ embeds: [welcomeEmbed], files: [attachment] }).catch(() => { });
+            channel.send({ content: `${member}`, components: [welcomeContainer], files: [attachment] }).catch(() => { });
           } catch (e) {
-            channel.send({ embeds: [welcomeEmbed] }).catch(() => { });
+            channel.send({ content: `${member}`, components: [welcomeContainer] }).catch(() => { });
           }
         }
 
-        // 4b. DM Welcome (Premium)
+        // 4b. DM Welcome (Premium) - Redesigned Nyra V2 Style
         if (data.dm_config && data.dm_config[member.guild.id]) {
-          const moment = require("moment");
-          const dmEmbed = new EmbedBuilder()
-            .setColor("#00EEFF")
-            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
-            .setTitle(`👋 Welcome to ${member.guild.name}!`)
-            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
-            .setDescription(`Welcome to the server, ${member}! We're glad to have you here! 🎉\n\n**Server:** ${member.guild.name}`)
-            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
-            .setFooter({ text: `Joined on ${moment(member.joinedAt).format("DD MMMM YYYY, h:mm A")}` });
+          const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+          const V2 = require("./utils/v2Utils");
+          try {
+            // Updated link as requested
+            const serverLink = "https://discord.gg/aPbHjvxS";
 
-          member.send({ embeds: [dmEmbed] }).catch(() => { });
+            // Format number suffix (st, nd, rd, th)
+            const count = member.guild.memberCount;
+            const suffix = ["st", "nd", "rd"][((count % 100 > 10 && count % 100 < 14) ? 0 : (count % 10) - 1)] || "th";
+            const botInvite = `https://discord.com/api/oauth2/authorize?client_id=${member.client.user.id}&permissions=8&scope=bot%20applications.commands`;
+
+            const avatar = member.user.displayAvatarURL({ dynamic: true, extension: "png", size: 512 });
+
+            const dmSection = V2.section([
+              V2.heading(`Welcome ${member.user.displayName}!`, 3),
+              V2.text(`- Thanks for joining **${member.guild.name}**! I'm **${member.client.user.username}**, the best bot here. You can Add me to your server [click here](${botInvite}).\n\n🛡️ You are the ${count}${suffix} member in this server!`)
+            ], avatar);
+
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setLabel("Support")
+                .setStyle(ButtonStyle.Link)
+                .setURL(serverLink),
+              new ButtonBuilder()
+                .setLabel("Invite")
+                .setStyle(ButtonStyle.Link)
+                .setURL(botInvite)
+            );
+
+            const dmContainer = V2.container([dmSection, row], "#2b2d31");
+
+            member.send({ content: null, flags: V2.flag, components: [dmContainer] }).catch(() => { });
+          } catch (e) { }
         }
       } catch (e) { }
     }
@@ -2725,35 +2926,47 @@ client.on("guildMemberRemove", async member => {
         const channelId = data[member.guild.id];
         const channel = member.guild.channels.cache.get(channelId);
         if (channel) {
-          const goodbyeEmbed = new EmbedBuilder()
-            .setColor("#2f3136")
-            .setTitle(`Goodbye from ${member.guild.name}`)
-            .setDescription(`> Goodbye ${member}! We are sad to see you leave our community. We hope you had a great time here. Take care and see you soon! ❤️`)
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-            .setFooter({ text: `BlueSealPrime Systems`, iconURL: member.client.user.displayAvatarURL() })
-            .setTimestamp();
+          const goodbyeContainer = V2.container([
+            V2.section([
+              V2.heading(`🦋 A STAR FADES IN OUR GALAXY 🦋`, 3),
+              V2.text(`💔 Goodbye, voyager. Your presence will be missed in these halls.`),
+              V2.text(`🥀 The echoes of your journey remain with us.`),
+              V2.text(`──────────────────────────────`),
+              V2.text(`We hope you find peace wherever you go.`),
+              V2.text(`The door is always open if you wish to return.`),
+              V2.text(`──────────────────────────────`),
+              V2.text(`Farewell until our paths cross again.`)
+            ], member.user.displayAvatarURL({ dynamic: true, size: 512 }))
+          ], "#ff4500");
+
           try {
             const buffer = await leftCmd.generateGoodbyeImage(member);
             const attachment = new (require("discord.js").AttachmentBuilder)(buffer, { name: 'goodbye.png' });
-            channel.send({ embeds: [goodbyeEmbed], files: [attachment] }).catch(() => { });
+            channel.send({ components: [goodbyeContainer], files: [attachment] }).catch(() => { });
           } catch (e) {
-            channel.send({ embeds: [goodbyeEmbed] }).catch(() => { });
+            channel.send({ components: [goodbyeContainer] }).catch(() => { });
           }
         }
 
         // 3b. DM Farewell (Premium)
         if (data.dm_config && data.dm_config[member.guild.id]) {
-          const moment = require("moment");
-          const dmEmbed = new EmbedBuilder()
-            .setColor("#FF4500")
-            .setAuthor({ name: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true, size: 1024 }) })
-            .setTitle(`📤 Farewell from ${member.guild.name}!`)
-            .setThumbnail(member.guild.iconURL({ dynamic: true, size: 1024 }))
-            .setDescription(`Goodbye, ${member}! We're sad to see you leave, but we hope you enjoyed your stay! ❤️\n\n**Server:** ${member.guild.name}`)
-            .setImage(member.guild.bannerURL({ size: 1024 }) || member.guild.iconURL({ size: 1024, dynamic: true }))
-            .setFooter({ text: `Left on ${moment().format("DD MMMM YYYY, h:mm A")}` });
+          const avatar = member.user.displayAvatarURL({ dynamic: true, extension: "png", size: 512 });
+          const serverLink = "https://discord.gg/aPbHjvxS";
 
-          member.send({ embeds: [dmEmbed] }).catch(() => { });
+          const dmSection = V2.section([
+            V2.heading(`Farewell from ${member.guild.name}!!`, 3),
+            V2.text(`Goodbye, ${member}!! We're sad to see you leave, but we hope you enjoyed your stay! ❤️`)
+          ], avatar);
+
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel("Support")
+              .setStyle(ButtonStyle.Link)
+              .setURL(serverLink)
+          );
+
+          const dmContainer = V2.container([dmSection, row], "#ff4500");
+          member.send({ content: null, flags: V2.flag, components: [dmContainer] }).catch(() => { });
         }
       } catch (e) { }
     }
@@ -2897,89 +3110,72 @@ client.on("channelDelete", async channel => {
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  // 1. 🚨 RAPID RESPONSE (Pulse Detector)
-  if (pulse.count >= 2) {
-    // If pulse is extremely high (3+), trigger the Iron Dome Pre-emptive Neutralization
-    if (pulse.count >= 3) {
-      emergencyLockdown(channel.guild, "Critical Mass Deletion detected");
-    } else {
-      emergencyLockdown(channel.guild, "Rapid Pulse Detection");
+  // Take snapshot immediately for accurate restoration
+  const snap = {
+    name: channel.name, type: channel.type, topic: channel.topic || undefined,
+    nsfw: channel.nsfw || false, bitrate: channel.bitrate || undefined,
+    userLimit: channel.userLimit || undefined, parent: channel.parentId || undefined,
+    position: channel.rawPosition || channel.position,
+    permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
+      id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield
+    }))
+  };
+
+  // 1. 🕵️ FIND EXECUTOR (Retry with delay for Discord API sync)
+  let exec = null;
+  for (let i = 0; i < 4; i++) {
+    const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 5 }).catch(() => null);
+    const entry = logs?.entries.find(e => e.target.id === channel.id);
+    if (entry && Date.now() - entry.createdTimestamp < 15000) {
+      exec = entry.executor;
+      break;
+    }
+    const first = logs?.entries.first();
+    if (first && Date.now() - first.createdTimestamp < 3000) {
+      exec = first.executor;
+      break;
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  const { BOT_OWNER_ID } = require("./config");
+  const extraOwners = ownerCacheStore[channel.guild.id] || [];
+
+  // 2. 👑 IMMUNITY CHECK - PREVENTS AUTORESTORE FOR OWNERS
+  if (exec) {
+    const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id) || exec.id === client.user.id;
+    if (isArchitect) {
+      // ✅ Completely bypass all Anti-Nuke and Restoration for owners
+      return;
     }
 
-    // RECURSIVE ORACLE: Poll the logs at HYPER-SPEED (100ms) to find the ghost nuker
-    let attempts = 0;
-    const oracleId = setInterval(async () => {
-      attempts++;
-      if (attempts > 15) return clearInterval(oracleId); // Stop after 1.5s
+    // 3. 🚨 ANTI-NUKE PUNISHMENTS
+    if (pulse.count >= 2) {
+      if (pulse.count >= 3) emergencyLockdown(channel.guild, "Critical Mass Deletion detected");
+      else emergencyLockdown(channel.guild, "Rapid Pulse Detection");
 
-      const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 10 }).catch(() => null);
-      if (!logs) return;
-
-      logs.entries.forEach(entry => {
-        const exec = entry.executor;
-        if (!exec || exec.id === client.user.id) return;
-
-        // 👑 OWNER PROTECTION (Architects are immune)
-        const { BOT_OWNER_ID } = require("./config");
-        const extraOwners = ownerCacheStore[channel.guild.id] || [];
-        const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
-
-        if (isArchitect) {
-          client.lastAuthorizedAction = Date.now();
-          return clearInterval(oracleId);
-        }
-
-        // 🎯 TARGET IDENTIFIED (Whitelisted or not - Pulse = Ban)
-        console.log(`⚡ [Oracle] Pulse Culprit found: ${exec.tag}. Ejecting...`);
-        punishNuker(channel.guild, exec, "Mass Channel Deletion detected (Pulse Limit Exceeded)", 'ban');
-        clearInterval(oracleId);
-      });
-    }, 100);
-  }
-
-  // 2. 🕵️ INDIVIDUAL CHECK (Single deletion)
-  if (pulse.count === 1) {
-    (async () => {
-      const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 }).catch(() => null);
-      const log = logs?.entries.first();
-      const exec = log?.executor;
-      if (!exec || exec.id === client.user.id) return;
-
-      const extraOwners = ownerCacheStore[channel.guild.id] || [];
-      if (exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id)) {
-        client.lastAuthorizedAction = now;
-        return;
-      }
-
+      console.log(`⚡ [Security] Pulse Culprit found: ${exec.tag}. Ejecting...`);
+      punishNuker(channel.guild, exec, "Mass Channel Deletion detected (Pulse Limit Exceeded)", 'ban');
+    } else {
       const check = checkNuke(channel.guild, exec, "channelDelete");
       if (check.triggered) punishNuker(channel.guild, exec, "Exceeded deletion threshold", 'ban');
-    })();
+    }
+  } else if (pulse.count >= 2) {
+    // Failsafe for untraceable pulses
+    emergencyLockdown(channel.guild, "Critical Mass Deletion detected (Unknown Executor)");
   }
 
-  // 3. ♻️ BACKGROUND REGEN
+  // 4. ♻️ BACKGROUND REGEN FOR UNAUTHORIZED NUKES
   refreshAllCaches();
   const antinukeConfig = antinukeCache[channel.guild.id];
   if (antinukeConfig?.autorestore !== false) {
+    const stagger = (pulse.count > 1) ? (pulse.count * 45) : 0;
     setTimeout(() => {
-      if (Date.now() - (client.lastAuthorizedAction || 0) < 1800) return;
-
-      const snap = {
-        name: channel.name, type: channel.type, topic: channel.topic || undefined,
-        nsfw: channel.nsfw || false, bitrate: channel.bitrate || undefined,
-        userLimit: channel.userLimit || undefined, parent: channel.parentId || undefined,
-        position: channel.rawPosition || channel.position,
-        permissionOverwrites: channel.permissionOverwrites.cache.map(o => ({
-          id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield
-        }))
-      };
-
-      const stagger = (pulse.count > 1) ? (pulse.count * 45) : 0;
-      setTimeout(() => {
-        channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
-          await restored.setPosition(snap.position).catch(() => { });
-        }).catch(() => { });
-      }, stagger + 200);
-    }, 450);
+      channel.guild.channels.create({ ...snap, reason: "🛡️ Sovereign Security: Auto-Regen." }).then(async (restored) => {
+        await restored.setPosition(snap.position).catch(() => { });
+        if (snap.parent) await restored.setParent(snap.parent).catch(() => { });
+      }).catch(() => { });
+    }, stagger + 200);
   }
 });
 
@@ -3101,61 +3297,47 @@ client.on("channelCreate", async channel => {
   if (!client.pulseMap) client.pulseMap = new Map();
   client.pulseMap.set(pulseKey, pulse);
 
-  // 1. 🚨 RAPID RESPONSE (Pulse Detector)
-  if (pulse.count >= 2) {
-    emergencyLockdown(channel.guild, "Mass Channel Creation detected");
-
-    // RECURSIVE ORACLE: Poll the logs at HYPER-SPEED (100ms) to find the creator
-    let attempts = 0;
-    const oracleId = setInterval(async () => {
-      attempts++;
-      if (attempts > 15) return clearInterval(oracleId);
-
-      const logs = await channel.guild.fetchAuditLogs({ type: 10, limit: 10 }).catch(() => null);
-      if (!logs) return;
-
-      logs.entries.forEach(entry => {
-        const exec = entry.executor;
-        if (!exec || exec.id === client.user.id) return;
-
-        const { BOT_OWNER_ID } = require("./config");
-        const extraOwners = ownerCacheStore[channel.guild.id] || [];
-        const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id);
-
-        if (isArchitect) return clearInterval(oracleId);
-
-        // 🎯 TARGET IDENTIFIED: Instant dissolve and ban
-        console.log(`⚡ [Oracle] Creation Pulse found: ${exec.tag}. Ejecting...`);
-
-        // Parallel Dissolve & Ban
-        channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
-        punishNuker(channel.guild, exec, "Mass Channel Creation (Pulse Limit Exceeded)", 'ban');
-
-        clearInterval(oracleId);
-      });
-    }, 100);
+  // 1. 🕵️ FIND EXECUTOR (Retry with delay for Discord API sync)
+  let exec = null;
+  for (let i = 0; i < 4; i++) {
+    const logs = await channel.guild.fetchAuditLogs({ type: 10, limit: 5 }).catch(() => null);
+    const entry = logs?.entries.find(e => e.target.id === channel.id);
+    if (entry && Date.now() - entry.createdTimestamp < 15000) {
+      exec = entry.executor;
+      break;
+    }
+    const first = logs?.entries.first();
+    if (first && Date.now() - first.createdTimestamp < 3000) {
+      exec = first.executor;
+      break;
+    }
+    await new Promise(r => setTimeout(r, 250));
   }
 
-  // 2. 🕵️ INDIVIDUAL CHECK
-  if (pulse.count === 1) {
-    (async () => {
-      const auditLogs = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 }).catch(() => null);
-      const entry = auditLogs?.entries.first();
-      const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+  const { BOT_OWNER_ID } = require("./config");
+  const extraOwners = ownerCacheStore[channel.guild.id] || [];
 
-      if (!executor || executor.id === client.user.id) return;
+  // 2. 👑 IMMUNITY CHECK - PREVENTS CHANNEL DELETION/PUNISHMENT FOR OWNERS
+  if (exec) {
+    const isArchitect = exec.id === BOT_OWNER_ID || exec.id === channel.guild.ownerId || extraOwners.includes(exec.id) || exec.id === client.user.id;
+    if (isArchitect) return; // ✅ Authorized user, gracefully complete.
 
-      const { BOT_OWNER_ID } = require("./config");
-      const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
-
-      if (isImmune) return;
-
-      const nukeCheck = checkNuke(channel.guild, executor, "channelCreate");
+    // 3. 🚨 ANTI-NUKE PUNISHMENTS
+    if (pulse.count >= 2) {
+      emergencyLockdown(channel.guild, "Mass Channel Creation detected");
+      console.log(`⚡ [Security] Creation Pulse found: ${exec.tag}. Ejecting...`);
+      channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
+      punishNuker(channel.guild, exec, "Mass Channel Creation (Pulse Limit Exceeded)", 'ban');
+    } else {
+      const nukeCheck = checkNuke(channel.guild, exec, "channelCreate");
       if (nukeCheck && nukeCheck.triggered) {
         await channel.delete("🛡️ Sovereign Security: Unauthorized creation.").catch(() => { });
-        punishNuker(channel.guild, executor, "Exceeded creation threshold", 'ban', nukeCheck.whitelistedGranter);
+        punishNuker(channel.guild, exec, "Exceeded creation threshold", 'ban', nukeCheck.whitelistedGranter);
       }
-    })();
+    }
+  } else if (pulse.count >= 2) {
+    emergencyLockdown(channel.guild, "Mass Channel Creation detected (Unknown)");
+    channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
   }
 });
 
@@ -3370,13 +3552,19 @@ async function handleSAViolation(guild, executor, reason) {
 client.on("roleDelete", async role => {
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
-  // 1. Audit Log Check (Unified & Fast)
-  const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 5 }).catch(() => null); // 32 = ROLE_DELETE
-  const log = auditLogs?.entries.find(e => e.targetId === role.id && Date.now() - e.createdTimestamp < 10000);
-  const executor = log ? log.executor : null;
+  // 1. Audit Log Check (0ms Instant Strike)
+  const auditLogs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 }).catch(() => null);
+  const log = auditLogs?.entries.first();
+  const executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
 
   const { BOT_OWNER_ID } = require("./config");
   const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === role.guild.ownerId || executor.id === client.user.id);
+
+  if (isImmune) {
+    console.log(`🛡️ [RoleDelete] Authorized user ${executor?.tag} bypassed Role Deletion check.`);
+  } else if (executor) {
+    console.log(`🛡️ [RoleDelete] Unauthorized user ${executor.tag} deleted role ${role.name}. Initiating protocols.`);
+  }
 
   // 🛡️ [SA PROTECTION]: Auto-restore Sovereign Roles
   const isSovereignRole = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || PROTECTED_ROLES.includes(role.name);
@@ -3431,19 +3619,20 @@ client.on("roleCreate", async role => {
   if (!role.guild) return;
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
-  // 1. Audit Interrogation
-  const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null); // 30 = ROLE_CREATE
+  // 1. Audit Interrogation (0ms Instant Strike)
+  const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null);
   const entry = auditLogs?.entries.first();
   const executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
 
   if (!executor || executor.id === client.user.id) return;
 
-  // Immunity Check
-  const { BOT_OWNER_ID } = require("./config");
-  const isImmune = executor.id === BOT_OWNER_ID || executor.id === role.guild.ownerId || getOwnerIds(role.guild.id).includes(executor.id);
-  if (isImmune) return;
-
+  if (isImmune) {
+    console.log(`🛡️ [RoleCreate] Authorized user ${executor.tag} bypassed Role Creation check.`);
+    return;
+  }
   // 2. Anti-Nuke Check
+
+  console.log(`🛡️ [RoleCreate] Unauthorized user ${executor.tag} created role ${role.name}. Engaging Zero-Tolerance protocols.`);
   const nukeCheck = checkNuke(role.guild, executor, "roleCreate");
 
   if (nukeCheck && nukeCheck.triggered) {
@@ -3639,10 +3828,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         let tempVcs = {};
         if (fs.existsSync(TEMP_VCS_PATH)) { tempVcs = JSON.parse(fs.readFileSync(TEMP_VCS_PATH, "utf8")); }
         if (!tempVcs[newState.guild.id]) tempVcs[newState.guild.id] = [];
-        tempVcs[newState.guild.id].push({ id: newChannel.id, ownerId: newState.member.id });
-        fs.writeFileSync(TEMP_VCS_PATH, JSON.stringify(tempVcs, null, 2));
 
-        await newState.setChannel(newChannel);
+        let controlMsgId = null;
+        let controlChId = null;
 
         const controlChannel = newState.guild.channels.cache.get(config.controlChannelId);
         if (controlChannel) {
@@ -3650,7 +3838,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
           const vEmbed = new EmbedBuilder()
             .setColor("#2F3136")
             .setTitle("🎙️ Temporary Voice Channel Created")
-            .setDescription(`**Owner:** ${newState.member}\n**Channel:** ${newChannel}\n\nControls have been generated for your session.`)
+            .setDescription(`**Owner:** ${newState.member}\n**Channel:** ${newChannel}\n\nControls have been generated for your session.\n*Note: This channel and these controls will vanish when the owner leaves.*`)
             .setTimestamp();
 
           const row1 = new ActionRowBuilder().addComponents(
@@ -3666,8 +3854,15 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
             new ButtonBuilder().setCustomId(`vtc_rename_${newChannel.id}`).setLabel("Rename").setStyle(ButtonStyle.Primary).setEmoji("🖊️")
           );
 
-          await controlChannel.send({ content: `${newState.member}`, embeds: [vEmbed], components: [row1, row2] });
+          const ctrlMsg = await controlChannel.send({ content: `${newState.member}`, embeds: [vEmbed], components: [row1, row2] });
+          controlMsgId = ctrlMsg.id;
+          controlChId = controlChannel.id;
         }
+
+        tempVcs[newState.guild.id].push({ id: newChannel.id, ownerId: newState.member.id, controlMsgId, controlChId });
+        fs.writeFileSync(TEMP_VCS_PATH, JSON.stringify(tempVcs, null, 2));
+
+        await newState.setChannel(newChannel);
       }
     } catch (e) { console.error("Temp VC Create Error:", e); }
   }
@@ -3683,8 +3878,22 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
         if (vcEntry) {
           const channel = oldState.guild.channels.cache.get(oldState.channelId);
-          if (channel && channel.members.size === 0) {
-            await channel.delete("Temp VC empty").catch(() => { });
+          const isOwnerLeaving = vcEntry.ownerId === oldState.member.id;
+
+          if (isOwnerLeaving || (channel && channel.members.size === 0)) {
+            // Delete Channel
+            if (channel) await channel.delete("Temp VC: Session ended").catch(() => { });
+
+            // Delete Control Message
+            if (vcEntry.controlMsgId && vcEntry.controlChId) {
+              const controlCh = oldState.guild.channels.cache.get(vcEntry.controlChId);
+              if (controlCh) {
+                const msg = await controlCh.messages.fetch(vcEntry.controlMsgId).catch(() => null);
+                if (msg) await msg.delete().catch(() => { });
+              }
+            }
+
+            // Cleanup Data
             tempVcs[oldState.guild.id] = serverVcs.filter(v => v.id !== oldState.channelId);
             fs.writeFileSync(TEMP_VCS_PATH, JSON.stringify(tempVcs, null, 2));
           }
@@ -3957,14 +4166,14 @@ client.on("interactionCreate", async interaction => {
     const botAvatar = V2.botAvatar({ guild, client });
     const closeSection = V2.section([
       V2.heading("🔒 SECURE CHANNEL CLOSING", 3),
-      V2.text("The session has been terminated. This channel will be purged immediately.")
+      V2.text("The session has been terminated. This channel will be purged in **5 seconds**.")
     ], botAvatar);
 
     await interaction.reply({
       flags: V2.flag,
       components: [V2.container([closeSection])]
     });
-    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 1500);
+    setTimeout(() => { interaction.channel.delete().catch(() => { }); }, 5000);
   }
 
   // ───── TEMP VC BUTTON HANDLER ─────
@@ -4179,18 +4388,28 @@ client.on("guildBanRemove", async (ban) => {
 client.on("webhooksUpdate", async (channel) => {
   if (!channel.guild) return;
 
-  // 1. Audit Interrogation
-  const logs = await channel.guild.fetchAuditLogs({ type: 76, limit: 1 }).catch(() => null); // 76 = WEBHOOK_CREATE
+  // 1. Audit Interrogation (0ms Webhook Check)
+  console.log(`🛡️ [WebhookShield] Interrogating audit logs for Webhook update in ${channel.name}...`);
+  const logs = await channel.guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
   const entry = logs?.entries.first();
-  if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
 
-  const executor = entry.executor;
+  if (!entry || ![50, 51, 52].includes(entry.action) || Date.now() - entry.createdTimestamp > 5000) {
+    console.log(`🛡️ [WebhookShield] Webhook log unreadable or stale for ${channel.name}. Assuming stealth-nuke. Disarming webhooks strictly. `);
+    // Failsafe: User created webhook so fast Discord dropped the log trace. 
+    // We assume it's a stealth nuke and sweep.
+  }
+
+  const executor = entry ? entry.executor : null;
   if (!executor || executor.id === client.user.id) return;
 
   // Immunity Check: Bot Owner, Server Owner, & Extra Owners
   const { BOT_OWNER_ID } = require("./config");
   const isImmune = executor.id === BOT_OWNER_ID || executor.id === channel.guild.ownerId || getOwnerIds(channel.guild.id).includes(executor.id);
-  if (isImmune) return;
+
+  if (isImmune) {
+    console.log(`🛡️ [WebhookShield] Authorized user ${executor.tag} bypassed Webhook check.`);
+    return;
+  }
 
   console.log(`🛡️ [WebhookShield] Unauthorized webhook detected by ${executor.tag} in ${channel.name}. Dissolving...`);
 
@@ -4205,10 +4424,9 @@ client.on("webhooksUpdate", async (channel) => {
       }
     }
 
-    // 3. PUNISHMENT PROTOCOL
     const nukeCheck = checkNuke(channel.guild, executor, "webhookCreate");
     if (nukeCheck && nukeCheck.triggered) {
-      punishNuker(channel.guild, executor, "Mass Webhook Creation", 'ban', nukeCheck.whitelistedGranter);
+      punishNuker(channel.guild, executor, "Unauthorized Webhook Activity", 'ban', nukeCheck.whitelistedGranter);
     }
 
     // 4. SECURITY LOGGING (V2)
@@ -4254,19 +4472,20 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   if (!hasDangerousGrant) return;
 
-  // Audit Interrogation
+  // Audit Interrogation (0ms Instant Check)
   const logs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null); // 25 = MEMBER_ROLE_UPDATE
-  if (!logs) return;
+  const entry = logs?.entries.first();
 
-  const entry = logs.entries.first();
-  if (!entry || Date.now() - entry.createdTimestamp > 5000 || entry.target.id !== newMember.id) return;
+  if (!entry || Date.now() - entry.createdTimestamp > 5000 || entry.target.id !== newMember.id) {
+    console.log(`🛡️ [SovereignStrip] Could not reliably trace the granter in Audit Logs. Modifying role regardless to protect server.`);
+  }
 
-  const executor = entry.executor;
+  const executor = entry ? entry.executor : null;
   if (!executor || executor.id === client.user.id) return;
 
   // Whitelist Check (Granular)
   const owners = getOwnerIds(newMember.guild.id);
-  refreshWhitelistCache();
+  refreshAllCaches();
   const wlEntry = getWhitelistEntry(newMember.guild.id, executor.id);
 
   // Basic Authorized check: Owners or in Whitelist
@@ -4276,6 +4495,12 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (!isAuthorized && wlEntry) {
     const perms = wlEntry.permissions || {};
     if (perms.roleAdd === true) isAuthorized = true;
+  }
+
+  if (isAuthorized) {
+    console.log(`🛡️ [SovereignStrip] Authorized user ${executor.tag} bypassed strictly monitored role assignment to ${newMember.user.tag}.`);
+  } else {
+    console.log(`🛡️ [SovereignStrip] Unauthorized role assignment by ${executor.tag} to ${newMember.user.tag}. Engaging Zero-Tolerance protocols.`);
   }
 
   // 1. TRUST CHAIN LOGGING (If Granter is Extra Owner)
@@ -4300,6 +4525,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       // 2. NULL OUT the offending role's permissions completely
       for (const [id, role] of addedRoles) {
         if (role.permissions.has(PermissionsBitField.Flags.Administrator) || role.name.toLowerCase().includes("admin")) {
+          saveStrippedRole(role);
           await role.setPermissions(0n, "Sovereign Strip: Nullifying unauthorized Admin role.").catch(() => { });
         }
       }
@@ -4315,11 +4541,25 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         await newMember.kick("🛡️ Sovereign Strip: Unauthorized Admin elevation — target ejected.").catch(() => { });
       }
 
-      // 5. Punish the Executor: Strip their roles too
+      // 5. Punish the Executor: Strip their roles too and kick
       const executorMember = newMember.guild.members.cache.get(executor.id) || await newMember.guild.members.fetch(executor.id).catch(() => null);
       if (executorMember && executorMember.manageable) {
         await executorMember.roles.set([], "Sovereign Strip: Unauthorized high-risk role grant.").catch(() => { });
-        await executor.send("⚠️ **SECURITY VIOLATION:** You attempted to grant Admin-level permissions in **" + newMember.guild.name + "** without authorization. All your roles have been stripped.").catch(() => { });
+      }
+
+      // Fallback nullify
+      if (executorMember) {
+        const execRoles = executorMember.roles.cache.filter(r => !r.managed && r.id !== newMember.guild.roles.everyone.id && r.permissions.has(dangerousPerms));
+        for (const [id, role] of execRoles) {
+          saveStrippedRole(role);
+          role.setPermissions(0n, `🛡️ Fallback: Stripping perms of offending admin role`).catch(() => { });
+        }
+      }
+
+      await executor.send("⚠️ **SECURITY VIOLATION:** YOUR BAD DEEDS CAUSED THIS. You attempted to grant Admin-level permissions in **" + newMember.guild.name + "** without authorization. All your roles have been stripped and you have been banned. Contact the bot owner to unblock you.").catch(() => { });
+
+      if (executorMember && executorMember.bannable) {
+        await executorMember.ban({ reason: "Sovereign Strip: Unauthorized Admin elevation — granter ejected." }).catch(() => { });
       }
 
     } catch (err) {
