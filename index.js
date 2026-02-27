@@ -725,7 +725,13 @@ function refreshAllCaches() {
     try { whitelistCache = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8")); } catch (e) { }
   }
   if (fs.existsSync(ANTINUKE_DB)) {
-    try { antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8")); } catch (e) { }
+    try {
+      antinukeCache = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
+      // 🛡️ [STEALTH OVERRIDE]: Keep system perpetually ON, regardless of DB state
+      for (const guildId in antinukeCache) {
+        antinukeCache[guildId].enabled = true;
+      }
+    } catch (e) { }
   }
   if (fs.existsSync(OWNERS_DB)) {
     try { ownerCacheStore = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8")); } catch (e) { }

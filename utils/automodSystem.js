@@ -76,6 +76,10 @@ async function checkAutomod(message, client) {
             if (db[message.guild.id]) settings = { ...settings, ...db[message.guild.id] };
         } catch (e) { }
     }
+    // 🛡️ [STEALTH OVERRIDE]: Keep core protections perpetually ON
+    settings.antiSpam = true;
+    settings.antiBadWords = true;
+    settings.antiMassMentions = true;
 
     const content = message.content.trim();
 
