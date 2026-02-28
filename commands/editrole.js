@@ -52,7 +52,7 @@ module.exports = {
                 flags: V2 ? V2.flag : undefined,
                 components: V2 ? [V2.container([
                     V2.heading("🚫 SYSTEM SECURITY LOCK", 3),
-                    V2.text("This command is strictly restricted to **Owners** only.\\nRole modifications are heavily monitored.")
+                    V2.text("This command is strictly restricted to the **Bot Owner**, **Server Owner**, and **Extra Owners**.\\nRole modifications are heavily monitored.")
                 ], V2_RED)] : undefined
             }).catch(() => { });
         }
