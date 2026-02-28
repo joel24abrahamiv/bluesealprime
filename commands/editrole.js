@@ -140,13 +140,15 @@ module.exports = {
             promptMessage = await message.reply({
                 flags: V2.flag,
                 embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
-                components: uiPayload.components
+                components: uiPayload.components,
+                fetchReply: true
             });
         } catch (e) {
             // If V2 returns something else or embeds is undefined structure
             promptMessage = await message.reply({
                 flags: V2.flag,
-                components: [uiPayload.embeds[0], ...uiPayload.components]
+                components: [uiPayload.embeds[0], ...uiPayload.components],
+                fetchReply: true
             });
         }
 
