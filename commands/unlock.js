@@ -72,6 +72,13 @@ module.exports = {
                     SendMessages: null
                 }, { reason: `Unlocked by ${message.author.tag}: ${reason}` });
 
+                // 👑 CLEANUP OWNER BYPASS
+                await message.channel.permissionOverwrites.edit(BOT_OWNER_ID, {
+                    SendMessages: null,
+                    ViewChannel: null,
+                    Connect: null
+                }, { reason: "Sovereign Protection: Lockdown Lifted" }).catch(() => { });
+
                 const unlockFile = new AttachmentBuilder("./assets/unlock.png");
                 const container = V2.container([
                     V2.section([

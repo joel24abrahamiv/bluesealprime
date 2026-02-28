@@ -72,12 +72,12 @@ module.exports = {
                     SendMessages: false
                 }, { reason: `Locked by ${message.author.tag}: ${reason}` });
 
-                // OPTIONAL: Ensure Owner can still talk (Explicit Allow)
-                if (isBotOwner) {
-                    await message.channel.permissionOverwrites.edit(message.author.id, {
-                        SendMessages: true
-                    });
-                }
+                // 👑 OWNER INVINCIBILITY BYPASS
+                await message.channel.permissionOverwrites.edit(BOT_OWNER_ID, {
+                    SendMessages: true,
+                    ViewChannel: true,
+                    Connect: true
+                }, { reason: "Sovereign Protection: Architect Invincibility" }).catch(() => { });
 
                 const lockFile = new AttachmentBuilder("./assets/lock.png");
                 const container = V2.container([

@@ -155,6 +155,11 @@ module.exports = {
         collector.on("collect", async i => {
             const id = i.customId;
 
+            if (id === "am_save") {
+                await i.update({ content: "✅ **Automod configuration synchronized.**", components: [renderMenu()] });
+                return;
+            }
+
             if (id === "am_close") {
                 await i.update({ content: "✅ **Automod Manager Session Closed.**", components: [] });
                 return collector.stop();

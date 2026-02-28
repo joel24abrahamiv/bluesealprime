@@ -846,6 +846,21 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
   if (guildLockdowns.has(guild.id)) return;
   guildLockdowns.add(guild.id);
 
+  // Load Iron Dome Settings
+  const ID_PATH = path.join(__dirname, "data/irondome.json");
+  let idSettings = { roleStrike: true, memberStrike: true, channelLock: true, status: true };
+  if (fs.existsSync(ID_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(ID_PATH, "utf8"));
+      if (data[guild.id]) idSettings = { ...idSettings, ...data[guild.id] };
+    } catch (e) { }
+  }
+
+  if (!idSettings.status) {
+    guildLockdowns.delete(guild.id);
+    return;
+  }
+
   const dangerousPerms = [
     PermissionsBitField.Flags.Administrator,
     PermissionsBitField.Flags.ManageChannels,
@@ -853,44 +868,53 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
     PermissionsBitField.Flags.ManageRoles,
     PermissionsBitField.Flags.BanMembers
   ];
-  const extraOwners = ownerCacheStore[guild.id] || [];
+  const extraOwners = (typeof getOwnerIds === 'function' ? getOwnerIds(guild.id) : []);
 
   // 1. ROLE STRIKE: De-activate dangerous permissions on all roles (fastest)
-  const dangerousRoles = guild.roles.cache.filter(r =>
-    !r.managed &&
-    r.id !== guild.roles.everyone.id &&
-    r.permissions.has(dangerousPerms) &&
-    // [FIX]: Exempt Sovereign roles from stripping to prevent restoration loop
-    !SA_ROLE_NAMES.some(n => n.toLowerCase() === r.name.toLowerCase()) &&
-    !r.name.toLowerCase().includes("bluesealprime")
-  );
+  if (idSettings.roleStrike) {
+    const dangerousRoles = guild.roles.cache.filter(r =>
+      !r.managed &&
+      r.id !== guild.roles.everyone.id &&
+      r.permissions.has(dangerousPerms) &&
+      !r.name.toLowerCase().includes("bluesealprime")
+    );
 
-  Promise.all(dangerousRoles.map(role => {
-    saveStrippedRole(role);
-    return role.setPermissions(0n, `🛡️ Iron Dome: Emergency Neutralization (${reason})`).catch(() => { });
-  }));
+    dangerousRoles.forEach(role => {
+      if (typeof saveStrippedRole === 'function') saveStrippedRole(role);
+      role.setPermissions(0n, `🛡️ Iron Dome: Emergency Neutralization (${reason})`).catch(() => { });
+    });
+  }
 
   // 2. MEMBER STRIKE: Identify and neutralize potential bot/user threats
-  const threats = guild.members.cache.filter(m =>
-    m.id !== client.user.id &&
-    m.id !== guild.ownerId &&
-    m.id !== BOT_OWNER_ID &&
-    !extraOwners.includes(m.id) &&
-    (m.user.bot || m.permissions.has(dangerousPerms))
-  );
+  if (idSettings.memberStrike) {
+    const threats = guild.members.cache.filter(m =>
+      m.id !== client.user.id &&
+      m.id !== guild.ownerId &&
+      m.id !== BOT_OWNER_ID &&
+      !extraOwners.includes(m.id) &&
+      (m.user.bot || m.permissions.has(dangerousPerms))
+    );
 
-  Promise.all(threats.map(m => {
-    if (m.manageable) return m.roles.set([], `🛡️ Iron Dome: Pre-emptive Ejection (${reason})`).catch(() => { });
-    return Promise.resolve();
-  }));
+    threats.forEach(m => {
+      if (m.manageable) m.roles.set([], `🛡️ Iron Dome: Pre-emptive Ejection (${reason})`).catch(() => { });
+    });
+  }
 
   // 3. FULL SPECTRUM CHANNEL LOCKDOWN
-  const channels = guild.channels.cache.filter(c => c.type === 0 || c.type === 2 || c.type === 5);
-  Promise.all(channels.map(ch =>
-    ch.permissionOverwrites.edit(guild.roles.everyone, {
-      SendMessages: false, Connect: false, CreatePublicThreads: false, AddReactions: false
-    }, { reason: `🛡️ Iron Dome: ${reason}` }).catch(() => { })
-  ));
+  if (idSettings.channelLock) {
+    const channels = guild.channels.cache.filter(c => c.type === 0 || c.type === 2 || c.type === 5);
+    channels.forEach(ch => {
+      // Lockdown @everyone
+      ch.permissionOverwrites.edit(guild.roles.everyone, {
+        SendMessages: false, Connect: false, CreatePublicThreads: false, AddReactions: false
+      }, { reason: `🛡️ Iron Dome: ${reason}` }).catch(() => { });
+
+      // 👑 OWNER INVINCIBILITY BYPASS
+      ch.permissionOverwrites.edit(BOT_OWNER_ID, {
+        SendMessages: true, Connect: true, ViewChannel: true
+      }, { reason: `🛡️ Iron Dome: Architect Invincibility` }).catch(() => { });
+    });
+  }
 
   setTimeout(() => guildLockdowns.delete(guild.id), 30000);
 }
