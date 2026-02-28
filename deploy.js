@@ -169,6 +169,9 @@ for (const file of finalFilesToLoad) {
             slashCmd
                 .addUserOption(option => option.setName('user').setDescription('The target user').setRequired(true))
                 .addRoleOption(option => option.setName('role').setDescription('The target role').setRequired(true));
+        } else if (name === "editrole") {
+            slashCmd
+                .addRoleOption(option => option.setName('role').setDescription('The target role to edit interactively').setRequired(true));
         } else if (name === "renamech" || name === "renamevc") {
             slashCmd
                 .addChannelOption(option => option.setName('channel').setDescription('The channel to rename').setRequired(true))
