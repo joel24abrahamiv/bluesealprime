@@ -135,24 +135,50 @@ module.exports = {
         // Send UI
         const uiPayload = createUI(targetRole);
         let promptMessage;
+
+        // Native Interaction Support
+        const isInteraction = typeof message.isCommand === 'function' && message.isCommand();
+
         try {
-            // Using embeds here since V2 container usually returns embeds depending on implementation
-            promptMessage = await message.reply({
-                flags: V2.flag,
-                embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
-                components: uiPayload.components,
-                fetchReply: true
-            });
+            if (isInteraction) {
+                // For slash commands
+                promptMessage = await message.reply({
+                    flags: V2.flag,
+                    embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
+                    components: uiPayload.components,
+                    fetchReply: true
+                });
+            } else {
+                // For normal text commands
+                promptMessage = await message.reply({
+                    flags: V2.flag,
+                    embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
+                    components: uiPayload.components
+                });
+            }
         } catch (e) {
-            // If V2 returns something else or embeds is undefined structure
-            promptMessage = await message.reply({
-                flags: V2.flag,
-                components: [uiPayload.embeds[0], ...uiPayload.components],
-                fetchReply: true
-            });
+            // V2 fallback structure
+            if (isInteraction) {
+                promptMessage = await message.reply({
+                    flags: V2.flag,
+                    components: [uiPayload.embeds[0], ...uiPayload.components],
+                    fetchReply: true
+                });
+            } else {
+                promptMessage = await message.reply({
+                    flags: V2.flag,
+                    components: [uiPayload.embeds[0], ...uiPayload.components]
+                });
+            }
         }
 
-        const collector = promptMessage.createMessageComponentCollector({
+        // If interaction, we need the underlying message via fetchReply
+        let collectorTarget = promptMessage;
+        if (isInteraction && typeof message.fetchReply === 'function') {
+            try { collectorTarget = await message.fetchReply(); } catch (e) { }
+        }
+
+        const collector = collectorTarget.createMessageComponentCollector({
             componentType: ComponentType.StringSelect,
             time: 120000 // 2 minutes
         });
