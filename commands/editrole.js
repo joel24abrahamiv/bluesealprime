@@ -120,13 +120,7 @@ module.exports = {
             const activeFlags = allFlags.filter(f => rolePerms.has(PermissionsBitField.Flags[f]));
             const activeText = activeFlags.length > 0 ? activeFlags.map(f => `\`${f}\``).join(', ') : "None";
 
-            const embed = new EmbedBuilder()
-                .setTitle(`🛡️ Role Permission Editor (Draft Mode)`)
-                .setDescription(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Draft Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)\n\n*Click **Save Changes** when finished!*`)
-                .setColor(V2_BLUE)
-                .setThumbnail(message.guild?.members?.me?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || message.client?.user?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || null);
-
-            const components = [];
+            const selectRows = [];
             chunkedFlags.forEach((chunk, index) => {
                 const options = buildMenuOptions(chunk, rolePerms);
                 const selectMenu = new StringSelectMenuBuilder()
@@ -136,17 +130,31 @@ module.exports = {
                     .setMaxValues(options.length)
                     .addOptions(options);
 
-                components.push(new ActionRowBuilder().addComponents(selectMenu));
+                selectRows.push(new ActionRowBuilder().addComponents(selectMenu));
             });
 
             // Action Buttons
             const saveBtn = new ButtonBuilder().setCustomId("editrole_save").setLabel("Save Changes").setStyle(ButtonStyle.Success).setEmoji("✅");
             const cancelBtn = new ButtonBuilder().setCustomId("editrole_cancel").setLabel("Terminate").setStyle(ButtonStyle.Danger).setEmoji("✖️");
-            components.push(new ActionRowBuilder().addComponents(saveBtn, cancelBtn));
+            const buttonRow = new ActionRowBuilder().addComponents(saveBtn, cancelBtn);
+
+            const botAvatar = V2.botAvatar(message);
+
+            const container = V2.container([
+                V2.section([
+                    V2.heading("🛡️ Role Permission Editor (Draft)", 2),
+                    V2.text(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Draft Permissions:**\n${activeText}`)
+                ], botAvatar),
+                V2.separator(),
+                V2.text("**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)\n\n*Click **Save Changes** when finished!*"),
+                ...selectRows,
+                V2.separator(),
+                buttonRow
+            ], V2_BLUE);
 
             return {
-                embeds: [embed],
-                components: components
+                embeds: [],
+                components: [container]
             };
         };
 
@@ -159,29 +167,28 @@ module.exports = {
 
         try {
             if (isInteraction) {
-                // For slash commands
                 promptMessage = await message.reply({
-                    embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
                     components: uiPayload.components,
-                    fetchReply: true
+                    fetchReply: true,
+                    flags: V2.flag
                 });
             } else {
-                // For normal text commands
                 promptMessage = await message.reply({
-                    embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
-                    components: uiPayload.components
+                    components: uiPayload.components,
+                    flags: V2.flag
                 });
             }
         } catch (e) {
-            // V2 fallback structure
             if (isInteraction) {
                 promptMessage = await message.reply({
-                    components: [uiPayload.embeds[0], ...uiPayload.components],
-                    fetchReply: true
+                    components: uiPayload.components,
+                    fetchReply: true,
+                    flags: V2.flag
                 });
             } else {
                 promptMessage = await message.reply({
-                    components: [uiPayload.embeds[0], ...uiPayload.components]
+                    components: uiPayload.components,
+                    flags: V2.flag
                 });
             }
         }
@@ -252,11 +259,7 @@ module.exports = {
 
                 // Re-render UI with draft perms
                 const updatedUIPayload = createUI(targetRole, localDraftPerms);
-                if (updatedUIPayload.embeds[0]) {
-                    await interaction.update({ embeds: updatedUIPayload.embeds, components: updatedUIPayload.components });
-                } else {
-                    await interaction.update({ components: [updatedUIPayload.embeds[0], ...updatedUIPayload.components] });
-                }
+                await interaction.update({ embeds: [], components: updatedUIPayload.components });
             }
         });
 
