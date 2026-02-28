@@ -4,7 +4,7 @@ const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "rolecopy",
-    description: "Copy permissions from one role to another",
+    description: "Copy permissions from one role to another (Admin Only)",
     usage: "!rolecopy <targetRole> <sourceRole>",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

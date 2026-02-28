@@ -4,7 +4,7 @@ const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "deleterole",
-    description: "Delete a role",
+    description: "Delete a role (Admin Only)",
     usage: "!deleterole <@role | name | id>",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

@@ -4,7 +4,7 @@ const { V2_BLUE, V2_RED } = require("../config");
 
 module.exports = {
     name: "roleperm",
-    description: "Modify role permissions (add/remove)",
+    description: "Modify role permissions (add/remove) (Admin Only)",
     aliases: ["rperm"],
     usage: "!roleperm <@role/ID> <add|remove> <Permission>",
     permissions: [PermissionsBitField.Flags.Administrator],

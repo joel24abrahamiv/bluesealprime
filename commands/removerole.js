@@ -3,7 +3,7 @@ const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 
 module.exports = {
     name: "removerole",
-    description: "Remove a role from a user",
+    description: "Remove a role from a user (Admin Only)",
     usage: "!removerole @User @Role",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

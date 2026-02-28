@@ -4,7 +4,7 @@ const ObjectKeys = Object.keys(PermissionsBitField.Flags);
 
 module.exports = {
     name: "editrole",
-    description: "Interactively edit a role's permissions",
+    description: "Interactively edit a role's permissions (Admin Only)",
     usage: "!editrole @Role",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 
@@ -87,7 +87,7 @@ module.exports = {
             return flagsSubset.map(flag => {
                 const hasPerm = rolePerms.has(PermissionsBitField.Flags[flag]);
                 return {
-                    label: (hasPerm ? "🟢 " : "🔴 ") + flag.replace(/([A-Z])/g, ' $1').trim(),
+                    label: ((hasPerm ? "🟢 " : "🔴 ") + flag.replace(/([A-Z])/g, ' $1').trim()).slice(0, 40),
                     value: flag,
                     description: hasPerm ? "Currently ENABLED - Click to Disable" : "Currently DISABLED - Click to Enable",
                     default: hasPerm

@@ -6,7 +6,7 @@ const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "autorole",
-    description: "Automated role assignment for new members",
+    description: "Automated role assignment for new members (Admin Only)",
     usage: "!autorole <set @role | off | status>",
     permissions: [PermissionsBitField.Flags.Administrator],
 

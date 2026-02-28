@@ -4,7 +4,7 @@ const V2 = require("../utils/v2Utils");
 
 module.exports = {
     name: "createrole",
-    description: "Create a new role",
+    description: "Create a new role (Admin Only)",
     usage: "!createrole <name> [color]",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

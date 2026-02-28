@@ -44,7 +44,7 @@ function parseDuration(str) {
 
 module.exports = {
     name: "temprole",
-    description: "Give a user a temporary role",
+    description: "Give a user a temporary role (Admin Only)",
     usage: "!temprole @User @Role <duration> (e.g. 1h, 30m)",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

@@ -3,7 +3,7 @@ const { PermissionsBitField } = require("discord.js");
 
 module.exports = {
     name: "addrole",
-    description: "Add a role to a user",
+    description: "Add a role to a user (Admin Only)",
     usage: "!addrole @User @Role",
     permissions: [PermissionsBitField.Flags.ManageRoles],
 

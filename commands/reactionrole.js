@@ -16,7 +16,7 @@ function saveRR(data) { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2))
 
 module.exports = {
     name: "reactionrole",
-    description: "Manage reaction role panels",
+    description: "Manage reaction role panels (Admin Only)",
     usage: "!reactionrole <create|add|remove|list|delete>",
     permissions: [PermissionsBitField.Flags.ManageRoles],
     aliases: ["rr"],
