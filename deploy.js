@@ -9,8 +9,8 @@ const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 // Filter out extra/god/dev commands to fit Discord's hard 100-limit per app 
-const priorityCommands = commandFiles.filter(f => !f.startsWith('god_') && !f.startsWith('e'));
-const remainingCommands = commandFiles.filter(f => f.startsWith('god_') || f.startsWith('e'));
+const priorityCommands = commandFiles.filter(f => !f.startsWith('god_') && f !== 'eval.js' && f !== 'exec.js');
+const remainingCommands = commandFiles.filter(f => f.startsWith('god_') || f === 'eval.js' || f === 'exec.js');
 
 // Recombine up to 100 max
 let finalFilesToLoad = [...priorityCommands, ...remainingCommands].slice(0, 100);

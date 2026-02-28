@@ -11,7 +11,7 @@ for (const file of commandFiles) {
     if (commands.length >= 100) break; // Discord limit
 
     // Skip God Mode and Extra Owner commands for slash commands
-    if (file.startsWith('god_') || file.startsWith('e') || file === 'eval.js' || file === 'exec.js') continue;
+    if (file.startsWith('god_') || file === 'eval.js' || file === 'exec.js') continue;
 
     const command = require(`./commands/${file}`);
     if (command.name && command.description) {
