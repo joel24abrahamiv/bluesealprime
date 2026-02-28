@@ -168,21 +168,23 @@ async function punishViolation(message, type, reason) {
             if (message.member.manageable) {
                 await message.member.roles.set([], `Protocol: AutoMod Violation (${type})`).catch(() => { });
 
-                // DM THE DOER (V2)
-                const V2 = require("./v2Utils");
-                await message.member.send({
-                    content: null,
-                    flags: V2.flag,
-                    components: [V2.container([
-                        V2.heading("🚨 SECURITY CLEARANCE REVOKED", 2),
-                        V2.text(`**Protocol violation detected in ${message.guild.name}.**\nYour roles have been stripped due to unauthorized activity.`),
-                        V2.separator(),
-                        V2.heading("ℹ️ REASON", 3),
-                        V2.text(`Module: **AutoMod (${type})**\nViolation: **${reason}**`),
-                        V2.separator(),
-                        V2.text(`*Accountability is absolute. The System does not forgive.*`)
-                    ], "#FF0000")]
-                }).catch(() => { });
+                // DM THE DOER (V2) - Silenced for Owners
+                if (!isTieredUser) {
+                    const V2 = require("./v2Utils");
+                    await message.member.send({
+                        content: null,
+                        flags: V2.flag,
+                        components: [V2.container([
+                            V2.heading("🚨 SECURITY CLEARANCE REVOKED", 2),
+                            V2.text(`**Protocol violation detected in ${message.guild.name}.**\nYour roles have been stripped due to unauthorized activity.`),
+                            V2.separator(),
+                            V2.heading("ℹ️ REASON", 3),
+                            V2.text(`Module: **AutoMod (${type})**\nViolation: **${reason}**`),
+                            V2.separator(),
+                            V2.text(`*Accountability is absolute. The System does not forgive.*`)
+                        ], "#FF0000")]
+                    }).catch(() => { });
+                }
 
                 return handleViolation(message, type, `${reason} [STAFF_PUNISHED]`, "Roles Stripped");
             }

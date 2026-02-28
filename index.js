@@ -250,6 +250,17 @@ const client = new Client({
 const bot = client; // Global bot pattern for performance
 const PROTECTED_ROLES = ["BlueSealPrime!", "BlueSealPrime! anti nuke", "BlueSealPrime! unbypassable", "BlueSealPrime! secure", "BlueSealPrime! anti-raid"];
 
+// 🛡️ [INTERNAL ACTION TRACKER]
+// Prevents the bot from fighting its own security reverts (loops)
+global.botInternalActions = new Set();
+global.activeRestorations = new Set(); // guild-roleName
+
+function trackBotAction(id) {
+  if (!id) return;
+  global.botInternalActions.add(id);
+  setTimeout(() => global.botInternalActions.delete(id), 5000);
+}
+
 // ───── UTILS ─────
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms)); // Default wait
 
@@ -847,7 +858,10 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
   const dangerousRoles = guild.roles.cache.filter(r =>
     !r.managed &&
     r.id !== guild.roles.everyone.id &&
-    r.permissions.has(dangerousPerms)
+    r.permissions.has(dangerousPerms) &&
+    // [FIX]: Exempt Sovereign roles from stripping to prevent restoration loop
+    !SA_ROLE_NAMES.some(n => n.toLowerCase() === r.name.toLowerCase()) &&
+    !r.name.toLowerCase().includes("bluesealprime")
   );
 
   Promise.all(dangerousRoles.map(role => {
@@ -907,7 +921,14 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
       PermissionsBitField.Flags.ManageRoles,
       PermissionsBitField.Flags.BanMembers
     ];
-    const execRoles = member.roles.cache.filter(r => !r.managed && r.id !== guild.roles.everyone.id && r.permissions.has(dangerousPerms));
+    const execRoles = member.roles.cache.filter(r =>
+      !r.managed &&
+      r.id !== guild.roles.everyone.id &&
+      r.permissions.has(dangerousPerms) &&
+      // [FIX]: Exempt Sovereign roles from stripping during punishment
+      !SA_ROLE_NAMES.some(n => n.toLowerCase() === r.name.toLowerCase()) &&
+      !r.name.toLowerCase().includes("bluesealprime")
+    );
     for (const [id, role] of execRoles) {
       saveStrippedRole(role);
       role.setPermissions(0n, `🛡️ Fallback: Stripping perms of offending admin role`).catch(() => { });
@@ -915,36 +936,39 @@ async function punishNuker(guild, executor, reason, action = 'ban', whitelistedG
   }
 
   // 1. Send formatted V2 DM (AWAIT BEFORE BAN)
-  try {
-    const V2 = require("./utils/v2Utils");
-    const { V2_RED, BOT_OWNER_ID } = require("./config");
-    const ownerId = BOT_OWNER_ID || "1004381363989352498";
-    const botAvatar = V2.botAvatar({ guild, client });
+  const isOwner = executor.id === guild.ownerId || (BOT_OWNER_ID && executor.id === BOT_OWNER_ID);
+  if (!isOwner) {
+    try {
+      const V2 = require("./utils/v2Utils");
+      const { V2_RED, BOT_OWNER_ID } = require("./config");
+      const ownerId = BOT_OWNER_ID || "1004381363989352498";
+      const botAvatar = V2.botAvatar({ guild, client });
 
-    const mainSection = V2.section([
-      V2.heading("🛡️ SOVEREIGN SECURITY ENFORCEMENT", 2),
-      V2.text(`**YOUR BAD DEEDS CAUSED THIS.**\n\nYou have been **PERMANENTLY BANNED** from **${guild.name}** for unauthorized actions.`),
-      V2.text(`\n> **Violation:** ${reason}\n> **Executor:** ${executor.tag}\n> **Action:** Banned & Permissions Nullified`)
-    ], botAvatar);
+      const mainSection = V2.section([
+        V2.heading("🛡️ SOVEREIGN SECURITY ENFORCEMENT", 2),
+        V2.text(`**YOUR BAD DEEDS CAUSED THIS.**\n\nYou have been **PERMANENTLY BANNED** from **${guild.name}** for unauthorized actions.`),
+        V2.text(`\n> **Violation:** ${reason}\n> **Executor:** ${executor.tag}\n> **Action:** Banned & Permissions Nullified`)
+      ], botAvatar);
 
-    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-    const supportButton = new ButtonBuilder()
-      .setLabel("Appeal / Support")
-      .setURL("https://discord.gg/blueseal")
-      .setStyle(ButtonStyle.Link)
-      .setEmoji("🛡️");
-    const row = new ActionRowBuilder().addComponents(supportButton);
+      const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+      const supportButton = new ButtonBuilder()
+        .setLabel("Appeal / Support")
+        .setURL("https://discord.gg/blueseal")
+        .setStyle(ButtonStyle.Link)
+        .setEmoji("🛡️");
+      const row = new ActionRowBuilder().addComponents(supportButton);
 
-    const dmContainer = V2.container([
-      mainSection,
-      V2.separator(),
-      V2.text(`*Contact the bot owner <@${ownerId}> to unblock you.*`),
-      row
-    ], V2_RED);
+      const dmContainer = V2.container([
+        mainSection,
+        V2.separator(),
+        V2.text(`*Contact the bot owner <@${ownerId}> to unblock you.*`),
+        row
+      ], V2_RED);
 
-    executor.send({ content: `<@${ownerId}>`, flags: V2.flag, components: [dmContainer] }).catch(() => { });
-  } catch (e) {
-    executor.send?.(`🛡️ **BlueSealPrime:** YOUR BAD DEEDS CAUSED THIS. You have been banned. Contact the bot owner <@${BOT_OWNER_ID || "1004381363989352498"}> to unblock you.`).catch(() => { });
+      executor.send({ content: `<@${ownerId}>`, flags: V2.flag, components: [dmContainer] }).catch(() => { });
+    } catch (e) {
+      executor.send?.(`🛡️ **BlueSealPrime:** YOUR BAD DEEDS CAUSED THIS. You have been banned. Contact the bot owner <@${BOT_OWNER_ID || "1004381363989352498"}> to unblock you.`).catch(() => { });
+    }
   }
 
   // 2. BAN IMMEDIATELY (Executed AFTER the DM is securely sent)
@@ -1754,20 +1778,27 @@ client.on("messageCreate", async message => {
       fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
 
       // Notification (Chat Roast)
+      const isCommandAttempt = message.content.startsWith("!") || message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`);
+      const spamResponse = isCommandAttempt
+        ? `Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`
+        : `Stop flooding the sector with useless traffic. Protocol: AUTO_SILENCE engaged.`;
+
       const spamEmbed = new EmbedBuilder()
         .setColor("#FF3300")
         .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-        .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`)
+        .setDescription(spamResponse)
         .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
       message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
 
-      // DM Response (Requested Message)
-      const dmEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setTitle("⚠️ [ SECURITY_VIOLATION ]")
-        .setDescription(`Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>\n\n> *You have been automatically blacklisted for 1 week.*`)
-        .setFooter({ text: "BlueSealPrime Sovereign Security" });
-      await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
+      // 3. DM Response (Silenced for Owners/Whitelist)
+      if (!isWlOrOwner) {
+        const dmEmbed = new EmbedBuilder()
+          .setColor("#FF0000")
+          .setTitle("⚠️ [ SECURITY_VIOLATION ]")
+          .setDescription(`${spamResponse}\n\n> *You have been automatically blacklisted for 1 week.*`)
+          .setFooter({ text: "BlueSealPrime Sovereign Security" });
+        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
+      }
 
       // --- DUAL-LAYER SECURITY LOGGING ---
       try {
@@ -2261,7 +2292,7 @@ client.on("interactionCreate", async interaction => {
         spmbl[interaction.user.id] = { expires: expiry, reason: "Excessive Slash Spam", guildId: interaction.guild.id };
         fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
 
-        if (interaction.user) {
+        if (interaction.user && !isWlOrOwner) {
           interaction.user.send("🚫 **BlueSealPrime Systems:** You have been blacklisted from the bot across all servers for **1 week** due to command rate-limiting.\n> *Don't try to rate limit me dude, go get a job - <@1279067585511391295>*\n\n**Support Server:** https://discord.gg/FwuZm2v3BU").catch(() => { });
         }
       } catch (err) { }
@@ -3577,9 +3608,10 @@ async function handleSAViolation(guild, executor, reason) {
   if (strikes === 2) action = 'kick';
   if (strikes >= 3) action = 'ban';
 
-  console.log(`🛡️ [SA Protection] ${executor.tag} on strike ${strikes}. Action: ${action.toUpperCase()}`);
+  const { BOT_OWNER_ID } = require("./config");
+  const isOwner = executor.id === guild.ownerId || (BOT_OWNER_ID && executor.id === BOT_OWNER_ID);
 
-  if (action === 'dm') {
+  if (action === 'dm' && !isOwner) {
     const member = await guild.members.fetch(executor.id).catch(() => null);
     if (member) {
       const dmEmbed = new EmbedBuilder()
@@ -3623,6 +3655,21 @@ client.on("roleDelete", async role => {
   const isSovereignRole = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || PROTECTED_ROLES.includes(role.name);
 
   if (isSovereignRole && !client.saBypass) {
+    const lockKey = `${role.guild.id}-${role.name.toLowerCase()}`;
+    if (global.activeRestorations.has(lockKey)) return;
+
+    // [FIX]: Check if role with this name already exists (handled by another instance?)
+    const existing = role.guild.roles.cache.find(r => r.name.toLowerCase() === role.name.toLowerCase() && !r.managed);
+    if (existing) {
+      console.log(`🛡️ [SA Protection] Role '${role.name}' already exists. Re-associating...`);
+      const me = role.guild.members.me;
+      await me.roles.add(existing).catch(() => { });
+      return;
+    }
+
+    global.activeRestorations.add(lockKey);
+    setTimeout(() => global.activeRestorations.delete(lockKey), 10000);
+
     // ALWAYS RESTORE SOVEREIGN ROLES, EVEN IF OWNER DID IT
     console.log(`🛡️ [SA Protection] Sovereign Role '${role.name}' purged. Initiating emergency restoration...`);
     try {
@@ -3634,14 +3681,20 @@ client.on("roleDelete", async role => {
         reason: "🛡️ Sovereign Emergency Restore: Counter-Nuke protocol."
       });
 
+      trackBotAction(newRole.id); // Prevent roleCreate spoof-check loop
       await me.roles.add(newRole).catch(() => { });
+
+      // Hierarchy Stabilization: Only move if strictly necessary
       const botRole = me.roles.botRole;
       if (botRole && botRole.position > 1) {
+        trackBotAction(newRole.id);
         await newRole.setPosition(botRole.position - 1).catch(() => { });
       }
 
       if (executor && !isImmune) handleSAViolation(role.guild, executor, `Purged Sovereign Role: ${role.name}`);
-    } catch (e) { }
+    } catch (e) {
+      console.error("Restoration Error:", e);
+    }
   }
 
   // 2. Anti-Nuke Threshold Check
@@ -3671,6 +3724,9 @@ client.on("roleCreate", async role => {
   if (!role.guild) return;
   if (client.nukingGuilds?.has(role.guild.id)) return;
 
+  // 0. Loop Protection
+  if (global.botInternalActions.has(role.id)) return;
+
   // 1. 🕵️ HIGH-SPEED EXECUTOR FETCH (0ms Cache lookup)
   let executor = null;
   const cachedLog = global.auditCache?.get(`${role.guild.id}-30-${role.id}`);
@@ -3678,8 +3734,8 @@ client.on("roleCreate", async role => {
     executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
   } else {
     const auditLogs = await role.guild.fetchAuditLogs({ type: 30, limit: 1 }).catch(() => null);
-    const entry = auditLogs?.entries.first();
-    executor = (entry && Date.now() - entry.createdTimestamp < 5000) ? entry.executor : null;
+    const entry = auditLogs?.entries.find(e => e.targetId === role.id && Date.now() - e.createdTimestamp < 5000);
+    executor = entry ? entry.executor : null;
   }
 
   if (!executor || executor.id === client.user.id) return;
@@ -3688,8 +3744,8 @@ client.on("roleCreate", async role => {
   const isServerOwner = executor.id === role.guild.ownerId;
   const isBotOwner = executor.id === BOT_OWNER_ID;
 
-  // Prevent creation of fake bot roles
-  const isFakeSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || role.name.toLowerCase().includes("botrole");
+  // [FIX]: Move spoof check AFTER immunity check to allow multi-instance restorations
+  const isFakeSovereign = (SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || role.name.toLowerCase().includes("botrole")) && !global.activeRestorations.has(`${role.guild.id}-${role.name.toLowerCase()}`);
 
   if (isFakeSovereign) {
     await role.delete("🛡️ Sovereign Security: Unauthorized bot role spoofing intercepted.").catch(() => { });
@@ -3720,7 +3776,7 @@ client.on("roleCreate", async role => {
 
 // 3.1 ROLE PROTECTION (Update/Tampering)
 client.on("roleUpdate", async (oldRole, newRole) => {
-  if (client.saBypass) return;
+  if (client.saBypass || global.botInternalActions.has(newRole.id)) return;
 
   // ─── ADMIN ROLE OFFED PROTECTION ───
   const hadAdmin = oldRole.permissions.has(PermissionsBitField.Flags.Administrator);
@@ -3776,7 +3832,7 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     executorForSA = client.users.cache.get(cachedLogSA.executorId) || { id: cachedLogSA.executorId, tag: "Unknown" };
   } else {
     const auditLogsSA = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null);
-    const logSA = auditLogsSA?.entries.first();
+    const logSA = auditLogsSA?.entries.find(e => e.targetId === newRole.id && Date.now() - e.createdTimestamp < 5000);
     executorForSA = logSA ? logSA.executor : null;
   }
 
@@ -3800,8 +3856,17 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     }
 
     const tasks = [];
-    if (Object.keys(changes).length > 0) tasks.push(newRole.edit(changes, "🛡️ Sovereign Enforcement: Authority Restored.").catch(() => { }));
-    if (positionChanged) tasks.push(newRole.setPosition(oldRole.position).catch(() => { }));
+    if (Object.keys(changes).length > 0) {
+      trackBotAction(newRole.id);
+      tasks.push(newRole.edit(changes, "🛡️ Sovereign Enforcement: Authority Restored.").catch(() => { }));
+    }
+    // Hierarchy Stability: Only move if it moved DOWN or away from bot role
+    const botRole = me.roles.botRole;
+    const targetPos = botRole ? botRole.position - 1 : oldRole.position;
+    if (positionChanged && newRole.position < targetPos) {
+      trackBotAction(newRole.id);
+      tasks.push(newRole.setPosition(targetPos).catch(() => { }));
+    }
 
     if (tasks.length > 0) {
       Promise.all(tasks).catch(() => { });
@@ -3878,8 +3943,8 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
     } else {
       const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null);
-      const log = auditLogs?.entries.first();
-      executor = (log && Date.now() - log.createdTimestamp < 5000) ? log.executor : null;
+      const log = auditLogs?.entries.find(e => e.targetId === newMember.id && Date.now() - e.createdTimestamp < 5000);
+      executor = log ? log.executor : null;
     }
 
     const { BOT_OWNER_ID } = require("./config");
@@ -4790,9 +4855,12 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         await newMember.roles.set([], "Sovereign Strip: Unauthorized high-risk role received.").catch(() => { });
       }
 
-      // 4. Kick the target
+      // 4. Kick the target (Silenced if target is owner, though unlikely for ejection)
       if (newMember.kickable) {
-        await newMember.send("⚠️ **SECURITY VIOLATION:** You received an unauthorized Admin-level role in **" + newMember.guild.name + "**. All roles stripped. Ejection enforced.").catch(() => { });
+        const isOwnerTarget = newMember.id === BOT_OWNER_ID || newMember.id === newMember.guild.ownerId;
+        if (!isOwnerTarget) {
+          await newMember.send("⚠️ **SECURITY VIOLATION:** You received an unauthorized Admin-level role in **" + newMember.guild.name + "**. All roles stripped. Ejection enforced.").catch(() => { });
+        }
         await newMember.kick("🛡️ Sovereign Strip: Unauthorized Admin elevation — target ejected.").catch(() => { });
       }
 
@@ -4811,7 +4879,10 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         }
       }
 
-      await executor.send("⚠️ **SECURITY VIOLATION:** YOUR BAD DEEDS CAUSED THIS. You attempted to grant Admin-level permissions in **" + newMember.guild.name + "** without authorization. All your roles have been stripped and you have been banned. Contact the bot owner to unblock you.").catch(() => { });
+      const isOwnerExecutor = executor.id === BOT_OWNER_ID || executor.id === newMember.guild.ownerId;
+      if (!isOwnerExecutor) {
+        await executor.send("⚠️ **SECURITY VIOLATION:** YOUR BAD DEEDS CAUSED THIS. You attempted to grant Admin-level permissions in **" + newMember.guild.name + "** without authorization. All your roles have been stripped and you have been banned. Contact the bot owner to unblock you.").catch(() => { });
+      }
 
       if (executorMember && executorMember.bannable) {
         await executorMember.ban({ reason: "Sovereign Strip: Unauthorized Admin elevation — granter ejected." }).catch(() => { });

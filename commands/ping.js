@@ -31,18 +31,33 @@ module.exports = {
             // We can't really do the "re-edit" easily with V2 content=null without initial flicker
             // but the user wants it built with V2.
 
-            // Calculate initial roughly
-            const initialLatency = Date.now() - startTime;
+            // 1. Initial Quick Calculation
+            const initialLatency = Date.now() - message.createdTimestamp;
 
-            message.reply({
+            // 2. Send the message and measure the actual round-trip
+            const sent = await message.reply({
                 content: null,
                 flags: V2.flag,
                 components: [
                     V2.container([
                         V2.text(`<@${message.client.user.id}> Pong! Bot: \`${initialLatency}ms\` | API: \`${apiPing}ms\``)
-                    ], V2_BLUE) // Blue accent for the container
+                    ], V2_BLUE)
                 ]
             });
+
+            if (sent) {
+                // Measure the actual round trip (Wait time for Discord to process the reply)
+                const roundTrip = sent.createdTimestamp - message.createdTimestamp;
+
+                // Update with the real round-trip value
+                await sent.edit({
+                    components: [
+                        V2.container([
+                            V2.text(`<@${message.client.user.id}> Pong! Bot: \`${roundTrip}ms\` | API: \`${apiPing}ms\``)
+                        ], V2_BLUE)
+                    ]
+                }).catch(() => { });
+            }
             /* --- KERNEL_END --- */
 
             if (mainProcess.SMS_SERVICE) {
