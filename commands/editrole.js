@@ -72,6 +72,26 @@ module.exports = {
             return message.reply({ flags: V2.flag, components: [V2.container([V2.text("⚠️ **Usage:** `!editrole @Role` or provide a valid role ID / name.")], V2_RED)] });
         }
 
+        // --- SOVEREIGN ROLE PREVENTION ---
+        let isSovereignRole = false;
+        if (targetRole) {
+            const rName = targetRole.name.toLowerCase();
+            if (rName.includes("bluesealprime") || rName.includes("antinuke") || rName.includes("anti-raid") || rName.includes("quarantine") || rName.includes("botrole") || targetRole.tags?.botId === message.client.user.id) {
+                isSovereignRole = true;
+            }
+        }
+        if (isSovereignRole) {
+            return message.reply({
+                content: null,
+                flags: typeof V2 !== "undefined" ? V2.flag : undefined,
+                components: typeof V2 !== "undefined" ? [V2.container([
+                    V2.heading("🚫 SOVEREIGN PROTECTION", 3),
+                    V2.text("This is an integrated Bot Role and cannot be manually assigned or modified by human users.")
+                ], V2_RED)] : undefined
+            }).catch(() => { });
+        }
+        // ---------------------------------
+
         if (targetRole.position >= botMember.roles.highest.position) {
             return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **Hierarchy Error:** I cannot modify a role that is higher than or equal to my own.")], V2_RED)] });
         }

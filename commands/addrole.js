@@ -97,6 +97,26 @@ module.exports = {
                 });
             }
 
+            // --- SOVEREIGN ROLE PREVENTION ---
+            let isSovereignRole = false;
+            if (role) {
+                const rName = role.name.toLowerCase();
+                if (rName.includes("bluesealprime") || rName.includes("antinuke") || rName.includes("anti-raid") || rName.includes("quarantine") || rName.includes("botrole") || role.tags?.botId === message.client.user.id) {
+                    isSovereignRole = true;
+                }
+            }
+            if (isSovereignRole) {
+                return message.reply({
+                    content: null,
+                    flags: typeof V2 !== "undefined" ? V2.flag : undefined,
+                    components: typeof V2 !== "undefined" ? [V2.container([
+                        V2.heading("🚫 SOVEREIGN PROTECTION", 3),
+                        V2.text("This is an integrated Bot Role and cannot be manually assigned or modified by human users.")
+                    ], V2_RED)] : undefined
+                }).catch(() => { });
+            }
+            // ---------------------------------
+
             // CRITICAL: Bot's hierarchy check cannot be bypassed by anyone.
             // The bot literally cannot assign a role higher than itself.
             if (role.position >= message.guild.members.me.roles.highest.position) {
