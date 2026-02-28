@@ -51,7 +51,8 @@ module.exports = {
             roleStrike: true,      // Strip perms from dangerous roles
             memberStrike: true,    // Ban/Strip nukers
             channelLock: true,     // Lock channels to everyone
-            status: true           // Overall feature toggle
+            status: true,          // Overall feature toggle
+            triggerLimit: 1        // Actions before dome activates
         };
 
         if (!data[guild.id]) data[guild.id] = defaults;
@@ -60,32 +61,70 @@ module.exports = {
         const renderMenu = () => {
             const s = settings;
 
-            const row1 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId("id_status").setLabel(s.status ? "Dome: ACTIVE" : "Dome: OFFLINE").setStyle(s.status ? ButtonStyle.Success : ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId("id_role").setLabel("Role Strike").setStyle(s.roleStrike ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId("id_member").setLabel("Member Strike").setStyle(s.memberStrike ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            // Feature Toggle Select
+            const featureSelect = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId("id_features")
+                    .setPlaceholder("Toggle Security Features")
+                    .setMinValues(0)
+                    .setMaxValues(3)
+                    .addOptions([
+                        {
+                            label: "Role Strike",
+                            value: "role",
+                            description: "Strip perms from dangerous roles",
+                            emoji: "🛡️",
+                            default: s.roleStrike
+                        },
+                        {
+                            label: "Member Strike",
+                            value: "member",
+                            description: "Neutralize malicious actors",
+                            emoji: "👤",
+                            default: s.memberStrike
+                        },
+                        {
+                            label: "Channel Lockdown",
+                            value: "lock",
+                            description: "Lock channels to @everyone",
+                            emoji: "🔒",
+                            default: s.channelLock
+                        }
+                    ])
             );
 
-            const row2 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId("id_lock").setLabel("Channel Lockdown").setStyle(s.channelLock ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            // Trigger Limit Select
+            const limitSelect = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId("id_limit")
+                    .setPlaceholder(`Set Trigger Limit (Current: ${s.triggerLimit})`)
+                    .addOptions([
+                        { label: "1 Action (Instant)", value: "1", description: "Activate on first detection", emoji: "⚡" },
+                        { label: "3 Actions", value: "3", description: "Activate after 3 detections", emoji: "🟠" },
+                        { label: "5 Actions", value: "5", description: "Activate after 5 detections", emoji: "🔴" },
+                        { label: "10 Actions", value: "10", description: "Activate after 10 detections", emoji: "🚫" }
+                    ])
+            );
+
+            const buttons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId("id_status").setLabel(s.status ? "Dome: ACTIVE" : "Dome: OFFLINE").setStyle(s.status ? ButtonStyle.Success : ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId("id_close").setLabel("Save & Exit").setStyle(ButtonStyle.Success)
             );
 
             const container = V2.container([
                 V2.section([
                     V2.heading("🏛️ Iron Dome Manager", 1),
-                    V2.text(`**System Status:** ${s.status ? "🟢 OPERATIONAL" : "🔴 DEACTIVATED"}\n\n` +
+                    V2.text(`**System Status:** ${s.status ? "🟢 OPERATIONAL" : "🔴 DEACTIVATED"}\n` +
+                        `**Trigger Limit:** \`${s.triggerLimit}\` actions\n\n` +
                         `**🛡️ Role Strike:** ${s.roleStrike ? "ENABLED" : "DISABLED"}\n` +
-                        `> Removes dangerous permissions from roles during detected breaches.\n\n` +
                         `**🛡️ Member Strike:** ${s.memberStrike ? "ENABLED" : "DISABLED"}\n` +
-                        `> Instantly neutralizes accounts triggering nuke patterns.\n\n` +
-                        `**🛡️ Channel Lockdown:** ${s.channelLock ? "ENABLED" : "DISABLED"}\n` +
-                        `> Denies @everyone access to all sectors upon alert.`)
+                        `**🛡️ Channel Lockdown:** ${s.channelLock ? "ENABLED" : "DISABLED"}`)
                 ]),
                 V2.separator(),
                 V2.text("> **Note:** The Master Architect is immune to all automated lockdowns."),
-                row1,
-                row2
+                featureSelect,
+                limitSelect,
+                buttons
             ], "#000000"); // Black border
 
             return container;
@@ -107,9 +146,16 @@ module.exports = {
             }
 
             if (id === "id_status") settings.status = !settings.status;
-            if (id === "id_role") settings.roleStrike = !settings.roleStrike;
-            if (id === "id_member") settings.memberStrike = !settings.memberStrike;
-            if (id === "id_lock") settings.channelLock = !settings.channelLock;
+
+            if (id === "id_features") {
+                settings.roleStrike = i.values.includes("role");
+                settings.memberStrike = i.values.includes("member");
+                settings.channelLock = i.values.includes("lock");
+            }
+
+            if (id === "id_limit") {
+                settings.triggerLimit = parseInt(i.values[0]);
+            }
 
             // Save
             data[guild.id] = settings;

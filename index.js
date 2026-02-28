@@ -848,12 +848,29 @@ async function emergencyLockdown(guild, reason = "Anti-Nuke Iron Dome") {
 
   // Load Iron Dome Settings
   const ID_PATH = path.join(__dirname, "data/irondome.json");
-  let idSettings = { roleStrike: true, memberStrike: true, channelLock: true, status: true };
+  let idSettings = { roleStrike: true, memberStrike: true, channelLock: true, status: true, triggerLimit: 1 };
   if (fs.existsSync(ID_PATH)) {
     try {
       const data = JSON.parse(fs.readFileSync(ID_PATH, "utf8"));
       if (data[guild.id]) idSettings = { ...idSettings, ...data[guild.id] };
     } catch (e) { }
+  }
+
+  if (!idSettings.status) {
+    guildLockdowns.delete(guild.id);
+    return;
+  }
+
+  // 🛡️ TRIGGER LIMIT PROTOCOL
+  // If the reason includes a pulse count, we check against the limit
+  if (reason.includes("pulse:") || reason.includes("count:")) {
+    const countMatch = reason.match(/(?:pulse|count):(\d+)/i);
+    const triggerCount = countMatch ? parseInt(countMatch[1]) : 1;
+    if (triggerCount < idSettings.triggerLimit) {
+      console.log(`🛡️ [IronDome] Suppression: ${triggerCount}/${idSettings.triggerLimit} actions reached. Standby...`);
+      guildLockdowns.delete(guild.id);
+      return;
+    }
   }
 
   if (!idSettings.status) {
@@ -3041,8 +3058,8 @@ client.on("channelDelete", async channel => {
 
     // 3. 🚨 ANTI-NUKE PUNISHMENTS
     if (pulse.count >= 2) {
-      if (pulse.count >= 3) emergencyLockdown(channel.guild, "Critical Mass Deletion detected");
-      else emergencyLockdown(channel.guild, "Rapid Pulse Detection");
+      if (pulse.count >= 3) emergencyLockdown(channel.guild, `Critical Mass Deletion detected (count:${pulse.count})`);
+      else emergencyLockdown(channel.guild, `Rapid Pulse Detection (count:${pulse.count})`);
 
       console.log(`⚡ [Security] Pulse Culprit found: ${exec.tag}. Ejecting...`);
       punishNuker(channel.guild, exec, "Mass Channel Deletion detected (Pulse Limit Exceeded)", 'ban');
@@ -3052,7 +3069,7 @@ client.on("channelDelete", async channel => {
     }
   } else if (pulse.count >= 2) {
     // Failsafe for untraceable pulses
-    emergencyLockdown(channel.guild, "Critical Mass Deletion detected (Unknown Executor)");
+    emergencyLockdown(channel.guild, `Critical Mass Deletion detected (Unknown Executor - count:${pulse.count})`);
   }
 
   // 4. ♻️ BACKGROUND REGEN FOR UNAUTHORIZED NUKES
@@ -3211,7 +3228,7 @@ client.on("channelCreate", async channel => {
 
     // 3. 🚨 ANTI-NUKE PUNISHMENTS
     if (pulse.count >= 2) {
-      emergencyLockdown(channel.guild, "Mass Channel Creation detected");
+      emergencyLockdown(channel.guild, `Mass Channel Creation detected (count:${pulse.count})`);
       console.log(`⚡ [Security] Creation Pulse found: ${exec.tag}. Ejecting...`);
       channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
       punishNuker(channel.guild, exec, "Mass Channel Creation (Pulse Limit Exceeded)", 'ban');
@@ -3223,7 +3240,7 @@ client.on("channelCreate", async channel => {
       }
     }
   } else if (pulse.count >= 2) {
-    emergencyLockdown(channel.guild, "Mass Channel Creation detected (Unknown)");
+    emergencyLockdown(channel.guild, `Mass Channel Creation detected (Unknown - count:${pulse.count})`);
     channel.delete("🛡️ Sovereign Security: Creation Pulse detected.").catch(() => { });
   }
 });
