@@ -2389,6 +2389,12 @@ client.on("interactionCreate", async interaction => {
       input = `<@!${userOpt.id}> <@&${roleOpt.id}>`;
       args.push(userOpt.id, roleOpt.id);
     }
+  } else if (cmd === 'editrole') {
+    const roleOpt = interaction.options.getRole("role");
+    if (roleOpt) {
+      input = `<@&${roleOpt.id}>`;
+      args.push(roleOpt.id);
+    }
   } else if (cmd === 'autorole') {
     const actionOpt = interaction.options.getString("action");
     const roleOpt = interaction.options.getRole("role");
