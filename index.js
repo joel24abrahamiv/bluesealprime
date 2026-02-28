@@ -3816,19 +3816,15 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
       const { BOT_OWNER_ID } = require("./config");
 
-      if (assignExecutor && assignExecutor.id === BOT_OWNER_ID) {
-        // Bot owner is allowed, theoretically. (Though technically Discord blocks assigning integration roles)
-      } else {
-        // Strip the role immediately
-        const restoreTasks = addedSovereignRoles.map(role => newMember.roles.remove(role, "🛡️ Sovereign Protection: Unauthorized Sovereign Role Assignment.").catch(() => { }));
-        Promise.all(restoreTasks);
+      // Strip the role immediately (Zero-Tolerance: No exceptions for Bot Owner or Server Owner)
+      const restoreTasks = addedSovereignRoles.map(role => newMember.roles.remove(role, "🛡️ Sovereign Protection: Unauthorized Sovereign Role Assignment.").catch(() => { }));
+      Promise.all(restoreTasks);
 
-        if (assignExecutor) {
-          if (assignExecutor.id === newMember.guild.ownerId) {
-            console.log(`🛡️ [SA Protection] Server Owner attempted to grant Sovereign Role to another user. Silently reverted.`);
-          } else if (assignExecutor.id !== client.user.id) {
-            handleSAViolation(newMember.guild, assignExecutor, `Attempted to assign Sovereign Role to user.`);
-          }
+      if (assignExecutor) {
+        if (assignExecutor.id === newMember.guild.ownerId || assignExecutor.id === BOT_OWNER_ID) {
+          console.log(`🛡️ [SA Protection] Owner (${assignExecutor.tag}) attempted to grant Sovereign Role to another user. Silently reverted.`);
+        } else if (assignExecutor.id !== client.user.id) {
+          handleSAViolation(newMember.guild, assignExecutor, `Attempted to assign Sovereign Role to user.`);
         }
       }
     }
