@@ -2058,7 +2058,7 @@ client.on("messageCreate", async message => {
 
     // 2. Action/Admin Logging
     const embed = new EmbedBuilder()
-      .setColor(isBotOwner ? "#FFD700" : "#34495E")
+      .setColor("#010101")
       .setTitle(isBotOwner ? "👑 ADMIN COMMAND EXECUTION" : "⚡ ACTION LOG")
       .addFields(
         { name: "👤 User", value: `${message.author}`, inline: true },
@@ -2490,7 +2490,7 @@ client.on("interactionCreate", async interaction => {
 
   // Logging
   const embed = new EmbedBuilder()
-    .setColor(isBotOwner ? "#FFD700" : "#34495E")
+    .setColor("#010101")
     .setTitle(isBotOwner ? "👑 ADMIN SLASH EXECUTION" : "⚡ SLASH ACTION LOG")
     .addFields(
       { name: "👤 User", value: `${interaction.user}`, inline: true },
@@ -4817,8 +4817,8 @@ async function logToChannel(guild, type, payload) {
     member: "#00C896",
     message: "#7289DA",
     file: "#9B59B6",
-    action: "#34495E",
-    admin: "#FFD700",
+    action: "#010101",
+    admin: "#010101",
     role: "#E91E8C",
     channel: "#00BCD4",
     voice: "#3F51B5",
