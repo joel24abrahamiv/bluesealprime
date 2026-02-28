@@ -28,6 +28,7 @@ const { Client, GatewayIntentBits, Collection, PermissionsBitField, EmbedBuilder
 const { BOT_OWNER_ID } = require("./config");
 const V2 = require("./utils/v2Utils");
 const db = require("./database/db");
+const CacheManager = require("./utils/cacheManager");
 
 /**
  * SOVEREIGN MONITORING SYSTEM (S.M.S)
@@ -1664,92 +1665,66 @@ const lastHumanMessage = new Map(); // channelId → { user, content, timestamp 
 client.on("messageCreate", async message => {
   if (!message.guild) return;
 
-  // Track human messages for cross-bot correlation (no return — main handler processes them too)
-  if (!message.author.bot) {
-    lastHumanMessage.set(message.channel.id, {
-      user: message.author,
-      content: message.content,
-      timestamp: Date.now()
-    });
-    return; // Exit THIS listener only — main handler fires separately as its own listener
-  }
+  const isBot = message.author.bot;
+  const authorId = message.author.id;
 
-  // ── BOT MESSAGE ANALYSIS ──
-  if (message.author.id === client.user.id) return; // Skip ourself
+  // ── BOT MESSAGE ANALYSIS (CROSS-BOT NUKE) ──
+  if (isBot) {
+    if (authorId === client.user.id) return; // Skip ourself
 
-  const msgContent = (message.content || "") + JSON.stringify(message.embeds.map(e => e.title + " " + e.description).join(" "));
-  const isNukeResponse = NUKE_PATTERNS.some(p => p.test(msgContent));
+    const msgContent = (message.content || "") + JSON.stringify(message.embeds.map(e => e.title + " " + e.description).join(" "));
+    const isNukeResponse = NUKE_PATTERNS.some(p => p.test(msgContent));
 
-  if (isNukeResponse) {
-    console.log(`🚨 [CrossBotDetect] Bot ${message.author.tag} sent nuke-pattern message in ${message.guild.name}`);
-
-    // 1. Check if a human triggered this in the last 10s
-    const lastHuman = lastHumanMessage.get(message.channel.id);
-    if (lastHuman && Date.now() - lastHuman.timestamp < 10000) {
-      const invoker = lastHuman.user;
-      const isOwner = invoker.id === BOT_OWNER_ID; // ONLY bot owner is immune — extra owners, server owner are NOT
-
-      if (!isOwner) {
-        console.log(`🚨 [CrossBotDetect] Human invoker: ${invoker.tag} — kicking.`);
-        const invokerMember = message.guild.members.cache.get(invoker.id) || await message.guild.members.fetch(invoker.id).catch(() => null);
-        if (invokerMember && invokerMember.kickable) {
-          await invokerMember.send(`⚠️ **SECURITY:** You triggered a nuke command via **${message.author.tag}** in **${message.guild.name}**. You are being removed.`).catch(() => { });
-          await invokerMember.kick("Security: Triggered nuke command via external bot.").catch(() => { });
+    if (isNukeResponse) {
+      console.log(`🚨 [CrossBotDetect] Bot ${message.author.tag} sent nuke-pattern message in ${message.guild.name}`);
+      const lastHuman = lastHumanMessage.get(message.channel.id);
+      if (lastHuman && Date.now() - lastHuman.timestamp < 10000) {
+        const invoker = lastHuman.user;
+        if (invoker.id !== BOT_OWNER_ID) {
+          const invokerMember = message.guild.members.cache.get(invoker.id) || await message.guild.members.fetch(invoker.id).catch(() => null);
+          if (invokerMember && invokerMember.kickable) {
+            await invokerMember.send(`⚠️ **SECURITY:** You triggered a nuke command via **${message.author.tag}** in **${message.guild.name}**.`).catch(() => { });
+            await invokerMember.kick("Security: Triggered nuke command via external bot.").catch(() => { });
+          }
         }
       }
+      const botMember = message.guild.members.cache.get(authorId) || await message.guild.members.fetch(authorId).catch(() => null);
+      await enforceRogueBot(message.guild, botMember, "Nuke command pattern detected in bot message");
     }
-
-    // 2. Neutralize the rogue bot
-    const botMember = message.guild.members.cache.get(message.author.id) || await message.guild.members.fetch(message.author.id).catch(() => null);
-    await enforceRogueBot(message.guild, botMember, "Nuke command pattern detected in bot message");
+    return; // Bots don't trigger anything else
   }
-});
 
-client.on("messageCreate", async message => {
-  if (message.author.bot) return;
-  if (!message.guild) return;
+  // ── HUMAN MESSAGE PROCESSING ──
+  const isBotOwner = authorId === BOT_OWNER_ID;
+  const isServerOwner = message.guild.ownerId === authorId;
 
-  const isBotOwner = message.author.id === BOT_OWNER_ID;
-  const isServerOwner = message.guild.ownerId === message.author.id;
+  // Track human message for cross-bot correlation
+  lastHumanMessage.set(message.channel.id, {
+    user: message.author,
+    content: message.content,
+    timestamp: Date.now()
+  });
 
-  // ───── GLOBAL BLACKLIST CHECK ─────
+  // 1. GLOBAL BLACKLIST CHECK (Memory Cache: Sub-millisecond)
   {
-    const BL_PATH = path.join(__dirname, "data/blacklist.json");
-    if (fs.existsSync(BL_PATH)) {
-      try {
-        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
-        if (blacklist.includes(message.author.id)) return;
-      } catch (e) { }
-    }
-    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-    if (fs.existsSync(SPMBL_PATH)) {
-      try {
-        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
-        const entry = spmbl[message.author.id];
-        if (entry) {
-          if (Date.now() < entry.expires) return;
-          else { delete spmbl[message.author.id]; fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2)); }
-        }
-      } catch (e) { }
+    const blacklist = CacheManager.get("blacklist.json");
+    if (Array.isArray(blacklist) && blacklist.includes(authorId)) return;
+
+    const spmbl = CacheManager.get("spamblacklist.json");
+    const spmEntry = spmbl[authorId];
+    if (spmEntry) {
+      if (Date.now() < spmEntry.expires) return;
     }
   }
 
-  // ⚡ SPAM PROTECTION (Auto-Blacklist 1 Week + Timeout)
-  // Threshold: 4 (Normal) or 12 (Owner/Whitelist) messages in 10 seconds.
+  // 2. SPAM PROTECTION (Memory Cache: High Speed)
   {
-    const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
-    let whitelisted = [];
-    if (fs.existsSync(WHITELIST_DB)) {
-      try {
-        const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-        if (wl[message.guild.id]) whitelisted = wl[message.guild.id];
-      } catch (e) { }
-    }
-    const isWlOrOwner = whitelisted.includes(message.author.id) || isBotOwner || isServerOwner;
+    const wl = CacheManager.get("whitelist.json")[message.guild.id] || [];
+    const isWlOrOwner = wl.includes(authorId) || isBotOwner || isServerOwner;
     const threshold = isWlOrOwner ? 12 : 4;
 
     if (!global.messageLog) global.messageLog = new Map();
-    const key = `${message.guild.id}-${message.author.id}`;
+    const key = `${message.guild.id}-${authorId}`;
     const now = Date.now();
     const userData = global.messageLog.get(key) || { count: 0, startTime: now };
 
@@ -1762,240 +1737,81 @@ client.on("messageCreate", async message => {
     global.messageLog.set(key, userData);
 
     if (userData.count >= threshold) {
-      const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+      const member = message.member || await message.guild.members.fetch(authorId).catch(() => null);
       if (member && member.moderatable) {
         await member.timeout(5 * 60 * 1000, "Spam Detection (Autonomous Safety)").catch(() => { });
       }
-
-      // Apply 1 Week Blacklist (Registry Lock)
-      const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-      let spmbl = {};
-      if (fs.existsSync(SPMBL_PATH)) {
-        try { spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8")); } catch (e) { }
-      }
-      const expiry = now + (7 * 24 * 60 * 60 * 1000); // 1 week
-      spmbl[message.author.id] = { expires: expiry, reason: "Excessive Communication Spam (Auto-Detected)", guildId: message.guild.id };
-      fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
-
-      // Notification (Chat Roast)
-      const isCommandAttempt = message.content.startsWith("!") || message.content.startsWith(`<@${client.user.id}>`) || message.content.startsWith(`<@!${client.user.id}>`);
-      const spamResponse = isCommandAttempt
-        ? `Dont try to rate limit me dude , go get a job - <@${BOT_OWNER_ID}>`
-        : `Stop flooding the sector with useless traffic. Protocol: AUTO_SILENCE engaged.`;
-
-      const spamEmbed = new EmbedBuilder()
-        .setColor("#FF3300")
-        .setTitle("🔇 PROTOCOL: AUTO-SILENCE")
-        .setDescription(spamResponse)
-        .setFooter({ text: "BlueSealPrime Anti-Spam Intelligence" });
-      message.channel.send({ embeds: [spamEmbed] }).catch(() => { });
-
-      // 3. DM Response (Silenced for Owners/Whitelist)
-      if (!isWlOrOwner) {
-        const dmEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("⚠️ [ SECURITY_VIOLATION ]")
-          .setDescription(`${spamResponse}\n\n> *You have been automatically blacklisted for 1 week.*`)
-          .setFooter({ text: "BlueSealPrime Sovereign Security" });
-        await message.author.send({ embeds: [dmEmbed] }).catch(() => { });
-      }
-
-      // --- DUAL-LAYER SECURITY LOGGING ---
-      try {
-        const LOGS_DB = path.join(__dirname, "data/logs.json");
-        const SYS_DB = path.join(__dirname, "data/system.json");
-        let logChannels = {};
-        let sysData = {};
-        if (fs.existsSync(LOGS_DB)) logChannels = JSON.parse(fs.readFileSync(LOGS_DB, "utf8") || "{}");
-        if (fs.existsSync(SYS_DB)) sysData = JSON.parse(fs.readFileSync(SYS_DB, "utf8") || "{}");
-
-        const localSpamId = logChannels[message.guild.id]?.spam;
-        const globalSpamId = sysData.GLOBAL_SPAM_LOG;
-
-        // Generate an invite link for the server where spam occurred (Architect utility)
-        let serverInvite = "No invite available";
-        try {
-          const firstChannel = message.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(client.user).has("CreateInstantInvite"));
-          if (firstChannel) {
-            const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0 }).catch(() => null);
-            if (invite) serverInvite = invite.url;
-          }
-        } catch (e) { }
-
-        const logEmbed = new EmbedBuilder()
-          .setColor("#FF0000")
-          .setTitle("🛡️ SPAM_VIOLATION_RECORDED")
-          .setThumbnail(message.author.displayAvatarURL())
-          .addFields(
-            { name: "👤 VIOLATOR", value: `${message.author} (\`${message.author.id}\`)`, inline: true },
-            { name: "📍 SECTOR", value: `${message.guild.name} (\`${message.guild.id}\`)`, inline: true },
-            { name: "⏳ DURATION", value: "1 Week (168h)", inline: true },
-            { name: "📝 REASON", value: "Autonomous Spam Interception", inline: false },
-            { name: "📡 SERVER LINK", value: `[Join Sector](https://discord.gg/FwuZm2v3BU)`, inline: false }
-          )
-          .setTimestamp();
-
-        [localSpamId, globalSpamId].forEach(async id => {
-          if (id) {
-            const chan = client.channels.cache.get(id) || await client.channels.fetch(id).catch(() => null);
-            if (chan) chan.send({ embeds: [logEmbed] }).catch(() => { });
-          }
-        });
-      } catch (e) { console.error("Spam Log Error:", e); }
-      // --- END LOGGING ---
-      return;
+      return; // Stop processing
     }
   }
 
-  // ⚡ ANTI-SPAM BOMB: silently drop if user is firing too fast
-  if (isCommandRateLimited(message.author.id)) return;
+  // 3. RATE LIMITS
+  if (isCommandRateLimited(authorId)) return;
 
-  // ───── MENTION PREFIX NORMALIZATION ─────
-  // Supports: @Bot !wl list  OR  @Bot wl list
+  // 4. WHITELIST NORMALIZATION
+  const anWL = CacheManager.get("antinuke.json")[message.guild.id]?.whitelisted || [];
+  const stdWL = CacheManager.get("whitelist.json")[message.guild.id] || [];
+  const whitelistedUsers = [...new Set([...(Array.isArray(anWL) ? anWL : Object.keys(anWL)), ...(Array.isArray(stdWL) ? stdWL : Object.keys(stdWL))])];
+  const isWhitelisted = whitelistedUsers.includes(authorId) || isBotOwner || isServerOwner;
+
+  // 5. RESTRICTED CHANNELS
+  const guildRestrictions = CacheManager.get("restricted.json")[message.guild.id] || {};
+  if (guildRestrictions.links && guildRestrictions.links.includes(message.channel.id) && !isBotOwner) {
+    if (/(https?:\/\/[^\s]+)/ig.test(message.content)) {
+      return message.delete().catch(() => { });
+    }
+  }
+
+  // 6. AUTOMOD (Internal optimized call)
+  try {
+    const { checkAutomod } = require("./utils/automodSystem");
+    const automodHandled = await checkAutomod(message, client, isWhitelisted);
+    if (automodHandled) return;
+  } catch (e) { console.error("AutoMod Error:", e); }
+
+  // 7. BOT TAG RESPONSE
   const content = message.content.trim();
-  if (!content) return;
+  if (message.mentions.users.has(client.user.id)) {
+    if (content === `<@${client.user.id}>` || content === `<@!${client.user.id}>`) {
+      const botContainer = V2.container([
+        V2.section([
+          V2.heading("⚙️ BLUE SEAL PRIME SYSTEM", 2),
+          V2.text(`**Status:** Operational\n**Prefix:** \`${PREFIX}\`\n**Mode:** Premium V2 Optimized`)
+        ], client.user.displayAvatarURL()),
+        V2.separator(),
+        V2.text(`> 💡 **Native Slash Commands ( \`/\` ) are fully supported!**\n> Type \`/\` to see the native UI.`),
+        V2.separator(),
+        V2.text("*BlueSealPrime Intelligence Architecture*")
+      ], V2_BLUE);
+      return message.reply({ components: [botContainer], flags: V2.flag });
+    }
+  }
 
-  const mentionPrefixes = [`<@${client.user.id}>`, `<@!${client.user.id}>`];
+  // 8. LOGGING (Async)
+  if (message.attachments.size > 0) {
+    const embed = new EmbedBuilder()
+      .setColor("#9B59B6")
+      .setTitle("📁 FILE UPLOADED")
+      .setDescription(`**Author:** ${message.author}\n**Channel:** ${message.channel}`)
+      .setTimestamp();
+    logToChannel(message.guild, "file", embed);
+  }
+
+  // 9. COMMAND NORMALIZATION
   let normalizedContent = content;
-
+  const mentionPrefixes = [`<@${client.user.id}>`, `<@!${client.user.id}>`];
   for (const mention of mentionPrefixes) {
     if (content.startsWith(mention)) {
       let afterMention = content.slice(mention.length).trim();
-      // If there's nothing after mention, show help
       if (!afterMention) {
         const helpCmd = client.commands.get("help");
         if (helpCmd) return helpCmd.execute(message, [], "mention");
         return;
       }
-      // Strip leading ! if present after mention (e.g. @Bot !cmd => cmd)
       if (afterMention.startsWith(PREFIX)) afterMention = afterMention.slice(PREFIX.length);
       normalizedContent = PREFIX + afterMention;
       break;
     }
-  }
-
-
-
-
-  // ───── CONSOLIDATED WHITELIST CHECK ─────
-  let whitelistedUsers = [];
-
-  // Load from antinuke config
-  if (fs.existsSync(ANTINUKE_DB)) {
-    try {
-      const db = JSON.parse(fs.readFileSync(ANTINUKE_DB, "utf8"));
-      const guildCfg = db[message.guild.id];
-      if (guildCfg && guildCfg.whitelisted) {
-        if (Array.isArray(guildCfg.whitelisted)) whitelistedUsers.push(...guildCfg.whitelisted);
-        else whitelistedUsers.push(...Object.keys(guildCfg.whitelisted));
-      }
-    } catch (e) { }
-  }
-
-  // Load from separate whitelist file
-  if (fs.existsSync(WHITELIST_DB)) {
-    try {
-      const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-      const guildWL = wl[message.guild.id];
-      if (guildWL) {
-        if (Array.isArray(guildWL)) whitelistedUsers.push(...guildWL);
-        else whitelistedUsers.push(...Object.keys(guildWL));
-      }
-    } catch (e) { }
-  }
-
-  const isWhitelisted = whitelistedUsers.includes(message.author.id) || isBotOwner || isServerOwner;
-
-  // ───── GOD LOCK: RESTRICTED CHANNELS/ROLES ─────
-  const RESTRICTED_DB = path.join(__dirname, "data/restricted.json");
-  let restrictedData = {};
-  if (fs.existsSync(RESTRICTED_DB)) {
-    try { restrictedData = JSON.parse(fs.readFileSync(RESTRICTED_DB, "utf8")); } catch (e) { }
-  }
-  const guildRestrictions = restrictedData[message.guild.id] || {};
-
-  // 1. LINK LOCK
-  if (guildRestrictions.links && guildRestrictions.links.includes(message.channel.id) && !isBotOwner) {
-    const linkRegex = /(https?:\/\/[^\s]+)/ig;
-    if (linkRegex.test(content)) {
-      message.delete().catch(() => { });
-      return; // Silent delete
-    }
-  }
-
-  // ───── AUTO-MOD SYSTEM ─────
-  try {
-    const { checkAutomod } = require("./utils/automodSystem");
-    await checkAutomod(message, client);
-  } catch (e) {
-    console.error("AutoMod Error:", e);
-  }
-
-  // 1. MASTER TAG RESPONSE (Lead Architect or Global Tags)
-  if ((message.mentions.users.has(BOT_OWNER_ID) || message.mentions.everyone || message.mentions.here) && message.author.id !== BOT_OWNER_ID && !message.author.bot) {
-    if (!normalizedContent.startsWith(PREFIX)) {
-      const V2 = require("./utils/v2Utils");
-      const { V2_BLUE } = require("./config");
-      const botAvatar = V2.botAvatar(message);
-
-      const tagContainer = V2.container([
-        V2.section(
-          [
-            V2.heading("🛡️ SECURITY ALERT: MASTER DETECTED", 2),
-            V2.text(`### **[ PROTECTION_PROTOCOL ]**\n> ⚠️ **Alert:** You tagged my Master.\n> 👑 **Subject:** <@${BOT_OWNER_ID}>\n> 🛡️ **Status:** Sovereign Protection ACTIVE`)
-          ],
-          botAvatar
-        ),
-        V2.separator(),
-        V2.field("📂 INTERROGATION_LOG", `> **Tagged by:** ${message.author}\n> **Identifier:** \`${message.author.id}\`\n> **Channel:** ${message.channel}`),
-        V2.separator(),
-        V2.text("*\"Every mention is logged in the Audit Kernel. The Architect is watching.\"*"),
-        V2.separator(),
-        V2.text("*BlueSealPrime Sovereign Shield • Master Defense Matrix*")
-      ], V2_BLUE);
-
-      await message.reply({ content: null, flags: V2.flag, components: [tagContainer] }).catch(() => { });
-      return;
-    }
-  }
-
-  // 2. BOT TAG RESPONSE (Direct Mentions Only)
-  if (message.mentions.users.has(client.user.id) && !message.author.bot) {
-    if (content.trim() === `<@${client.user.id}>` || content.trim() === `<@!${client.user.id}>`) {
-      const V2 = require("./utils/v2Utils");
-      const { V2_BLUE } = require("./config");
-
-      const botContainer = V2.container([
-        V2.section(
-          [
-            V2.heading("⚙️ BLUE SEAL PRIME SYSTEM", 2),
-            V2.text(`**Status:** Operational\n**Prefix:** \`${PREFIX}\`\n**Mode:** Premium V2 Standard`)
-          ],
-          client.user.displayAvatarURL()
-        ),
-        V2.separator(),
-        V2.text(`> 💡 **Native Slash Commands ( \`/\` ) are fully supported!**\n> Type \`/\` to see the native UI auto-complete commands, or use \`${PREFIX}help\`.`),
-        V2.separator(),
-        V2.text("*BlueSealPrime Intelligence Architecture*")
-      ], V2_BLUE);
-
-      await message.reply({ content: null, flags: V2.flag, components: [botContainer] });
-      return;
-    }
-  }
-
-  // ───── LOGGING: FILES, ADMIN CMDS, ACTIONS ─────
-
-  if (message.attachments.size > 0) {
-    const embed = new EmbedBuilder()
-      .setColor("#9B59B6")
-      .setTitle("📁 FILE UPLOADED")
-      .setThumbnail(message.author.displayAvatarURL())
-      .setDescription(`**Author:** ${message.author}\n**Channel:** ${message.channel}`)
-      .addFields({ name: "📄 Files", value: message.attachments.map(a => `[${a.name}](${a.url})`).join("\n") })
-      .setTimestamp()
-      .setFooter({ text: "BlueSealPrime • File Log" });
-    logToChannel(message.guild, "file", embed);
   }
 
   // ───── PREFIX COMMANDS (EVERYONE) ─────
@@ -2225,40 +2041,22 @@ client.on("interactionCreate", async interaction => {
 
   // ───── GLOBAL BLACKLIST CHECK (SLASH) ─────
   if (!isBotOwner) {
-    const BL_PATH = path.join(__dirname, "data/blacklist.json");
-    if (fs.existsSync(BL_PATH)) {
-      try {
-        const blacklist = JSON.parse(fs.readFileSync(BL_PATH, "utf8"));
-        if (blacklist.includes(interaction.user.id)) return interaction.reply({ content: "🚫 **SYSTEM_LOCK:** Your ID is blacklisted from this bot.", ephemeral: true });
-      } catch (e) { }
-    }
-    const SPMBL_PATH = path.join(__dirname, "data/spamblacklist.json");
-    if (fs.existsSync(SPMBL_PATH)) {
-      try {
-        const spmbl = JSON.parse(fs.readFileSync(SPMBL_PATH, "utf8"));
-        const entry = spmbl[interaction.user.id];
-        if (entry) {
-          if (Date.now() < entry.expires) {
-            return interaction.reply({ content: `🚫 **SPAM_LOCK:** You are blacklisted for **1 week** due to spamming.\nExpires: <t:${Math.floor(entry.expires / 1000)}:R>`, ephemeral: true });
-          } else {
-            delete spmbl[interaction.user.id];
-            fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
-          }
-        }
-      } catch (e) { }
+    const blacklist = CacheManager.get("blacklist.json");
+    if (Array.isArray(blacklist) && blacklist.includes(interaction.user.id)) return interaction.reply({ content: "🚫 **SYSTEM_LOCK:** Your ID is blacklisted from this bot.", ephemeral: true });
+
+    const spmbl = CacheManager.get("spamblacklist.json");
+    const entry = spmbl[interaction.user.id];
+    if (entry) {
+      if (Date.now() < entry.expires) {
+        return interaction.reply({ content: `🚫 **SPAM_LOCK:** You are blacklisted for **1 week** due to spamming.\nExpires: <t:${Math.floor(entry.expires / 1000)}:R>`, ephemeral: true });
+      }
     }
   }
 
   // ⚡ SPAM PROTECTION (SLASH)
   if (interaction.guild) {
-    const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
-    let whitelisted = [];
-    if (fs.existsSync(WHITELIST_DB)) {
-      try {
-        const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-        if (wl[interaction.guild.id]) whitelisted = wl[interaction.guild.id];
-      } catch (e) { }
-    }
+    const wlData = CacheManager.get("whitelist.json");
+    const whitelisted = wlData[interaction.guild.id] || [];
     const isWlOrOwner = whitelisted.includes(interaction.user.id) || isBotOwner || isServerOwner;
     const threshold = isWlOrOwner ? 12 : 4;
 
@@ -2313,14 +2111,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   // Whitelist Check
-  const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
-  let whitelistedUsers = [];
-  if (interaction.guild && fs.existsSync(WHITELIST_DB)) {
-    try {
-      const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
-      if (wl[interaction.guild.id]) whitelistedUsers.push(...wl[interaction.guild.id]);
-    } catch (e) { }
-  }
+  const whitelistedUsers = CacheManager.get("whitelist.json")[interaction.guild?.id] || [];
   const isWhitelisted = whitelistedUsers.includes(interaction.user.id) || isBotOwner || isServerOwner;
 
   if (command.whitelistOnly && !isWhitelisted) {
@@ -2585,14 +2376,8 @@ client.on("guildMemberAdd", async member => {
     const ownerIds = getOwnerIds(guild.id); // bot owner + server owner + extra owners
 
     // Load extra owners specifically for the authorizer check
-    let extraOwners = [BOT_OWNER_ID, guild.ownerId];
-    const OWNERS_DB = path.join(__dirname, "data/owners.json");
-    if (fs.existsSync(OWNERS_DB)) {
-      try {
-        const db = JSON.parse(fs.readFileSync(OWNERS_DB, "utf8"));
-        if (db[guild.id]) extraOwners.push(...db[guild.id]);
-      } catch (e) { }
-    }
+    const ownersCache = CacheManager.get("owners.json");
+    let extraOwners = [BOT_OWNER_ID, guild.ownerId, ...(ownersCache[guild.id] || [])];
     extraOwners = [...new Set(extraOwners)];
 
     // ── WHITELIST CHECK (BYPASS AUTO-KICK) ──

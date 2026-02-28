@@ -1,6 +1,6 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const fs = require("fs");
-const path = require("path");
+const CacheManager = require("./cacheManager");
+const { BOT_OWNER_ID } = require("../config");
+const { EmbedBuilder } = require("discord.js");
 
 // ───── IN-MEMORY CACHE ─────
 const spamMap = new Map(); // Key: userId, Value: { count, lastMsg, timer }
@@ -20,15 +20,14 @@ const SCAM_KEYWORDS = [
     "nitrogift", "freegift", "airdrop", "getfree", "getnitro", "t.me/", "paypal.me", "grabify"
 ];
 
-async function checkAutomod(message, client) {
-    if (!message.guild || message.author.bot) return;
+async function checkAutomod(message, client, isWhitelisted = false) {
+    if (!message.guild || message.author.bot) return false;
 
-    const { BOT_OWNER_ID } = require("../config");
     const isBotOwner = message.author.id === BOT_OWNER_ID;
     const isServerOwner = message.author.id === message.guild.ownerId;
 
-    // Load Config
-    const AUTOMOD_DB = path.join(__dirname, "../data/automod.json");
+    // Load Config from Cache (Sub-millisecond)
+    const allSettings = CacheManager.get("automod.json");
     const defaults = {
         status: true,
         antiLinks: true,
@@ -42,23 +41,18 @@ async function checkAutomod(message, client) {
         ignoredChannels: []
     };
 
-    let settings = { ...defaults };
-    if (fs.existsSync(AUTOMOD_DB)) {
-        try {
-            const db = JSON.parse(fs.readFileSync(AUTOMOD_DB, "utf8"));
-            if (db[message.guild.id]) settings = { ...settings, ...db[message.guild.id] };
-        } catch (e) { }
-    }
-
-    if (!settings.status) return;
+    let settings = { ...defaults, ...(allSettings[message.guild.id] || {}) };
+    if (!settings.status) return false;
 
     // Bypasses
-    const member = message.member;
+    const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+    if (!member) return false;
+
     const isIgnoredRole = settings.ignoredRoles.some(id => member.roles.cache.has(id));
     const isIgnoredChannel = settings.ignoredChannels.includes(message.channel.id);
 
-    // Core bypasses (Owner/Extra Owners don't get checked unless system is strictly forced, but here we respect them)
-    if (isBotOwner || isServerOwner || isIgnoredRole || isIgnoredChannel) return;
+    // Core bypasses
+    if (isBotOwner || isServerOwner || isWhitelisted || isIgnoredRole || isIgnoredChannel) return false;
 
     const content = message.content.trim();
     const cleanContent = content.toLowerCase()
