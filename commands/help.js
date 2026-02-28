@@ -164,6 +164,17 @@ module.exports = {
       };
 
       const initialMessage = await message.reply({ components: [createV2Container(currentPage)], flags: V2.flag });
+
+      // Auto-delete after 30 seconds
+      setTimeout(async () => {
+        try {
+          await initialMessage.edit({
+            components: [V2.container([V2.text("🏁 **Help Menu Closed.**\n*If you want to open it again, run the command once more.*")], "#000000")]
+          });
+          setTimeout(() => initialMessage.delete().catch(() => { }), 5000);
+        } catch (e) { }
+      }, 30000);
+
       const collector = initialMessage.createMessageComponentCollector({
         filter: (i) => i.user.id === message.author.id,
         time: 300000
@@ -179,8 +190,12 @@ module.exports = {
       });
 
       collector.on("end", async (collected, reason) => {
-        if (reason === "user_stopped") await initialMessage.delete().catch(() => { });
-        else if (reason === "time") await initialMessage.edit({ components: [] }).catch(() => { });
+        if (reason === "user_stopped") {
+          await initialMessage.edit({
+            components: [V2.container([V2.text("🏁 **Help Menu Closed.**\n*If you want to open it again, run the command once more.*")], "#000000")]
+          }).catch(() => { });
+          setTimeout(() => initialMessage.delete().catch(() => { }), 3000);
+        }
       });
 
       if (global.SMS_SERVICE) {

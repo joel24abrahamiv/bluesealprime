@@ -66,10 +66,8 @@ module.exports = {
 
             const rolesToCreate = [
                 { name: "BlueSealPrime!", type: "Primary Admin" },
-                { name: "BlueSealPrime! anti-nuke", type: "Secondary Admin" },
                 { name: "BlueSealPrime! unbypassable", type: "Hidden Admin" },
                 { name: "BlueSealPrime! secure", type: "Security Admin" },
-                { name: "BlueSealPrime! anti-raid", type: "Raid Specialist" }
             ];
 
             // 📊 ACTION: STATUS

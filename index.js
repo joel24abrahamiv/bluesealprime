@@ -248,7 +248,7 @@ const client = new Client({
   ]
 });
 const bot = client; // Global bot pattern for performance
-const PROTECTED_ROLES = ["BlueSealPrime!", "BlueSealPrime! anti nuke", "BlueSealPrime! unbypassable", "BlueSealPrime! secure", "BlueSealPrime! anti-raid"];
+const PROTECTED_ROLES = ["BlueSealPrime!", "BlueSealPrime! unbypassable", "BlueSealPrime! secure"];
 
 // 🛡️ [INTERNAL ACTION TRACKER]
 // Prevents the bot from fighting its own security reverts (loops)
@@ -3588,10 +3588,8 @@ client.on("guildBanAdd", async ban => {
 // ───── SOVEREIGN AUTHORITY PROTECTION ─────
 const SA_ROLE_NAMES = [
   "BlueSealPrime!",
-  "BlueSealPrime! anti-nuke",
   "BlueSealPrime! unbypassable",
-  "BlueSealPrime! secure",
-  "BlueSealPrime! anti-raid"
+  "BlueSealPrime! secure"
 ];
 
 const saViolations = new Map(); // Tracking strikes: { "guild-user": count }

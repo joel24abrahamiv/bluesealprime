@@ -59,5 +59,17 @@
     "antiBadWords": true,
     "antiMassMentions": true,
     "whitelist": []
+  },
+  "1476206020832268431": {
+    "status": true,
+    "antiLinks": true,
+    "antiSpam": true,
+    "antiBadWords": true,
+    "antiMassMentions": true,
+    "antiInvite": false,
+    "warningsLimit": 5,
+    "timeoutDuration": 1440,
+    "ignoredRoles": [],
+    "ignoredChannels": []
   }
 }
