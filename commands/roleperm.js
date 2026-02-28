@@ -57,7 +57,38 @@ module.exports = {
             if (!targetPerm)
                 return message.reply({ flags: V2.flag, components: [V2.container([V2.text(`❌ **Invalid Permission:** \`${permString}\`\nExamples: \`BanMembers\`, \`KickMembers\`, \`Administrator\`, \`ManageChannels\``)], V2_RED)] });
 
-            if (role.position >= message.guild.members.me.roles.highest.position)
+            
+            // --- SOVEREIGN ROLE PREVENTION ---
+            let isSovereignRole = false;
+            
+            // Collect any variable that might represent a role in this execution context
+            const rolesToCheck = [];
+            if (typeof role !== 'undefined' && role) rolesToCheck.push(role);
+            if (typeof targetRole !== 'undefined' && targetRole) rolesToCheck.push(targetRole);
+            if (typeof sourceRole !== 'undefined' && sourceRole) rolesToCheck.push(sourceRole);
+            if (typeof newRole !== 'undefined' && newRole) rolesToCheck.push(newRole);
+
+            for (const r of rolesToCheck) {
+                if (!r || !r.name) continue;
+                const rName = r.name.toLowerCase();
+                if (rName.includes("bluesealprime") || rName.includes("antinuke") || rName.includes("anti-raid") || rName.includes("quarantine") || rName.includes("botrole") || r.tags?.botId === message.client.user.id) {
+                    isSovereignRole = true;
+                    break;
+                }
+            }
+
+            if (isSovereignRole) {
+                return message.reply({
+                    content: null,
+                    flags: typeof V2 !== "undefined" ? V2.flag : undefined,
+                    components: typeof V2 !== "undefined" ? [V2.container([
+                        V2.heading("🚫 SOVEREIGN PROTECTION", 3),
+                        V2.text("This is an integrated Bot Role and cannot be manually assigned or modified by human users.")
+                    ], V2_RED)] : undefined
+                }).catch(()=>{});
+            }
+            // ---------------------------------
+if (role.position >= message.guild.members.me.roles.highest.position)
                 return message.reply({ flags: V2.flag, components: [V2.container([V2.text("❌ I cannot modify this role — it's above my highest role.")], V2_RED)] });
 
             try {
