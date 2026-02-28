@@ -86,19 +86,22 @@ module.exports = {
             return flagsSubset.map(flag => {
                 const hasPerm = rolePerms.has(PermissionsBitField.Flags[flag]);
                 return {
-                    label: flag.replace(/([A-Z])/g, ' $1').trim(), // Make it slightly readable 
+                    label: (hasPerm ? "🟢 " : "🔴 ") + flag.replace(/([A-Z])/g, ' $1').trim(), // Make it slightly readable 
                     value: flag,
-                    description: `Toggle ${flag}`,
+                    description: hasPerm ? "Currently ENABLED - Click to Disable" : "Currently DISABLED - Click to Enable",
                     default: hasPerm
                 };
             });
         };
 
         const createUI = (role) => {
+            const activeFlags = allFlags.filter(f => role.permissions.has(PermissionsBitField.Flags[f]));
+            const activeText = activeFlags.length > 0 ? activeFlags.map(f => `\`${f}\``).join(', ') : "None";
+
             const embed = V2.container([
                 V2.section([
                     V2.heading(`🛡️ Role Permission Editor`, 2),
-                    V2.text(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Select permissions via the dropdown menus below.** Options highlighted with a checkmark are currently **enabled**.`)
+                    V2.text(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Current Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)`)
                 ], V2.botAvatar(message)),
                 V2.separator(),
                 V2.text(`*Changes apply instantly upon selection.*`)
