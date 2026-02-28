@@ -101,7 +101,7 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle(`🛡️ Role Permission Editor`)
-                .setDescription(`**Target:** ${role.name}\\n**ID:** \`${role.id}\`\\n**Color:** \`${role.hexColor}\`\\n\\n**Current Permissions:**\\n${activeText}\\n\\n**Select permissions via the dropdown menus below.**\\n(🟢 = Enabled | 🔴 = Disabled)\\n\\n*Changes apply instantly upon selection.*`)
+                .setDescription(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Current Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)\n\n*Changes apply instantly upon selection.*`)
                 .setColor(V2_BLUE)
                 .setThumbnail(message.guild?.members?.me?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || message.client?.user?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || null);
 
@@ -181,8 +181,14 @@ module.exports = {
             let currentPerms = new PermissionsBitField(targetRole.permissions);
 
             const selectedValues = interaction.values; // Array of flag names
-            const id = interaction.customId;
-            const relevantFlags = id === "editrole_part1" ? part1 : part2;
+            const id = interaction.customId; // "editrole_part1", "editrole_part2", etc.
+
+            // Extract the index from the custom ID. "editrole_part1" -> 1. Arrays are 0-indexed, so we subtract 1.
+            const pageNumberMatch = id.match(/editrole_part(\\d+)/);
+            if (!pageNumberMatch) return interaction.reply({ content: "❌ Unknown menu ID.", ephemeral: true });
+
+            const chunkIndex = parseInt(pageNumberMatch[1]) - 1;
+            const relevantFlags = chunkedFlags[chunkIndex];
 
             // First, remove ALL relevantFlags from the current perm set
             relevantFlags.forEach(flag => {
