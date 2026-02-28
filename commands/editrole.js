@@ -214,7 +214,7 @@ module.exports = {
                 const selectedValues = interaction.values; // Array of flag names
 
                 // Extract the index from the custom ID. "editrole_part1" -> 1. Arrays are 0-indexed, so we subtract 1.
-                const pageNumberMatch = id.match(/editrole_part(\\d+)/);
+                const pageNumberMatch = id.match(/editrole_part(\d+)/);
                 if (!pageNumberMatch) return interaction.reply({ content: "❌ Unknown menu ID.", ephemeral: true });
 
                 const chunkIndex = parseInt(pageNumberMatch[1]) - 1;
