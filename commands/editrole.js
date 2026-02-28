@@ -177,8 +177,8 @@ module.exports = {
 
             try {
                 // Update Discord
-                targetRole = await targetRole.setPermissions(currentPerms, \`Interactive EditRole by \${interaction.user.tag}\`);
-                
+                targetRole = await targetRole.setPermissions(currentPerms, `Interactive EditRole by ${interaction.user.tag}`);
+
                 // Re-render UI
                 const updatedUIPayload = createUI(targetRole);
                 if (updatedUIPayload.embeds[0]) {
@@ -193,7 +193,7 @@ module.exports = {
         });
 
         collector.on("end", () => {
-             promptMessage.edit({ components: [] }).catch(() => {});
+            promptMessage.edit({ components: [] }).catch(() => { });
         });
 
         /* --- KERNEL_END --- */
