@@ -1,4 +1,4 @@
-const { PermissionsBitField, StringSelectMenuBuilder, ActionRowBuilder, ComponentType, EmbedBuilder } = require("discord.js");
+const { PermissionsBitField, StringSelectMenuBuilder, ActionRowBuilder, ComponentType, EmbedBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const ObjectKeys = Object.keys(PermissionsBitField.Flags);
 
@@ -95,19 +95,20 @@ module.exports = {
             });
         };
 
-        const createUI = (role) => {
-            const activeFlags = allFlags.filter(f => role.permissions.has(PermissionsBitField.Flags[f]));
+        const createUI = (role, currentPermsOverride = null) => {
+            const rolePerms = currentPermsOverride || role.permissions;
+            const activeFlags = allFlags.filter(f => rolePerms.has(PermissionsBitField.Flags[f]));
             const activeText = activeFlags.length > 0 ? activeFlags.map(f => `\`${f}\``).join(', ') : "None";
 
             const embed = new EmbedBuilder()
-                .setTitle(`🛡️ Role Permission Editor`)
-                .setDescription(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Current Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)\n\n*Changes apply instantly upon selection.*`)
+                .setTitle(`🛡️ Role Permission Editor (Draft Mode)`)
+                .setDescription(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Draft Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)\n\n*Click **Save Changes** when finished!*`)
                 .setColor(V2_BLUE)
                 .setThumbnail(message.guild?.members?.me?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || message.client?.user?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || null);
 
             const components = [];
             chunkedFlags.forEach((chunk, index) => {
-                const options = buildMenuOptions(chunk, role.permissions);
+                const options = buildMenuOptions(chunk, rolePerms);
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId(`editrole_part${index + 1}`)
                     .setPlaceholder(`Permissions Page ${index + 1}/${chunkedFlags.length}`)
@@ -117,6 +118,11 @@ module.exports = {
 
                 components.push(new ActionRowBuilder().addComponents(selectMenu));
             });
+
+            // Action Buttons
+            const saveBtn = new ButtonBuilder().setCustomId("editrole_save").setLabel("Save Changes").setStyle(ButtonStyle.Success).setEmoji("✅");
+            const cancelBtn = new ButtonBuilder().setCustomId("editrole_cancel").setLabel("Terminate").setStyle(ButtonStyle.Danger).setEmoji("✖️");
+            components.push(new ActionRowBuilder().addComponents(saveBtn, cancelBtn));
 
             return {
                 embeds: [embed],
@@ -166,8 +172,10 @@ module.exports = {
             try { collectorTarget = await message.fetchReply(); } catch (e) { }
         }
 
+        // Initialize a Local Draft of the permissions so we don't save to Discord continuously
+        let localDraftPerms = new PermissionsBitField(targetRole.permissions);
+
         const collector = collectorTarget.createMessageComponentCollector({
-            componentType: ComponentType.StringSelect,
             time: 120000 // 2 minutes
         });
 
@@ -176,44 +184,59 @@ module.exports = {
                 return interaction.reply({ content: "🚫 Only the command executor can use this menu.", ephemeral: true });
             }
 
-            // We need to fetch the LATEST permissions, calculate the delta, and save.
-            await targetRole.guild.roles.fetch(targetRole.id, { force: true });
-            let currentPerms = new PermissionsBitField(targetRole.permissions);
+            const id = interaction.customId;
 
-            const selectedValues = interaction.values; // Array of flag names
-            const id = interaction.customId; // "editrole_part1", "editrole_part2", etc.
+            if (interaction.isButton()) {
+                if (id === "editrole_cancel") {
+                    collector.stop("cancelled");
+                    return interaction.update({ content: "🛑 Edit session terminated.", components: [], embeds: [] });
+                }
 
-            // Extract the index from the custom ID. "editrole_part1" -> 1. Arrays are 0-indexed, so we subtract 1.
-            const pageNumberMatch = id.match(/editrole_part(\\d+)/);
-            if (!pageNumberMatch) return interaction.reply({ content: "❌ Unknown menu ID.", ephemeral: true });
+                if (id === "editrole_save") {
+                    try {
+                        targetRole = await targetRole.setPermissions(localDraftPerms, `Interactive EditRole saved by ${interaction.user.tag}`);
 
-            const chunkIndex = parseInt(pageNumberMatch[1]) - 1;
-            const relevantFlags = chunkedFlags[chunkIndex];
+                        const successEmbed = new EmbedBuilder()
+                            .setTitle(`✅ Role Permissions Saved`)
+                            .setDescription(`Permissions for **${targetRole.name}** have been successfully updated.`)
+                            .setColor(V2_BLUE);
 
-            // First, remove ALL relevantFlags from the current perm set
-            relevantFlags.forEach(flag => {
-                currentPerms.remove(PermissionsBitField.Flags[flag]);
-            });
+                        collector.stop("saved");
+                        return interaction.update({ embeds: [successEmbed], components: [] });
+                    } catch (err) {
+                        console.error(err);
+                        return interaction.reply({ content: "❌ Failed to save permissions. My hierarchy position might be too low.", ephemeral: true });
+                    }
+                }
+            }
 
-            // Then, add back the ones that were selected
-            selectedValues.forEach(flag => {
-                currentPerms.add(PermissionsBitField.Flags[flag]);
-            });
+            if (interaction.isStringSelectMenu()) {
+                const selectedValues = interaction.values; // Array of flag names
 
-            try {
-                // Update Discord
-                targetRole = await targetRole.setPermissions(currentPerms, `Interactive EditRole by ${interaction.user.tag}`);
+                // Extract the index from the custom ID. "editrole_part1" -> 1. Arrays are 0-indexed, so we subtract 1.
+                const pageNumberMatch = id.match(/editrole_part(\\d+)/);
+                if (!pageNumberMatch) return interaction.reply({ content: "❌ Unknown menu ID.", ephemeral: true });
 
-                // Re-render UI
-                const updatedUIPayload = createUI(targetRole);
+                const chunkIndex = parseInt(pageNumberMatch[1]) - 1;
+                const relevantFlags = chunkedFlags[chunkIndex];
+
+                // Remove ALL flags from this specific page chunk from our local draft
+                relevantFlags.forEach(flag => {
+                    localDraftPerms.remove(PermissionsBitField.Flags[flag]);
+                });
+
+                // Add back the ones the user currently has selected in the dropdown
+                selectedValues.forEach(flag => {
+                    localDraftPerms.add(PermissionsBitField.Flags[flag]);
+                });
+
+                // Re-render UI with draft perms
+                const updatedUIPayload = createUI(targetRole, localDraftPerms);
                 if (updatedUIPayload.embeds[0]) {
                     await interaction.update({ embeds: updatedUIPayload.embeds, components: updatedUIPayload.components });
                 } else {
                     await interaction.update({ components: [updatedUIPayload.embeds[0], ...updatedUIPayload.components] });
                 }
-            } catch (err) {
-                console.error(err);
-                await interaction.reply({ content: "❌ Failed to update permissions. My role position might be too low.", ephemeral: true });
             }
         });
 
