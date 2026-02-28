@@ -76,17 +76,18 @@ module.exports = {
             return message.reply({ flags: V2.flag, components: [V2.container([V2.text("🚫 **Hierarchy Error:** I cannot modify a role that is higher than or equal to my own.")], V2_RED)] });
         }
 
-        // We will list EVERY permission flag discord offers, split into 2 dropdowns because Discord limits menus to 25 items each.
+        // Discord limits StringSelectMenus to 25 options maximum.
         const allFlags = Object.keys(PermissionsBitField.Flags);
-
-        const part1 = allFlags.slice(0, 25);
-        const part2 = allFlags.slice(25, 50); // Usually around ~45 flags total in discord.js v14
+        const chunkedFlags = [];
+        for (let i = 0; i < allFlags.length; i += 25) {
+            chunkedFlags.push(allFlags.slice(i, i + 25));
+        }
 
         const buildMenuOptions = (flagsSubset, rolePerms) => {
             return flagsSubset.map(flag => {
                 const hasPerm = rolePerms.has(PermissionsBitField.Flags[flag]);
                 return {
-                    label: (hasPerm ? "🟢 " : "🔴 ") + flag.replace(/([A-Z])/g, ' $1').trim(), // Make it slightly readable 
+                    label: (hasPerm ? "🟢 " : "🔴 ") + flag.replace(/([A-Z])/g, ' $1').trim(),
                     value: flag,
                     description: hasPerm ? "Currently ENABLED - Click to Disable" : "Currently DISABLED - Click to Enable",
                     default: hasPerm
@@ -101,34 +102,28 @@ module.exports = {
             const embed = V2.container([
                 V2.section([
                     V2.heading(`🛡️ Role Permission Editor`, 2),
-                    V2.text(`**Target:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** \`${role.hexColor}\`\n\n**Current Permissions:**\n${activeText}\n\n**Select permissions via the dropdown menus below.**\n(🟢 = Enabled | 🔴 = Disabled)`)
+                    V2.text(`**Target:** ${role.name}\\n**ID:** \`${role.id}\`\\n**Color:** \`${role.hexColor}\`\\n\\n**Current Permissions:**\\n${activeText}\\n\\n**Select permissions via the dropdown menus below.**\\n(🟢 = Enabled | 🔴 = Disabled)`)
                 ], V2.botAvatar(message)),
                 V2.separator(),
                 V2.text(`*Changes apply instantly upon selection.*`)
             ], V2_BLUE);
 
-            const options1 = buildMenuOptions(part1, role.permissions);
-            const selectMenu1 = new StringSelectMenuBuilder()
-                .setCustomId("editrole_part1")
-                .setPlaceholder("General / Text Permissions (1/2)")
-                .setMinValues(0)
-                .setMaxValues(options1.length)
-                .addOptions(options1);
+            const components = [];
+            chunkedFlags.forEach((chunk, index) => {
+                const options = buildMenuOptions(chunk, role.permissions);
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId(`editrole_part${index + 1}`)
+                    .setPlaceholder(`Permissions Page ${index + 1}/${chunkedFlags.length}`)
+                    .setMinValues(0)
+                    .setMaxValues(options.length)
+                    .addOptions(options);
 
-            const options2 = buildMenuOptions(part2, role.permissions);
-            const selectMenu2 = new StringSelectMenuBuilder()
-                .setCustomId("editrole_part2")
-                .setPlaceholder("Voice / Advanced Permissions (2/2)")
-                .setMinValues(0)
-                .setMaxValues(options2.length)
-                .addOptions(options2);
+                components.push(new ActionRowBuilder().addComponents(selectMenu));
+            });
 
             return {
                 embeds: [embed],
-                components: [
-                    new ActionRowBuilder().addComponents(selectMenu1),
-                    new ActionRowBuilder().addComponents(selectMenu2)
-                ]
+                components: components
             };
         };
 
