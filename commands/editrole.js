@@ -1,4 +1,4 @@
-const { PermissionsBitField, StringSelectMenuBuilder, ActionRowBuilder, ComponentType } = require("discord.js");
+const { PermissionsBitField, StringSelectMenuBuilder, ActionRowBuilder, ComponentType, EmbedBuilder } = require("discord.js");
 const { BOT_OWNER_ID, V2_BLUE, V2_RED } = require("../config");
 const ObjectKeys = Object.keys(PermissionsBitField.Flags);
 
