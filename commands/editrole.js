@@ -99,14 +99,11 @@ module.exports = {
             const activeFlags = allFlags.filter(f => role.permissions.has(PermissionsBitField.Flags[f]));
             const activeText = activeFlags.length > 0 ? activeFlags.map(f => `\`${f}\``).join(', ') : "None";
 
-            const embed = V2.container([
-                V2.section([
-                    V2.heading(`🛡️ Role Permission Editor`, 2),
-                    V2.text(`**Target:** ${role.name}\\n**ID:** \`${role.id}\`\\n**Color:** \`${role.hexColor}\`\\n\\n**Current Permissions:**\\n${activeText}\\n\\n**Select permissions via the dropdown menus below.**\\n(🟢 = Enabled | 🔴 = Disabled)`)
-                ], V2.botAvatar(message)),
-                V2.separator(),
-                V2.text(`*Changes apply instantly upon selection.*`)
-            ], V2_BLUE);
+            const embed = new EmbedBuilder()
+                .setTitle(`🛡️ Role Permission Editor`)
+                .setDescription(`**Target:** ${role.name}\\n**ID:** \`${role.id}\`\\n**Color:** \`${role.hexColor}\`\\n\\n**Current Permissions:**\\n${activeText}\\n\\n**Select permissions via the dropdown menus below.**\\n(🟢 = Enabled | 🔴 = Disabled)\\n\\n*Changes apply instantly upon selection.*`)
+                .setColor(V2_BLUE)
+                .setThumbnail(message.guild?.members?.me?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || message.client?.user?.displayAvatarURL({ forceStatic: true, extension: "png", size: 512 }) || null);
 
             const components = [];
             chunkedFlags.forEach((chunk, index) => {
@@ -138,7 +135,6 @@ module.exports = {
             if (isInteraction) {
                 // For slash commands
                 promptMessage = await message.reply({
-                    flags: V2.flag,
                     embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
                     components: uiPayload.components,
                     fetchReply: true
@@ -146,7 +142,6 @@ module.exports = {
             } else {
                 // For normal text commands
                 promptMessage = await message.reply({
-                    flags: V2.flag,
                     embeds: uiPayload.embeds[0] ? [uiPayload.embeds[0]] : [],
                     components: uiPayload.components
                 });
@@ -155,13 +150,11 @@ module.exports = {
             // V2 fallback structure
             if (isInteraction) {
                 promptMessage = await message.reply({
-                    flags: V2.flag,
                     components: [uiPayload.embeds[0], ...uiPayload.components],
                     fetchReply: true
                 });
             } else {
                 promptMessage = await message.reply({
-                    flags: V2.flag,
                     components: [uiPayload.embeds[0], ...uiPayload.components]
                 });
             }
