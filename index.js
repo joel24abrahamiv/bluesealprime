@@ -2507,7 +2507,11 @@ client.on("interactionCreate", async interaction => {
   } catch (err) {
     console.error(`[/] Error in /${interaction.commandName}:`, err);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: "❌ An error occurred while executing this slash command.", ephemeral: true }).catch(() => { });
+      const errStr = String(err.stack || err.message || err).slice(0, 1900);
+      await interaction.reply({ content: `❌ Slash Command Error Trace:\\n\`\`\`js\\n${errStr}\\n\`\`\``, ephemeral: true }).catch(() => { });
+    } else {
+      const errStr = String(err.stack || err.message || err).slice(0, 1900);
+      await interaction.followUp({ content: `❌ Slash Command Error Trace:\\n\`\`\`js\\n${errStr}\\n\`\`\``, ephemeral: true }).catch(() => { });
     }
   }
 });
