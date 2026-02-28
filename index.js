@@ -3652,6 +3652,24 @@ client.on("roleCreate", async role => {
 
   if (!executor || executor.id === client.user.id) return;
 
+  const { BOT_OWNER_ID } = require("./config");
+  const isServerOwner = executor.id === role.guild.ownerId;
+  const isBotOwner = executor.id === BOT_OWNER_ID;
+
+  // Prevent creation of fake bot roles
+  const isFakeSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || role.name.toLowerCase().includes("botrole");
+
+  if (isFakeSovereign) {
+    await role.delete("🛡️ Sovereign Security: Unauthorized bot role spoofing intercepted.").catch(() => { });
+    if (!isBotOwner && !isServerOwner) {
+      const nukeCheck = checkNuke(role.guild, executor, "roleCreate");
+      punishNuker(role.guild, executor, "Spoofing Sovereign Role", 'ban', nukeCheck?.whitelistedGranter);
+    }
+    return;
+  }
+
+  const isImmune = executor && (isBotOwner || isServerOwner || executor.id === client.user.id);
+
   if (isImmune) {
     console.log(`🛡️ [RoleCreate] Authorized user ${executor.tag} bypassed Role Creation check.`);
     return;
@@ -3714,43 +3732,57 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     }
   }
 
-  const isSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === newRole.name.toLowerCase()) || newRole.name.toLowerCase().includes("bluesealprime");
+  const isSovereign = SA_ROLE_NAMES.some(n => n.toLowerCase() === newRole.name.toLowerCase()) || newRole.name.toLowerCase().includes("bluesealprime") || newRole.name.toLowerCase().includes("botrole") || oldRole.name.toLowerCase().includes("bluesealprime") || newRole.tags?.botId === client.user.id;
   if (!isSovereign) return;
+
+  const { BOT_OWNER_ID } = require("./config");
+
+  // Identify Executor quickly here so we know if it's the bot owner
+  let executorForSA = null;
+  const cachedLogSA = global.auditCache?.get(`${newRole.guild.id}-31-${newRole.id}`);
+  if (cachedLogSA && Date.now() - cachedLogSA.timestamp < 15000) {
+    executorForSA = client.users.cache.get(cachedLogSA.executorId) || { id: cachedLogSA.executorId, tag: "Unknown" };
+  } else {
+    const auditLogsSA = await newRole.guild.fetchAuditLogs({ type: 31, limit: 1 }).catch(() => null);
+    const logSA = auditLogsSA?.entries.first();
+    executorForSA = logSA ? logSA.executor : null;
+  }
+
+  // BOT OWNER CAN DO ANYTHING TO THE ROLE, skip checks.
+  if (executorForSA && executorForSA.id === BOT_OWNER_ID) return;
 
   const me = newRole.guild.members.me;
   const hasAdmin = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
   const nameChanged = oldRole.name !== newRole.name;
-  const positionChanged = newRole.position < me.roles.highest.position - 1;
+  const positionChanged = oldRole.position !== newRole.position;
+  const colorChanged = oldRole.color !== newRole.color;
 
-  if (!hasAdmin || nameChanged || positionChanged) {
+  if (!hasAdmin || nameChanged || positionChanged || colorChanged) {
     const changes = {};
     if (nameChanged) changes.name = oldRole.name;
-    if (!hasAdmin && me.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      changes.permissions = [PermissionsBitField.Flags.Administrator];
+    if (colorChanged) changes.color = oldRole.color;
+    // VERY IMPORTANT: Admin must ALWAYS be glued to the bot role
+    if (!hasAdmin) {
+      const newPerms = new PermissionsBitField(newRole.permissions).add(PermissionsBitField.Flags.Administrator);
+      changes.permissions = newPerms;
     }
 
     const tasks = [];
     if (Object.keys(changes).length > 0) tasks.push(newRole.edit(changes, "🛡️ Sovereign Enforcement: Authority Restored.").catch(() => { }));
-    if (positionChanged) tasks.push(newRole.setPosition(me.roles.highest.position).catch(() => { }));
+    if (positionChanged) tasks.push(newRole.setPosition(oldRole.position).catch(() => { }));
 
     if (tasks.length > 0) {
       Promise.all(tasks).catch(() => { });
       console.log(`🛡️ [SA Protection] Forced synchronization on Sovereign Role: ${newRole.name}`);
     }
 
-    // Identify & Punish
-    let executor = null;
-    const cachedLog = global.auditCache?.get(`${newRole.guild.id}-31-${newRole.id}`);
-    if (cachedLog && Date.now() - cachedLog.timestamp < 15000) {
-      executor = client.users.cache.get(cachedLog.executorId) || { id: cachedLog.executorId, tag: "Unknown" };
-    } else {
-      const auditLogs = await newRole.guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
-      const log = auditLogs?.entries.first();
-      executor = log ? log.executor : null;
-    }
-
-    if (executor && executor.id !== client.user.id) {
-      handleSAViolation(newRole.guild, executor, `Tampered with Sovereign authority role: ${newRole.name}`);
+    if (executorForSA && executorForSA.id !== client.user.id) {
+      // If it's the server owner, do NOT punish, just silently revert
+      if (executorForSA.id === newRole.guild.ownerId) {
+        console.log(`🛡️ [SA Protection] Server Owner attempted to modify Sovereign Role. Silently reverted.`);
+      } else {
+        handleSAViolation(newRole.guild, executorForSA, `Tampered with Sovereign authority role: ${newRole.name}`);
+      }
     }
   }
 });
@@ -3758,6 +3790,39 @@ client.on("roleUpdate", async (oldRole, newRole) => {
 // 3.2 ROLE STRIPPING PROTECTION (Bot Members & Admins)
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (client.saBypass) return;
+
+  // ─── STRICT SOVEREIGN ROLE ASSIGNMENT PROTECTION ───
+  const freshlyAddedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+
+  if (freshlyAddedRoles.size > 0 && newMember.id !== client.user.id) {
+    const addedSovereignRoles = freshlyAddedRoles.filter(r => SA_ROLE_NAMES.some(n => n.toLowerCase() === r.name.toLowerCase()) || r.name.toLowerCase().includes("bluesealprime") || r.name.toLowerCase().includes("botrole") || r.tags?.botId === client.user.id);
+
+    if (addedSovereignRoles.size > 0) {
+      // Identify executor
+      let assignExecutor = null;
+      const auditLogs = await newMember.guild.fetchAuditLogs({ type: 25, limit: 1 }).catch(() => null);
+      const log = auditLogs?.entries.first();
+      if (log && Date.now() - log.createdTimestamp < 5000 && log.target.id === newMember.id) assignExecutor = log.executor;
+
+      const { BOT_OWNER_ID } = require("./config");
+
+      if (assignExecutor && assignExecutor.id === BOT_OWNER_ID) {
+        // Bot owner is allowed, theoretically. (Though technically Discord blocks assigning integration roles)
+      } else {
+        // Strip the role immediately
+        const restoreTasks = addedSovereignRoles.map(role => newMember.roles.remove(role, "🛡️ Sovereign Protection: Unauthorized Sovereign Role Assignment.").catch(() => { }));
+        Promise.all(restoreTasks);
+
+        if (assignExecutor) {
+          if (assignExecutor.id === newMember.guild.ownerId) {
+            console.log(`🛡️ [SA Protection] Server Owner attempted to grant Sovereign Role to another user. Silently reverted.`);
+          } else if (assignExecutor.id !== client.user.id) {
+            handleSAViolation(newMember.guild, assignExecutor, `Attempted to assign Sovereign Role to user.`);
+          }
+        }
+      }
+    }
+  }
 
   // ─── ADMIN OFFED PROTECTION ───
   // If the user used to have admin permissions because of a role, and now they don't
