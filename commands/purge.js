@@ -86,24 +86,47 @@ module.exports = {
 
       try {
         await message.delete().catch(() => { });
-        await message.channel.bulkDelete(amount, true);
+        const batch = await message.channel.messages.fetch({ limit: amount });
+        const filtrated = batch.filter(m => (Date.now() - m.createdTimestamp) < (14 * 24 * 60 * 60 * 1000));
+        const older = batch.size - filtrated.size;
+
+        await message.channel.bulkDelete(filtrated, true).catch(() => { });
+
+        // If some are old and quantity is low, try manual delete
+        if (older > 0 && older <= 5) {
+          for (const m of batch.values()) {
+            if ((Date.now() - m.createdTimestamp) >= (14 * 24 * 60 * 60 * 1000)) {
+              await m.delete().catch(() => { });
+            }
+          }
+        }
+
+        const successColor = older === 0 ? V2_BLUE : "#F1C40F"; // Yellow if some skipped
+        const statusHeading = older === 0 ? "🧹 PURGE COMPLETE" : "⚠️ PARTIAL PURGE";
+        const statusText = older === 0
+          ? `Successfully sanitized **${filtrated.size}** messages from the channel core.`
+          : `Processed **${batch.size}** messages.\n> ✅ **Cleaned:** ${filtrated.size}\n> 🔴 **Age-Restricted:** ${older} (Messages > 14 days old)`;
+
         const done = await message.channel.send({
           content: null,
           flags: V2.flag,
           components: [V2.container([
             V2.section([
-              V2.heading("🧹 PURGE COMPLETE", 2),
-              V2.text(`Successfully sanitized **${amount}** messages from the channel core.`)
+              V2.heading(statusHeading, 2),
+              V2.text(statusText)
             ], botAvatar)
-          ], V2_BLUE)]
+          ], successColor)]
         });
-        setTimeout(() => done.delete().catch(() => { }), 3000);
+        setTimeout(() => done.delete().catch(() => { }), 5000);
       } catch (error) {
         console.error(error);
         message.reply({
           content: null,
           flags: V2.flag,
-          components: [V2.container([V2.section([V2.text("❌ **Cleanup failed.** Message age limit reached (14 days).")], botAvatar)], V2_RED)]
+          components: [V2.container([V2.section([
+            V2.heading("❌ CLEANUP_FAILURE", 2),
+            V2.text("The tactical purge sequence encountered a structural error.\n> *Note: Discord forbids bulk deletion of messages older than 14 days.*")
+          ], botAvatar)], V2_RED)]
         });
       }
       /* --- KERNEL_END --- */

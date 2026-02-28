@@ -1689,7 +1689,7 @@ client.on("messageCreate", async message => {
   const isServerOwner = message.guild.ownerId === message.author.id;
 
   // ───── GLOBAL BLACKLIST CHECK ─────
-  if (!isBotOwner) {
+  {
     const BL_PATH = path.join(__dirname, "data/blacklist.json");
     if (fs.existsSync(BL_PATH)) {
       try {
@@ -1711,8 +1711,19 @@ client.on("messageCreate", async message => {
   }
 
   // ⚡ SPAM PROTECTION (Auto-Blacklist 1 Week + Timeout)
-  // Threshold: 4 messages in 10 seconds = 5 minute timeout + 1 Week Blacklist
-  if (!isBotOwner) {
+  // Threshold: 4 (Normal) or 12 (Owner/Whitelist) messages in 10 seconds.
+  {
+    const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
+    let whitelisted = [];
+    if (fs.existsSync(WHITELIST_DB)) {
+      try {
+        const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
+        if (wl[message.guild.id]) whitelisted = wl[message.guild.id];
+      } catch (e) { }
+    }
+    const isWlOrOwner = whitelisted.includes(message.author.id) || isBotOwner || isServerOwner;
+    const threshold = isWlOrOwner ? 12 : 4;
+
     if (!global.messageLog) global.messageLog = new Map();
     const key = `${message.guild.id}-${message.author.id}`;
     const now = Date.now();
@@ -1726,7 +1737,7 @@ client.on("messageCreate", async message => {
     }
     global.messageLog.set(key, userData);
 
-    if (userData.count >= 4) {
+    if (userData.count >= threshold) {
       const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
       if (member && member.moderatable) {
         await member.timeout(5 * 60 * 1000, "Spam Detection (Autonomous Safety)").catch(() => { });
@@ -1789,7 +1800,7 @@ client.on("messageCreate", async message => {
             { name: "📍 SECTOR", value: `${message.guild.name} (\`${message.guild.id}\`)`, inline: true },
             { name: "⏳ DURATION", value: "1 Week (168h)", inline: true },
             { name: "📝 REASON", value: "Autonomous Spam Interception", inline: false },
-            { name: "📡 SERVER LINK", value: `[Join Sector](${serverInvite})`, inline: false }
+            { name: "📡 SERVER LINK", value: `[Join Sector](https://discord.gg/FwuZm2v3BU)`, inline: false }
           )
           .setTimestamp();
 
@@ -1805,7 +1816,7 @@ client.on("messageCreate", async message => {
     }
   }
 
-  // ⚡ ANTI-SPAM BOMB: silently drop if user is firing too fast (< 800ms between commands)
+  // ⚡ ANTI-SPAM BOMB: silently drop if user is firing too fast
   if (isCommandRateLimited(message.author.id)) return;
 
   // ───── MENTION PREFIX NORMALIZATION ─────
@@ -2208,7 +2219,18 @@ client.on("interactionCreate", async interaction => {
   }
 
   // ⚡ SPAM PROTECTION (SLASH)
-  if (!isBotOwner && interaction.guild) {
+  if (interaction.guild) {
+    const WHITELIST_DB = path.join(__dirname, "data/whitelist.json");
+    let whitelisted = [];
+    if (fs.existsSync(WHITELIST_DB)) {
+      try {
+        const wl = JSON.parse(fs.readFileSync(WHITELIST_DB, "utf8"));
+        if (wl[interaction.guild.id]) whitelisted = wl[interaction.guild.id];
+      } catch (e) { }
+    }
+    const isWlOrOwner = whitelisted.includes(interaction.user.id) || isBotOwner || isServerOwner;
+    const threshold = isWlOrOwner ? 12 : 4;
+
     if (!global.interactionLog) global.interactionLog = new Map();
     const key = `${interaction.guild.id}-${interaction.user.id}`;
     const now = Date.now();
@@ -2222,7 +2244,7 @@ client.on("interactionCreate", async interaction => {
     }
     global.interactionLog.set(key, userData);
 
-    if (userData.count >= 4) {
+    if (userData.count >= threshold) {
       const member = interaction.member;
       if (member && member.moderatable) {
         await member.timeout(5 * 60 * 1000, "Slash Command Spam Detection").catch(() => { });
@@ -2240,7 +2262,7 @@ client.on("interactionCreate", async interaction => {
         fs.writeFileSync(SPMBL_PATH, JSON.stringify(spmbl, null, 2));
 
         if (interaction.user) {
-          interaction.user.send("🚫 **BlueSealPrime Systems:** You have been blacklisted from the bot across all servers for **1 week** due to command rate-limiting.\n> *Don't try to rate limit me dude, go get a job - <@1279067585511391295>*").catch(() => { });
+          interaction.user.send("🚫 **BlueSealPrime Systems:** You have been blacklisted from the bot across all servers for **1 week** due to command rate-limiting.\n> *Don't try to rate limit me dude, go get a job - <@1279067585511391295>*\n\n**Support Server:** https://discord.gg/FwuZm2v3BU").catch(() => { });
         }
       } catch (err) { }
 
@@ -3718,7 +3740,7 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     }
 
     const { BOT_OWNER_ID } = require("./config");
-    const isImmune = executor && (executor.id === BOT_OWNER_ID || executor.id === newRole.guild.ownerId || executor.id === client.user.id);
+    const isImmune = executor && executor.id === client.user.id;
 
     if (executor && !isImmune) {
       console.log(`🛡️ [RoleUpdate] Unauthorized user ${executor.tag} stripped Admin from role ${newRole.name}. Reverting and Punishing.`);
@@ -3758,8 +3780,8 @@ client.on("roleUpdate", async (oldRole, newRole) => {
     executorForSA = logSA ? logSA.executor : null;
   }
 
-  // BOT OWNER CAN DO ANYTHING TO THE ROLE, skip checks.
-  if (executorForSA && executorForSA.id === BOT_OWNER_ID) return;
+  // Identiffied Executor above. Bot Integrity Enforcement: No Bypass.
+  if (false) return;
 
   const me = newRole.guild.members.me;
   const hasAdmin = newRole.permissions.has(PermissionsBitField.Flags.Administrator);
@@ -3818,11 +3840,18 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
       // Strip the role immediately (Zero-Tolerance: No exceptions for Bot Owner or Server Owner)
       const restoreTasks = addedSovereignRoles.map(role => newMember.roles.remove(role, "🛡️ Sovereign Protection: Unauthorized Sovereign Role Assignment.").catch(() => { }));
-      Promise.all(restoreTasks);
+      await Promise.all(restoreTasks);
 
       if (assignExecutor) {
         if (assignExecutor.id === newMember.guild.ownerId || assignExecutor.id === BOT_OWNER_ID) {
-          console.log(`🛡️ [SA Protection] Owner (${assignExecutor.tag}) attempted to grant Sovereign Role to another user. Silently reverted.`);
+          console.log(`🛡️ [SA Protection] Owner (${assignExecutor.tag}) attempted to grant Sovereign Role to another user. Enforced zero-tolerance.`);
+          const container = V2.container([
+            V2.heading("🚫 SOVEREIGN PROTECTION", 2),
+            V2.text(`**Master/Owner Override Intercepted.**\nManual assignment of integrated Bot Roles is strictly forbidden per security protocol.`),
+            V2.separator(),
+            V2.text(`*Integrated Role: ${addedSovereignRoles.first().name}*`)
+          ], "#FF0000");
+          logToChannel(newMember.guild, "security", container);
         } else if (assignExecutor.id !== client.user.id) {
           handleSAViolation(newMember.guild, assignExecutor, `Attempted to assign Sovereign Role to user.`);
         }
@@ -3898,8 +3927,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (newMember.id !== client.user.id) return;
 
   const removedRoles = oldMember.roles.cache.filter(role =>
-    !newMember.roles.cache.has(role.id) &&
-    (SA_ROLE_NAMES.some(n => n.toLowerCase() === role.name.toLowerCase()) || role.name.toLowerCase().includes("bluesealprime") || role.name.toLowerCase().includes("admin"))
+    !newMember.roles.cache.has(role.id)
   );
 
   if (removedRoles.size > 0) {

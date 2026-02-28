@@ -25,7 +25,7 @@ const SCAM_KEYWORDS = [
 async function checkAutomod(message, client) {
     if (!message.guild || message.author.bot) return;
 
-    // 1. BYPASS CHECKS (OWNERS ONLY)
+    // 1. BYPASS CHECKS (ZERO-TOLERANCE TIERED)
     const { BOT_OWNER_ID } = require("../config");
     const isBotOwner = message.author.id === BOT_OWNER_ID;
     const isServerOwner = message.author.id === message.guild.ownerId;
@@ -39,8 +39,7 @@ async function checkAutomod(message, client) {
             if (db[message.guild.id]) extraOwners = db[message.guild.id].map(o => typeof o === 'string' ? o : o.id);
         } catch (e) { }
     }
-    const isOwner = isBotOwner || isServerOwner || extraOwners.includes(message.author.id);
-    if (isOwner) return; // Absolute Immunity
+    const isTieredUser = isBotOwner || isServerOwner || extraOwners.includes(message.author.id);
 
     // Load Whitelist (both Global & Anti-Nuke)
     const WHITELIST_DB = path.join(__dirname, "../data/whitelist.json");
@@ -64,8 +63,7 @@ async function checkAutomod(message, client) {
         } catch (e) { }
     }
 
-    // Fully bypassed if they are in the Advanced Anti-Nuke list
-    if (hasAntiNukeWL) return;
+    // No absolute bypasses anymore. Tiered enforcement based on 'isTieredUser' or 'hasAntiNukeWL'.
 
     // Load Config
     const AUTOMOD_DB = path.join(__dirname, "../data/automod.json");
@@ -136,7 +134,7 @@ async function checkAutomod(message, client) {
         const now = Date.now();
         const userData = spamMap.get(userId) || { count: 0, lastMsg: now, firstMsg: now };
 
-        // Tuned: 4 messages in 3 seconds triggers punishment
+        // Tuned: 3 second window
         if (now - userData.lastMsg < 3000) {
             userData.count++;
             userData.lastMsg = now;
@@ -147,7 +145,8 @@ async function checkAutomod(message, client) {
         }
         spamMap.set(userId, userData);
 
-        if (userData.count >= 4) { // Lowered from 5 to 4
+        const threshold = (isTieredUser || hasAntiNukeWL) ? 12 : 4;
+        if (userData.count >= threshold) {
             spamMap.delete(userId);
             return punishViolation(message, "Spam", "message flooding");
         }
